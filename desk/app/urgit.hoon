@@ -40,6 +40,12 @@
       pages=@ud
       objects=(list [oid:git object:git])
   ==
++$  peer-fork-cache
+  $:  repository=@t
+      revision=@t
+      fingerprint=@uv
+      pages=(list octs)
+  ==
 +$  peer-receive
   $:  purpose=?(%fork %push %pull)
       source=ship
@@ -1899,6 +1905,17 @@
   |=  transfer=@uv
   ^-  @uv
   `@uv`(shas %git-peer-serve-activity transfer)
+::
+++  peer-object-fingerprint
+  |=  [revision=@t objects=(map oid:git object:git)]
+  ^-  @uv
+  =/  keys=(list oid:git)
+    (turn ~(tap by objects) |=(entry=[oid:git object:git] -.entry))
+  =/  ordered=(list oid:git)
+    %+  sort  keys
+    |=  [a=oid:git b=oid:git]
+    (lth a b)
+  `@uv`(end 7 (shax (jam [revision ordered])))
 --
 ::
 %-  agent:dbug
@@ -1910,6 +1927,7 @@
 =/  pending-clay  *(unit clay-push)
 =/  pending-publish  *(unit publish-job)
 =/  peer-serving  *(map @uv peer-serve)
+=/  fork-pack-cache  *(unit peer-fork-cache)
 =/  peer-receiving  *(map @uv peer-receive)
 =/  peer-results  *(map @uv peer-result)
 =/  peer-outgoing  *(map @uv peer-offer-flight)
@@ -1929,7 +1947,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  :_  this
+  :_  this(fork-pack-cache ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1947,7 +1965,7 @@
       %2  !<(state-2:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, fork-pack-cache ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -2052,7 +2070,7 @@
     (flop [(packed-page page) pages])
   =/  object-bytes=@ud  (add 64 p.data.+.i.remaining)
   =/  page-full=?
-    |(=(count 256) ?&((gth count 0) (gth (add bytes object-bytes) 524.288)))
+    |(=(count 8.192) ?&((gth count 0) (gth (add bytes object-bytes) 33.554.432)))
   ?:  page-full
     $(page ~, pages [(packed-page page) pages], count 0, bytes 0)
   =/  next-page=(map oid:git object:git)
@@ -2829,12 +2847,36 @@
     |=  event=peer-activity
     ?.  (~(has in superseded-activity-ids) id.event)  event
     event(status %failure, message 'repository snapshot superseded by a newer request', when now.bowl)
+  =/  full-fork=?  ?=(~ haves.req)
+  =/  revision=@t  (repository-revision u.found)
+  =/  fingerprint=@uv
+    (peer-object-fingerprint revision objects.u.found)
+  =/  cached-pages=(unit (list octs))
+    ?.  full-fork  ~
+    ?~  fork-pack-cache  ~
+    ?.  ?&  =(repository.req repository.u.fork-pack-cache)
+            =(revision revision.u.fork-pack-cache)
+            =(fingerprint fingerprint.u.fork-pack-cache)
+        ==
+      ~
+    `pages.u.fork-pack-cache
   =/  objects=(list [oid:git object:git])
     %+  murn  ~(tap by objects.u.found)
     |=  entry=[oid:git object:git]
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
-  =/  pages=(list octs)  (peer-object-pages objects)
+  =/  pages=(list octs)
+    ?~  cached-pages  (peer-object-pages objects)
+    u.cached-pages
+  =/  cacheable=?
+    ?.  full-fork  %.n
+    ?~  pages  %.n
+    ?.  =(~ t.pages)  %.n
+    (lte p.i.pages 33.554.432)
+  =.  fork-pack-cache
+    ?:  ?&(cacheable ?=(~ cached-pages))
+      `[repository.req revision fingerprint pages]
+    fork-pack-cache
   =/  flight=peer-serve  [target transfer.req repository.req (lent pages) objects]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   =.  peer-activities
