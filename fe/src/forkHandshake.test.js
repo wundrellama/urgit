@@ -27,8 +27,9 @@ test('fork pack preparation queue is transient and resets across lifecycle entry
     backend,
     /=\/  peer-prepare-queue\s+\*\(map @uv \[target=ship req=request:git-peer\]\)/,
   )
-  assert.match(onInit, /this\(peer-prepare-queue ~\)/)
+  assert.match(onInit, /this\(peer-prepare-queue ~, peer-stream-jobs ~\)/)
   assert.match(onLoad, /peer-prepare-queue ~/)
+  assert.match(onLoad, /peer-stream-jobs ~/)
   assert.equal(onSave.trimEnd(), '++  on-save\n  !>(state)\n::')
   assert.doesNotMatch(onSave, /peer-prepare-queue/)
 })

@@ -16,6 +16,17 @@
       objects=@ud
       pages=@ud
   ==
++$  begin-objects
+  $:  transfer=@uv
+      repository=@t
+      revision=@ud
+      head=@t
+      refs=(map @t oid:git)
+      objects=@ud
+      pages=@ud
+  ==
++$  object-fragment
+  [oid=oid:git kind=object-kind:git total=@ud offset=@ud data=octs]
 +$  ready
   $:  transfer=@uv
       repository=@t
@@ -85,6 +96,9 @@
       [%prepare prepare=prepare]
       [%ready ready=ready]
       [%begin begin=begin]
+      [%begin-objects begin-objects=begin-objects]
+      [%stream-next transfer=@uv]
+      [%stream-grown transfer=@uv]
       [%catalog-request catalog-request=catalog-request]
       [%catalog catalog=catalog]
       [%catalog-error request=@uv message=@t]
@@ -100,6 +114,7 @@
       [%offer offer=offer]
       [%offer-branches offer-branches=offer-branches]
       [%release transfer=@uv]
+      [%object-fragments transfer=@uv revision=@ud fragments=(list object-fragment)]
       [%snapshot transfer=@uv objects=(map oid:git object:git)]
       [%snapshot-error transfer=@uv message=@t]
       [%result transfer=@uv ok=? message=@t]

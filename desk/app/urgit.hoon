@@ -37,11 +37,15 @@
   $:  target=ship
       transfer=@uv
       repository=@t
+      mode=?(%pack %objects)
       pages=@ud
       objects=(list [oid:git object:git])
   ==
++$  peer-object-assembly
+  [kind=object-kind:git total=@ud next=@ud data=octs]
 +$  peer-receive
   $:  purpose=?(%fork %push %pull)
+      mode=?(%pack %objects)
       source=ship
       source-repository=@t
       local-repository=@t
@@ -58,7 +62,23 @@
       completed=(set @ud)
       progress-at=@da
       fine-progress=(map @ud [fag=@ud tot=@ud])
+      assemblies=(map oid:git peer-object-assembly)
+      assembly-bytes=@ud
+      assembly-count=@ud
       objects=(map oid:git object:git)
+  ==
++$  peer-stream-job
+  $:  target=ship
+      transfer=@uv
+      repository=@t
+      head=@t
+      refs=(map @t oid:git)
+      expected=@ud
+      pages=@ud
+      revision=@ud
+      remaining=(list [oid:git object:git])
+      offset=@ud
+      begun=?
   ==
 +$  peer-transfer-debug
   $:  transfer=@uv
@@ -1890,6 +1910,23 @@
     /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
   [%pass /peer/browse-cancel/(scot %uv request)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
 ::
+++  peer-object-capability  0x7572.6769.742d.6f62
+::
+++  peer-stream-max-objects  25.000
+++  peer-stream-max-pages  65.536
+++  peer-stream-max-object-bytes  67.108.864
+++  peer-stream-max-assembly-bytes  67.108.864
+::
+++  peer-object-capable
+  |=  transfer=@uv
+  ^-  ?
+  =(peer-object-capability (cut 0 [128 64] transfer))
+::
+++  peer-object-transfer
+  |=  transfer=@uv
+  ^-  @uv
+  `@uv`(mix (cut 0 [0 128] transfer) (lsh [0 128] peer-object-capability))
+::
 ++  peer-fine-name
   |=  transfer=@uv
   ^-  @ta
@@ -1912,6 +1949,7 @@
 =/  peer-prepare-queue  *(map @uv [target=ship req=request:git-peer])
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
+=/  peer-stream-jobs  *(map @uv peer-stream-job)
 =/  peer-results  *(map @uv peer-result)
 =/  peer-outgoing  *(map @uv peer-offer-flight)
 =/  peer-discoveries  *(map @uv peer-discovery)
@@ -1930,7 +1968,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  :_  this(peer-prepare-queue ~)
+  :_  this(peer-prepare-queue ~, peer-stream-jobs ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -1948,7 +1986,7 @@
       %2  !<(state-2:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-prepare-queue ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
       [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
   ==
@@ -2021,9 +2059,17 @@
   (scag 50 combined)
 ::
 ++  peer-transfer-yawns
-  |=  [transfer=@uv peer=ship pages=@ud completed=(set @ud)]
+  |=  [transfer=@uv peer=ship mode=?(%pack %objects) pages=@ud completed=(set @ud)]
   ^-  (list card)
-  %+  murn  (gulf 1 pages)
+  ?:  =(%objects mode)
+    =/  revision=@ud  +(~(wyt in completed))
+    ?:  (gth revision pages)  ~
+    ?:  (~(has in completed) revision)  ~
+    =/  scry-path=path
+      /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer)
+    ~[[%pass /peer/fine-cancel/(scot %uv transfer)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]]
+  =/  pending-pages=(list @ud)  (gulf 1 pages)
+  %+  murn  pending-pages
   |=  revision=@ud
   =/  issued=?
     ?:  =(revision 1)  %.y
@@ -2063,6 +2109,96 @@
     page       next-page
     count      +(count)
     bytes      (add bytes object-bytes)
+  ==
+::
+++  peer-object-batch-count
+  |=  objects=(list [oid:git object:git])
+  ^-  @ud
+  =/  remaining  objects
+  =/  offset=@ud  0
+  =/  pages=@ud  0
+  =/  count=@ud  0
+  =/  bytes=@ud  0
+  |-
+  ?~  remaining
+    ?:  =(count 0)  (max 1 pages)
+    +(pages)
+  =/  object=object:git  +.i.remaining
+  =/  total=@ud  p.data.object
+  =/  batch-full=?
+    |(=(count 512) =(bytes 4.194.304))
+  ?:  batch-full
+    $(pages +(pages), count 0, bytes 0)
+  ?:  =(total 0)
+    %=  $
+      remaining  t.remaining
+      offset     0
+      count      +(count)
+    ==
+  ?:  =(offset total)
+    $(remaining t.remaining, offset 0)
+  =/  fragment-length=@ud  (min 1.048.576 (sub total offset))
+  =/  page-room=@ud  (sub 4.194.304 bytes)
+  ?:  ?&  (gth count 0)
+          (gth fragment-length page-room)
+      ==
+    $(pages +(pages), count 0, bytes 0)
+  =/  length=@ud  fragment-length
+  =/  next-offset=@ud  (add offset length)
+  =/  next-remaining=(list [oid:git object:git])
+    ?:(=(next-offset total) t.remaining remaining)
+  %=  $
+    remaining  next-remaining
+    offset     ?:(=(next-offset total) 0 next-offset)
+    count      +(count)
+    bytes      (add bytes length)
+  ==
+::
+++  peer-object-batch
+  |=  [objects=(list [oid:git object:git]) offset=@ud]
+  ^-  [batch=(list object-fragment:git-peer) remaining=(list [oid:git object:git]) offset=@ud]
+  =/  remaining  objects
+  =/  batch=(list object-fragment:git-peer)  ~
+  =/  count=@ud  0
+  =/  bytes=@ud  0
+  |-
+  ?~  remaining  [(flop batch) remaining offset]
+  =/  oid=oid:git  -.i.remaining
+  =/  object=object:git  +.i.remaining
+  =/  kind=object-kind:git  kind.object
+  =/  total=@ud  p.data.object
+  =/  batch-full=?
+    |(=(count 512) =(bytes 4.194.304))
+  ?:  batch-full  [(flop batch) remaining offset]
+  ?:  =(total 0)
+    %=  $
+      remaining  t.remaining
+      offset     0
+      batch      [[oid kind 0 0 [0 0]] batch]
+      count      +(count)
+    ==
+  ?:  =(offset total)
+    $(remaining t.remaining, offset 0)
+  =/  fragment-length=@ud  (min 1.048.576 (sub total offset))
+  =/  page-room=@ud  (sub 4.194.304 bytes)
+  ?:  ?&  (gth count 0)
+          (gth fragment-length page-room)
+      ==
+    [(flop batch) remaining offset]
+  =/  length=@ud  fragment-length
+  =/  fragment-data=octs
+    (slice:git-codec data.object offset length)
+  =/  fragment=object-fragment:git-peer
+    [oid kind total offset fragment-data]
+  =/  next-offset=@ud  (add offset length)
+  =/  next-remaining=(list [oid:git object:git])
+    ?:(=(next-offset total) t.remaining remaining)
+  %=  $
+    remaining  next-remaining
+    offset     ?:(=(next-offset total) 0 next-offset)
+    batch      [fragment batch]
+    count      +(count)
+    bytes      (add bytes length)
   ==
 ::
 ++  peer-browse-pages
@@ -2265,7 +2401,7 @@
     =.  peer-activities  (peer-activity-finish transfer %.n message)
     :_  this
     ?:  =('' head.flight)  ~
-    (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
+    (peer-transfer-yawns transfer source.flight mode.flight pages.flight completed.flight)
   =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
   ?~  outgoing  `this
   ?.  =(src.bowl peer.u.outgoing)  `this
@@ -2285,11 +2421,23 @@
     ?>  =(src.bowl our.bowl)
     (peer-prepare target.prepare.packet request.prepare.packet)
   ::
+      %stream-next
+    (peer-stream-next transfer.packet)
+  ::
+      %stream-grown
+    (peer-stream-grown transfer.packet)
+  ::
       %ready
     (peer-ready ready.packet)
   ::
       %begin
     (peer-begin begin.packet)
+  ::
+      %begin-objects
+    (peer-begin-objects begin-objects.packet)
+  ::
+      %object-fragments
+    (peer-object-fragments transfer.packet revision.packet fragments.packet)
   ::
       %catalog-request
     (peer-catalog-request catalog-request.packet)
@@ -2718,6 +2866,7 @@
     (silt (turn ~(tap by objects.u.found) |=(entry=[oid:git object:git] -.entry)))
   =/  flight=peer-receive
     :*  ?:(pull-request.offer %pull %push)
+        %pack
         src.bowl
         source-repository.offer
         repository.offer
@@ -2734,6 +2883,9 @@
         ~
         now.bowl
         ~
+        ~
+        0
+        0
         objects.u.found
     ==
   =.  peer-receiving  (~(put by peer-receiving) transfer.offer flight)
@@ -2807,6 +2959,13 @@
     ?&  =(target target.prior)
         =(repository.req repository.prior)
     ==
+  =.  peer-stream-jobs
+    =/  entries=(list [@uv peer-serve])  superseded
+    |-
+    ?~  entries  peer-stream-jobs
+    =.  peer-stream-jobs
+      (~(del by peer-stream-jobs) -.i.entries)
+    $(entries t.entries)
   =/  superseded-ids=(set @uv)
     (silt (turn superseded |=(entry=[@uv peer-serve] -.entry)))
   =/  superseded-activity-ids=(set @uv)
@@ -2837,22 +2996,97 @@
     |=  entry=[oid:git object:git]
     ?:  (~(has in haves.req) -.entry)  ~
     `entry
-  =/  pages=(list octs)  (peer-object-pages objects)
-  =/  flight=peer-serve  [target transfer.req repository.req (lent pages) objects]
+  =/  stream-pages=@ud  (peer-object-batch-count objects)
+  =/  object-sizes-ok=?
+    %+  levy  objects
+    |=  entry=[oid:git object:git]
+    (lte p.data.+.entry peer-stream-max-object-bytes)
+  =/  streamable=?
+    ?&  (peer-object-capable transfer.req)
+        ?=(^ objects)
+        (lte (lent objects) peer-stream-max-objects)
+        (lte stream-pages peer-stream-max-pages)
+        object-sizes-ok
+    ==
+  ?.  streamable
+    =/  packed-pages=(list octs)  (peer-object-pages objects)
+    =/  packed-flight=peer-serve
+      [target transfer.req repository.req %pack (lent packed-pages) objects]
+    =.  peer-serving  (~(put by peer-serving) transfer.req packed-flight)
+    =.  peer-activities
+      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
+    =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
+    =/  object-pages=(list card)
+      %+  turn  packed-pages
+      |=  page=octs
+      [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
+    =/  final-cards=(list card)
+      :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent packed-pages)])]
+          [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
+      ==
+    :_  this
+    (weld cleanup-cards (weld object-pages final-cards))
+  =/  pages=@ud  stream-pages
+  =/  flight=peer-serve
+    [target transfer.req repository.req %objects pages objects]
+  =/  job=peer-stream-job
+    [target transfer.req repository.req head.u.found refs.u.found (lent objects) pages 1 objects 0 %.n]
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
+  =.  peer-stream-jobs
+    (~(put by peer-stream-jobs) transfer.req job)
   =.  peer-activities
     (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
-  =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
-  =/  object-pages=(list card)
-    %+  turn  pages
-    |=  page=octs
-    [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
-  =/  final-cards=(list card)
-    :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
-        [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
-    ==
   :_  this
-  (weld cleanup-cards (weld object-pages final-cards))
+  %+  weld  cleanup-cards
+  :~  (peer-card our.bowl /peer/stream-next/(scot %uv transfer.req) [%stream-next transfer.req])
+      [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
+  ==
+::
+++  peer-stream-next
+  |=  transfer=@uv
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-stream-job)
+    (~(get by peer-stream-jobs) transfer)
+  ?~  found  `this
+  =/  job=peer-stream-job  u.found
+  =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer)
+  ?~  serving  `this
+  ?.  =(%objects mode.u.serving)  `this
+  =/  taken=[batch=(list object-fragment:git-peer) remaining=(list [oid:git object:git]) offset=@ud]
+    (peer-object-batch remaining.job offset.job)
+  =.  peer-stream-jobs
+    (~(put by peer-stream-jobs) transfer job(remaining remaining.taken, offset offset.taken))
+  :_  this
+  :~  [%pass /peer/grow/(scot %uv transfer) %grow /fine/(peer-fine-name transfer) noun+!>(batch.taken)]
+      (peer-card our.bowl /peer/stream-grown/(scot %uv transfer) [%stream-grown transfer])
+  ==
+::
+++  peer-stream-grown
+  |=  transfer=@uv
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-stream-job)
+    (~(get by peer-stream-jobs) transfer)
+  ?~  found  `this
+  =/  job=peer-stream-job  u.found
+  =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer)
+  ?~  serving  `this
+  ?.  =(%objects mode.u.serving)  `this
+  =/  next=peer-stream-job
+    job(revision +(revision.job), begun %.y)
+  =/  cards=(list card)
+    ?~  remaining.job
+      ~
+    :~  (peer-card our.bowl /peer/stream-next/(scot %uv transfer) [%stream-next transfer])
+    ==
+  =.  cards
+    ?:  begun.job  cards
+    [(peer-card target.job /peer/begin-objects/(scot %uv transfer) [%begin-objects transfer repository.job revision.job head.job refs.job expected.job pages.job]) cards]
+  =.  peer-stream-jobs
+    (~(put by peer-stream-jobs) transfer next)
+  :_  this
+  cards
 ::
 ++  peer-ready
   |=  msg=ready:git-peer
@@ -2880,7 +3114,42 @@
     :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an invalid Fine page count'])]
     ==
   =/  next=peer-receive
-    u.found(head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, progress-at now.bowl, fine-progress ~)
+    u.found(mode %pack, head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, progress-at now.bowl, fine-progress ~, assemblies ~)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  =.  peer-results
+    (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
+  ?:  =(src.bowl our.bowl)
+    =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer.msg)
+    ?~  serving
+      (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
+    (peer-snapshot transfer.msg (silt objects.u.serving))
+  :_  this
+  =/  scry-path=path
+    /g/x/1/urgit//1/fine/(peer-fine-name transfer.msg)
+  :~  [%pass /peer/fine/(scot %uv transfer.msg)/1 %keen %.n src.bowl scry-path]
+  ==
+::
+++  peer-begin-objects
+  |=  msg=begin-objects:git-peer
+  ^-  (quip card _this)
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl source.u.found)
+          =(repository.msg source-repository.u.found)
+      ==
+    `this
+  ?.  ?&  (gth objects.msg 0)
+          (lte objects.msg peer-stream-max-objects)
+          (gth pages.msg 0)
+          (lte pages.msg peer-stream-max-pages)
+          (lte pages.msg (mul objects.msg 16))
+          =(revision.msg 1)
+      ==
+    :_  this
+    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced invalid streamed object bounds'])]
+    ==
+  =/  next=peer-receive
+    u.found(mode %objects, head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, progress-at now.bowl, fine-progress ~, assemblies ~, assembly-bytes 0, assembly-count 0)
   =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
   =.  peer-results
     (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
@@ -2914,13 +3183,14 @@
     %+  turn  (gulf 1 count)
     |=  revision=@ud
     [%pass /peer/cull/(scot %uv transfer)/(scot %ud revision) %cull [%ud revision] /fine/(peer-fine-name transfer)]
-  :_  this(peer-serving (~(del by peer-serving) transfer))
+  :_  this(peer-serving (~(del by peer-serving) transfer), peer-stream-jobs (~(del by peer-stream-jobs) transfer))
   culls
 ::
 ++  peer-snapshot-fail
   |=  [transfer=@uv message=@t]
   ^-  (quip card _this)
   ?.  =(src.bowl our.bowl)  `this
+  =.  peer-stream-jobs  (~(del by peer-stream-jobs) transfer)
   =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
   ?~  found  `this
   =/  flight=peer-receive  u.found
@@ -2930,7 +3200,7 @@
     (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
   =/  cancel-cards=(list card)
     ?:  =('' head.flight)  ~
-    (peer-transfer-yawns transfer source.flight pages.flight completed.flight)
+    (peer-transfer-yawns transfer source.flight mode.flight pages.flight completed.flight)
   ?:  =(%fork purpose.flight)
     =.  peer-results
       (~(put by peer-results) transfer [%.n message local-repository.flight])
@@ -2941,6 +3211,127 @@
     ==
   :_  this
   (weld cancel-cards result-cards)
+::
+++  peer-object-fragments
+  |=  [transfer=@uv revision=@ud fragments=(list object-fragment:git-peer)]
+  ^-  (quip card _this)
+  ?.  =(src.bowl our.bowl)  `this
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer)
+  ?~  found  `this
+  =/  flight=peer-receive  u.found
+  ?.  =(%objects mode.flight)  `this
+  ?.  ?&((gth revision 0) (lte revision pages.flight))
+    (peer-snapshot-fail transfer 'Fine repository fragment page used an invalid revision')
+  ?:  =((lent fragments) 0)
+    (peer-snapshot-fail transfer 'Fine repository fragment page was empty')
+  ?:  (gth (lent fragments) 512)
+    (peer-snapshot-fail transfer 'Fine repository fragment page exceeded 512 fragments')
+  =/  page-bytes=@ud
+    %+  roll  fragments
+    |=  [fragment=object-fragment:git-peer sum=@ud]
+    (add p.data.fragment sum)
+  ?:  (gth page-bytes 4.194.304)
+    (peer-snapshot-fail transfer 'Fine repository fragment page exceeded four MiB')
+  =/  assembled=(unit peer-receive)
+    =/  remaining  fragments
+    =/  next=peer-receive  flight
+    =/  seen=(set [oid:git @ud])  ~
+    |-
+    ?~  remaining  `next
+    =/  fragment=object-fragment:git-peer  i.remaining
+    ?.  ?|  ?&  =(total.fragment 0)
+      =(offset.fragment 0)
+      =(p.data.fragment 0)
+      =(q.data.fragment 0)
+            ==
+            ?&  (gth total.fragment 0)
+                (lte total.fragment peer-stream-max-object-bytes)
+                (lth offset.fragment total.fragment)
+                (gth p.data.fragment 0)
+                (lte p.data.fragment 1.048.576)
+                (lte (met 3 q.data.fragment) p.data.fragment)
+                (lte (add offset.fragment p.data.fragment) total.fragment)
+            ==
+        ==
+      ~
+    ?:  (~(has in seen) [oid.fragment offset.fragment])  ~
+    ?:  (~(has by objects.next) oid.fragment)  ~
+    ?.  (lth received.next expected.next)  ~
+    =/  prior=(unit peer-object-assembly)
+      (~(get by assemblies.next) oid.fragment)
+    =/  current=peer-object-assembly
+      ?~(prior [kind.fragment total.fragment 0 [0 0]] u.prior)
+    ?.  ?&  =(kind.fragment kind.current)
+            =(total.fragment total.current)
+            =(offset.fragment next.current)
+        ==
+      ~
+    =/  full-data=octs
+      (join:git-codec data.current data.fragment)
+    =/  next-offset=@ud
+      (add offset.fragment p.data.fragment)
+    ?:  ?&  (lth next-offset total.fragment)
+            !=(p.data.fragment 1.048.576)
+        ==
+      ~
+    =/  next-assembly-bytes=@ud
+      (add assembly-bytes.next p.data.fragment)
+    ?:  (gth next-assembly-bytes peer-stream-max-assembly-bytes)  ~
+    =/  next-seen=(set [oid:git @ud])
+      (~(put in seen) [oid.fragment offset.fragment])
+    ?:  =(next-offset total.fragment)
+      ?.  =(oid.fragment (object-oid:git-codec kind.fragment full-data))  ~
+      =/  completed=peer-receive
+        %=  next
+          assemblies  (~(del by assemblies.next) oid.fragment)
+          assembly-bytes  (sub next-assembly-bytes total.fragment)
+          assembly-count  ?~(prior assembly-count.next (sub assembly-count.next 1))
+          objects     (~(put by objects.next) oid.fragment [kind.fragment full-data])
+          received    +(received.next)
+        ==
+      $(remaining t.remaining, next completed, seen next-seen)
+    =/  partial=peer-object-assembly
+      [kind.fragment total.fragment next-offset full-data]
+    ?:  ?&  ?=(~ prior)
+            (gte (add received.next assembly-count.next) expected.next)
+        ==
+      ~
+    =/  continued=peer-receive
+      %=  next
+        assemblies      (~(put by assemblies.next) oid.fragment partial)
+        assembly-bytes  next-assembly-bytes
+        assembly-count  ?~(prior +(assembly-count.next) assembly-count.next)
+      ==
+    $(remaining t.remaining, next continued, seen next-seen)
+  ?~  assembled
+    (peer-snapshot-fail transfer 'Fine repository fragment page was malformed, duplicate, non-contiguous, inconsistent, or content-invalid')
+  =/  next=peer-receive
+    %=  u.assembled
+      completed   (~(put in completed.u.assembled) revision)
+      progress-at  now.bowl
+    ==
+  ?:  ?&  =(revision pages.next)
+          ?|  !=(received.next expected.next)
+              ?=(^ assemblies.next)
+          ==
+      ==
+    (peer-snapshot-fail transfer 'Fine repository fragment stream ended with incomplete objects')
+  =.  peer-receiving  (~(put by peer-receiving) transfer next)
+  ?.  =(received.next expected.next)
+    =/  next-revision=@ud  +(revision)
+    ?:  (gth next-revision pages.next)
+      (peer-snapshot-fail transfer 'Fine repository fragment stream ended before all objects completed')
+    =/  next-path=path
+      /g/x/(scot %ud next-revision)/urgit//1/fine/(peer-fine-name transfer)
+    :_  this
+    :~  [%pass /peer/fine/(scot %uv transfer)/(scot %ud next-revision) %keen %.n source.flight next-path]
+    ==
+  ?.  =(revision pages.next)
+    (peer-snapshot-fail transfer 'Fine repository fragment stream completed before the announced final page')
+  =/  finished=(quip card _this)  (peer-finish transfer)
+  =/  release=card
+    (peer-card source.flight /peer/release/(scot %uv transfer) [%release transfer])
+  [(weld [release ~] -.finished) +.finished]
 ::
 ++  peer-snapshot
   |=  [transfer=@uv incoming=(map oid:git object:git)]
@@ -4928,8 +5319,9 @@
     ?^  conflict
       :_  this
       (api-error eyre-id 409 u.conflict)
-    =/  transfer=@uv
+    =/  raw-transfer=@uv
       `@uv`(shas %git-peer-transfer (cat 3 eny.bowl request-count))
+    =/  transfer=@uv  (peer-object-transfer raw-transfer)
     =.  request-count  +(request-count)
     =/  base-objects=(map oid:git object:git)
       ?~(existing ~ objects.u.existing)
@@ -4937,6 +5329,7 @@
       (silt (turn ~(tap by base-objects) |=(entry=[oid:git object:git] -.entry)))
     =/  flight=peer-receive
       :*  %fork
+          %pack
           u.source
           u.source-repository
           u.local-repository
@@ -4953,6 +5346,9 @@
           ~
           now.bowl
           ~
+          ~
+          0
+          0
           base-objects
       ==
     =.  peer-receiving  (~(put by peer-receiving) transfer flight)
@@ -7965,6 +8361,15 @@
         (fail 'Fine repository snapshot is unavailable')
       ?.  =(%noun p.q.sage)
         (fail 'Fine repository snapshot has the wrong mark')
+      ?:  =(%objects mode.u.found)
+        =/  fragments=(unit (list object-fragment:git-peer))
+          %-  mole
+          |.(;;((list object-fragment:git-peer) +.q.q.sage))
+        ?~  fragments
+          (fail 'Fine repository object page has the wrong shape')
+        [%object-fragments u.transfer u.revision u.fragments]
+      ?.  =(%pack mode.u.found)
+        (fail 'Fine repository transfer has an unsupported mode')
       =/  packed=(unit octs)
         %-  mole
         |.(;;(octs +.q.q.sage))
@@ -7977,6 +8382,10 @@
       [%snapshot u.transfer objects.u.decoded]
     =/  snapshot-card=card
       [%pass /peer/snapshot/(scot %uv u.transfer) %agent [our.bowl %urgit] %poke %git-peer !>(packet)]
+    ?:  ?=([%object-fragments *] packet)
+      :_  this
+      :~  snapshot-card
+      ==
     ?.  ?=([%snapshot *] packet)
       :_  this
       :~  snapshot-card
@@ -8220,7 +8629,7 @@
       %+  turn  (gulf 1 count)
       |=  revision=@ud
       [%pass /peer/cull/(scot %uv u.transfer)/(scot %ud revision) %cull [%ud revision] /fine/(peer-fine-name u.transfer)]
-    :_  this(peer-serving (~(del by peer-serving) u.transfer))
+    :_  this(peer-serving (~(del by peer-serving) u.transfer), peer-stream-jobs (~(del by peer-stream-jobs) u.transfer))
     culls
   ::
       [%peer %forge-timeout @ ~]
