@@ -1910,6 +1910,12 @@
     /g/x/(scot %ud revision)/urgit//1/browse/(scot %uv request)
   [%pass /peer/browse-cancel/(scot %uv request)/(scot %ud revision) %arvo %a %yawn [peer scry-path]]
 ::
+++  peer-serve-lifetime
+  |=  [mode=?(%pack %objects) pages=@ud]
+  ^-  @dr
+  ?:  =(%pack mode)  ~m10
+  (min ~d1 (add ~m10 (mul pages ~m2)))
+::
 ++  peer-object-capability  0x7572.6769.742d.6f62
 ::
 ++  peer-stream-max-objects  25.000
@@ -3022,7 +3028,7 @@
       [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
     =/  final-cards=(list card)
       :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent packed-pages)])]
-          [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
+          [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %pack (lent packed-pages)))]
       ==
     :_  this
     (weld cleanup-cards (weld object-pages final-cards))
@@ -3039,7 +3045,7 @@
   :_  this
   %+  weld  cleanup-cards
   :~  (peer-card our.bowl /peer/stream-next/(scot %uv transfer.req) [%stream-next transfer.req])
-      [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl ~m10)]
+      [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %objects pages))]
   ==
 ::
 ++  peer-stream-next
@@ -8417,7 +8423,7 @@
       (~(get by fine-progress.u.found) u.revision)
     ?.  ?~(previous %.y (gth fag.rate fag.u.previous))  `this
     =/  next=peer-receive
-      u.found(progress-at now.bowl, fine-progress (~(put by fine-progress.u.found) u.revision [fag.rate tot.rate]))
+      u.found(fine-progress (~(put by fine-progress.u.found) u.revision [fag.rate tot.rate]))
     =.  peer-receiving  (~(put by peer-receiving) u.transfer next)
     `this
   ::

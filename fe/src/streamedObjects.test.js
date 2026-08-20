@@ -23,6 +23,7 @@ const onSave = arm('on-save', 'on-load')
 const onLoad = arm('on-load', 'on-poke')
 const handlePeer = arm('handle-peer', 'peer-catalog-request')
 const peerTransferYawns = arm('peer-transfer-yawns', 'peer-object-pages')
+const peerServeLifetime = arm('peer-serve-lifetime', 'peer-object-capability')
 const peerObjectPages = arm('peer-object-pages', 'peer-object-batch-count')
 const peerObjectBatchCount = arm('peer-object-batch-count', 'peer-object-batch')
 const peerObjectBatch = arm('peer-object-batch', 'peer-browse-pages')
@@ -44,6 +45,10 @@ const fineHandler = onArvo.slice(
 const serveTimeout = onArvo.slice(
   onArvo.indexOf('[%peer %serve-timeout @ ~]'),
   onArvo.indexOf('[%peer %forge-timeout @ ~]'),
+)
+const rateHandler = onArvo.slice(
+  onArvo.indexOf('[%peer %rate @ @ ~]'),
+  onArvo.indexOf('[%peer %browse @ @ ~]'),
 )
 
 test('raw-object streaming adds a new begin packet and authenticated self packets', () => {
@@ -337,4 +342,15 @@ test('object-mode cancellation yawns only the one issued page while pack mode st
     peerTransferYawns.indexOf('=/  pending-pages'),
   )
   assert.doesNotMatch(objectBranch, /gulf/)
+})
+
+test('streamed snapshots scale their source lifetime while Fine rates do not hide page stalls', () => {
+  assert.match(peerServeLifetime, /mode=\?\(%pack %objects\)/)
+  assert.match(peerServeLifetime, /=\(%pack mode\)\s+~m10/)
+  assert.match(peerServeLifetime, /\(min ~d1 \(add ~m10 \(mul pages ~m2\)\)\)/)
+  assert.match(peerPrepare, /peer-serve-lifetime %pack/)
+  assert.match(peerPrepare, /peer-serve-lifetime %objects/)
+  assert.match(rateHandler, /fine-progress/)
+  assert.doesNotMatch(rateHandler, /progress-at now\.bowl/)
+  assert.match(onArvo, /Fine repository read stalled without fragment progress/)
 })
