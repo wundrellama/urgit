@@ -14,7 +14,8 @@ measurement of the editing.
 |---|---|---|
 | `join-all.md` | opus-5, effort high, 160 turns | **landed** — `22f2f77`, success at 123 turns, $9.79. Report: `JOIN-ALL-PERFORMANCE.md` |
 | `apply-delta.md` | opus-5, effort high, 200 turns | **stopped at D1, correctly** — `7c1b1ba`, 110 turns, $11.28. The exponent came back 1.09, which is the brief's own stop condition. Report: `QUESTIONS.md`. Rewrite landed separately as `bf3dbea` on the operator's ruling. |
-| `push-defects.md` | opus-5, effort high | dispatched — see below |
+| `push-defects.md` | opus-5, effort high, 200 turns | **landed** — `7c86699`, `f70e6a8`, `455bcb6`, 123 turns, $10.04. Report: `PUSH-DEFECTS.md`. Also verified `bf3dbea` in-tree over 637 REF_DELTA objects at chain depth 6. |
+| `resolve-entries.md` | opus-5, effort high | dispatched — see below |
 | `archive-progress.md` | not yet | — |
 
 ## `join-all.md`
@@ -102,6 +103,53 @@ either way.
 The brief also carries a D5 asking the run to report whether its push round trip
 came back byte-identical — that is the outstanding in-tree verification of
 `bf3dbea`.
+
+Outcome: **both fixed and landed.** `7c86699` accepts end-of-payload as a ref
+terminator; `f70e6a8` adds a `receive-probe` arm and answers the probe after the
+authorization check and before parsing, so no policy runs over an empty command
+list. Fix 1 was installed alone first and confirmed to fix defect 1 while
+leaving defect 2 failing, so each commit is verified in isolation.
+
+Evidence: one command pushing 5 branches and 2 tags with no `-c` flags, 11.4 MB,
+all 7 refs created; clone back on v0 and v2 both matching the source object-set
+hash with `git fsck --full` clean.
+
+The `protocol.version=2` 400 recorded as unexplained in
+`JOIN-ALL-PERFORMANCE.md` §6 was **defect 2 all along**. Git 2.55 does not use
+v2 for `receive-pack` and sends no `Git-Protocol` header on a push, so the wire
+was v0 in both cases; body size decided, not protocol version.
+
+D5 came back clean: the recorded push carried **637 `REF_DELTA` objects on
+chains to depth 6**, and three independent checks agreed. This is the in-tree
+verification `bf3dbea` was missing, and the first real exercise of the `%ref`
+branch of `resolve-pass`, which `QUESTIONS.md` §9 had listed as untested.
+
+The run also caught three rotated generator labels in
+`JOIN-ALL-PERFORMANCE.md` §4b. The values were all real and all matched, so the
+byte-identity conclusion was unaffected; corrected in `3d2d955`.
+
+## `resolve-entries.md`
+
+`QUESTIONS.md` §2e measured `resolve-entries` at **2.340 s**, which is 95% of a
+whole erpit pack decode, and §9 admits its contents were never attributed.
+
+The orchestrator found an arithmetic contradiction in the standing estimate
+before dispatch. At the top of the estimated range, 19 µs × 120,484
+instructions is 2.29 s, leaving 0.05 s for everything else — but
+`resolve-entries` also calls `object-oid` on every object, and `sha1-octs`
+makes two full passes (one `rev`, one SHA-1) over **202,472,812 canonical
+bytes**, counted from the packs. 0.05 s for that is 8 GB/s, which is not
+credible even with both arms jetted.
+
+So the 19 µs figure, the negligible-`object-oid` assumption, or the hint itself
+must be wrong. The likeliest is the first: 19 µs was fitted on the
+1,264-instruction object where each instruction copies a large chunk, and
+erpit's median deltified object carries 5 instructions.
+
+The brief marks that reasoning as the orchestrator's arithmetic rather than a
+measurement, and makes settling it D1. It grants bounded latitude on the fix
+with a stated preference, and explicitly authorizes "the top term is out of
+scope — here is where it lives" as a successful outcome rather than a failure.
 
 ## `archive-progress.md`
 
