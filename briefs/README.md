@@ -15,7 +15,8 @@ measurement of the editing.
 | `join-all.md` | opus-5, effort high, 160 turns | **landed** — `22f2f77`, success at 123 turns, $9.79. Report: `JOIN-ALL-PERFORMANCE.md` |
 | `apply-delta.md` | opus-5, effort high, 200 turns | **stopped at D1, correctly** — `7c1b1ba`, 110 turns, $11.28. The exponent came back 1.09, which is the brief's own stop condition. Report: `QUESTIONS.md`. Rewrite landed separately as `bf3dbea` on the operator's ruling. |
 | `push-defects.md` | opus-5, effort high, 200 turns | **landed** — `7c86699`, `f70e6a8`, `455bcb6`, 123 turns, $10.04. Report: `PUSH-DEFECTS.md`. Also verified `bf3dbea` in-tree over 637 REF_DELTA objects at chain depth 6. |
-| `resolve-entries.md` | opus-5, effort high | dispatched — see below |
+| `resolve-entries.md` | opus-5, effort high, 200 turns | **landed** — `b53e06f`, `035673f`, 169 turns, $23.08. Attribution closes at 97.3%. Report: `RESOLVE-ENTRIES-PERFORMANCE.md` |
+| `gzip-request.md` | opus-5, effort high | dispatched — see below |
 | `archive-progress.md` | not yet | — |
 
 ## `join-all.md`
@@ -150,6 +151,55 @@ The brief marks that reasoning as the orchestrator's arithmetic rather than a
 measurement, and makes settling it D1. It grants bounded latitude on the fix
 with a stated preference, and explicitly authorizes "the top term is out of
 scope — here is where it lives" as a successful outcome rather than a failure.
+
+Outcome: **the attribution closes at 97.3%**, by two independent methods that
+agree. `apply-delta` 56.4%, `object-oid` 39.5% (of which `rev` alone is 26.9%),
+map puts 1.2%.
+
+Both of the orchestrator's suspect propositions were false. **19 µs does not
+generalize** — the real cost is `18.1 µs + 10.86 µs × instructions`, so 19 µs is
+just the value at a 2-instruction object. And `object-oid` is not negligible at
+39.5%. The orchestrator's arithmetic also compared a timing measured on the
+repack against instruction counts from the three original packs; the repack has
+99,603 instructions and 206,358,767 canonical bytes, independently re-derived at
+99,665 and 206,345,791 (erpit gained commits between the two counts).
+
+The top term was not the byte copying. It was the seven `optional-byte` calls
+per copy instruction — **546 ms, 44.8% of `apply-delta`**, against 7.2% for the
+actual copying. `b53e06f` reads each field as one `cut` with a
+`copy-instruction-sparse` fallback for gapped masks.
+
+`object-oid` was correctly left alone as out of scope: `rev` costs 590 ms
+(350 MB/s) against SHA-1's 187 ms (1.10 GB/s), so we reverse 206 MB purely to
+hand `sha-1l` big-endian bytes. The fix would be a little-endian SHA-1 arm in
+`sys/hoon.hoon` plus a Vere jet near `u3we_shal` — named, not shipped.
+
+External stopwatch on a stock `git push`: **1.87 s → 1.56 s**.
+
+## `gzip-request.md`
+
+The mirror image of `push-defects.md`, on the fetch side.
+`RESOLVE-ENTRIES-PERFORMANCE.md` §6 recorded it: `git clone` of a many-ref
+repository returns HTTP 400 because `git` sets `Content-Encoding: gzip` on a
+large `upload-pack` request body and `parse-upload-request` reads the gzip magic
+as a pkt-line length. Proxy-recorded: 1,438 bytes on the wire, 3,023 gunzipped,
+a valid v2 `fetch` with 58 wants. Both v0 and v2 fail identically.
+
+Confirmed by the orchestrator before dispatch: nothing in `desk/` reads
+`content-encoding` at all, and `handle-upload-pack` goes straight from the
+empty-body check to `v2-command` on the raw body.
+
+The brief decides the header handling and leaves the decompression route as
+bounded latitude with a stated preference (strip the gzip wrapper, feed
+`inflate-deflate`, use the trailer's ISIZE as the size limit) and both traps
+named: the portable inflater is quadratic in output size and needs an input
+bound, and the `%zlib-v0` jet route may be circular because zlib's trailer is an
+Adler-32 over output you do not yet have.
+
+D4 asks it to check the same hole on `receive-pack` and the webhook path, and
+to make sure `v2-command` sees decompressed bytes — it reads the body *before*
+`parse-upload-request` is reached, so a gzipped v2 request would misroute before
+parsing.
 
 ## `archive-progress.md`
 
