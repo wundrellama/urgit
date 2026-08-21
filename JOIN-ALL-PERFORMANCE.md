@@ -293,9 +293,9 @@ of each product was compared. The eight the brief names are in bold.
 | `git-inflate-vector` | `0x16f78288` | `0x16f78288` |
 | `git-migration-vector` | `0x58f645c3` | `0x58f645c3` |
 | **`git-ofs-delta-pack-vector`** | `0x0f9dcb95` | `0x0f9dcb95` |
-| `git-shallow-vector` | `0x16f78288` | `0x16f78288` |
-| **`git-pack-decode-vector`** | `0x05a280f3` | `0x05a280f3` |
-| **`git-pack-vector`** | `0x664d5ac4` | `0x664d5ac4` |
+| `git-shallow-vector` | `0x664d5ac4` | `0x664d5ac4` |
+| **`git-pack-decode-vector`** | `0x16f78288` | `0x16f78288` |
+| **`git-pack-vector`** | `0x05a280f3` | `0x05a280f3` |
 | **`git-stock-pack-vector`** | `0x74cfc008` | `0x74cfc008` |
 | `git-storage-vector` | `0x1356dfd3` | `0x1356dfd3` |
 | **`git-tree-vector`** | `0x338541cb` | `0x338541cb` |
@@ -306,6 +306,16 @@ The repeated `0x58f645c3` is `[%noun %.y]`: those five generators assert their
 invariants internally with `?>` and return a boolean. A regression makes the
 thread crash rather than change the mug — `git-archive-vector` in particular
 asserts eight exact tar byte offsets.
+
+**Correction (2026-08-21).** The `git-shallow-vector`, `git-pack-decode-vector`
+and `git-pack-vector` rows above originally carried each other's mugs, rotated.
+The values were all real and every one matched before and after, so the
+byte-identity conclusion is unaffected — only the labels were wrong. The
+`push-defects` run re-ran all 18 generators and caught it. The corrected
+assignment follows from the return shapes: `git-pack-decode-vector` returns
+`[%.y %.y %.y]`, the same noun as `git-inflate-vector` and `git-zlib-vector`,
+so it must share their `0x16f78288`; `git-pack-vector` returns `[p.pack q.pack]`
+and `git-shallow-vector` returns a list of ten booleans.
 
 ### 4c. A fixture built for the edge cases
 
