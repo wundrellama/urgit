@@ -13,6 +13,7 @@ measurement of the editing.
 | brief | dispatched | result |
 |---|---|---|
 | `join-all.md` | opus-5, effort high, 160 turns | **landed** — `22f2f77`, success at 123 turns, $9.79. Report: `JOIN-ALL-PERFORMANCE.md` |
+| `apply-delta.md` | opus-5, effort high | dispatched — see below |
 | `archive-progress.md` | not yet | — |
 
 ## `join-all.md`
@@ -30,6 +31,30 @@ scrying `%cx` rather than reading the desk mount. That last check matters — a
 detached mount silently discarded three benchmark runs earlier in this project.
 
 Raw dispatch result: `join-all-run.json`.
+
+## `apply-delta.md`
+
+The same defect class on the push side. `apply-delta`
+(`desk/lib/git-delta.hoon:78,85`) rebuilds a deltified object one instruction at
+a time, recopying the accumulator through `join` on every step.
+
+Found by the orchestrator while verifying the `join-all` run, which had scoped
+its audit to `join-all` callers and did not look at `join` in accumulator loops.
+
+Verified before dispatch by parsing erpit's own packfiles: 6,222 deltified
+objects across three packs, worst single object 1,264 instructions to build
+247 KB. Whole-pack copy volume ~5.24 GB against 190 MB linear — 28×. That is an
+analytic model of the current code from real instruction counts, not a
+wall-clock measurement; producing the timing is the run's D1.
+
+Live and unjetted on every `git push`: `handle-receive-pack` →
+`decode-pack-with` → `resolve-pass` → `apply-delta`. Unlike DEFLATE there is no
+`%zlib-v0`-style jet to hide behind.
+
+The brief pre-flags one trap as a STOP: `git-inflate.hoon`'s `copy-distance`
+looks like the same pattern but reads back from its own accumulator (the LZ77
+window), so the deferred-list rewrite is invalid there and would produce
+silently wrong output.
 
 ## `archive-progress.md`
 
