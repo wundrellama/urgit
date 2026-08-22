@@ -111,7 +111,9 @@ revived; `!<` will crash otherwise, by design.
 
 ## 2. T3a — does `%prog` deliver on a chum
 
-**No answer, and not because `%prog` failed. The path was never reachable.**
+**Half answered. `%prog` is reachable and does not crash on a chum; I could not
+show a `%rate` gift arriving.** The reason it took work to get even that far is
+that on a stock fake network the path does not exist at all.
 
 `peer-directed` decides `%archive` by scrying `//chums` and requiring the
 target to be present, `%known`, with a lane and live QoS. On both ships, at
