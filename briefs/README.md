@@ -16,7 +16,8 @@ measurement of the editing.
 | `apply-delta.md` | opus-5, effort high, 200 turns | **stopped at D1, correctly** — `7c1b1ba`, 110 turns, $11.28. The exponent came back 1.09, which is the brief's own stop condition. Report: `QUESTIONS.md`. Rewrite landed separately as `bf3dbea` on the operator's ruling. |
 | `push-defects.md` | opus-5, effort high, 200 turns | **landed** — `7c86699`, `f70e6a8`, `455bcb6`, 123 turns, $10.04. Report: `PUSH-DEFECTS.md`. Also verified `bf3dbea` in-tree over 637 REF_DELTA objects at chain depth 6. |
 | `resolve-entries.md` | opus-5, effort high, 200 turns | **landed** — `b53e06f`, `035673f`, 169 turns, $23.08. Attribution closes at 97.3%. Report: `RESOLVE-ENTRIES-PERFORMANCE.md` |
-| `gzip-request.md` | opus-5, effort high | dispatched — see below |
+| `gzip-request.md` | opus-5, effort high, 200 turns | **landed** — `74ad8c0`, `e19cfa5`, 128 turns, $13.27. Report: `GZIP-REQUEST.md`. Proved the zlib-jet route circular by experiment. |
+| `upload-pack-probe.md` | opus-5, effort high | dispatched — see below |
 | `archive-progress.md` | not yet | — |
 
 ## `join-all.md`
@@ -200,6 +201,59 @@ D4 asks it to check the same hole on `receive-pack` and the webhook path, and
 to make sure `v2-command` sees decompressed bytes — it reads the body *before*
 `parse-upload-request` is reached, so a gzipped v2 request would misroute before
 parsing.
+
+Outcome: **landed.** `74ad8c0` adds `lib/git-gzip.hoon` (RFC 1952 walk, ISIZE as
+the inflater's size limit, 262,144-byte bound) plus `decoded-body` in
+`urgit.hoon`, which decodes once and binds ahead of every reader. No
+`u.body.request.req` remains in either Git handler.
+
+The run **proved route 2 circular rather than assuming it**: three zlib streams
+differing only in their last four bytes, handed to the live `%zlib-v0` jet.
+Correct Adler-32 decoded; zeroed Adler-32 and no-trailer both crashed, with
+zlib's own `incorrect data check` in the pier log. The jet validates a checksum
+over output the caller does not yet have.
+
+The D4 trap was worse than the brief described. A `git fetch` gzips its
+**`ls-refs`** POST at 1,047 bytes while its `fetch` POST is 288 — the small
+request compresses first, so fixing only `parse-upload-request` would have
+misrouted the request that fails most often.
+
+Trigger measured to the byte: **git 2.55.0 gzips above 1,024 bytes**, bracketed
+by padding `GIT_USER_AGENT`, which git copies verbatim into the `agent=`
+pkt-line. Independent of `protocol.version` and `http.postBuffer`.
+
+Two judgment calls the run got right on its own. It left the **webhook** raw
+because the HMAC is computed over the raw body, so decompressing first would
+break every signature that works today. And it established that git 2.55 never
+gzips a `receive-pack` body — six pushes from 325 to 61,764 bytes, all plain,
+including one at 1,750 bytes past the threshold — while still wiring the decoder
+there for other clients.
+
+32/32 fail-closed cases, 19 vectors, three repositories cloned on both protocols
+with matching object sets.
+
+## `upload-pack-probe.md`
+
+The last known defect of this class. `handle-upload-pack` has no equivalent of
+`receive-probe:git-protocol`, so it answers git's 4-byte `0000` probe with 400.
+`f70e6a8` fixed exactly this on the push side; the fetch side was never fixed
+because nothing reached it.
+
+Recorded in `GZIP-REQUEST.md` §6, measured two ways: raw HTTP with a 4-byte body
+returns 400, and a v0 clone with `http.postBuffer=1024` POSTs 4 bytes, gets 400,
+and dies. At default settings it needs an `upload-pack` request above 1 MiB —
+about 21,000 refs.
+
+Not a duplicate of the gzip fix: the two paths are mutually exclusive. Below
+`http.postBuffer` git gzips the body; above it git switches to probe + chunked
+and sends the body uncompressed.
+
+The fix is close to mechanical, so the brief is short and spends its weight on
+verification. Its one judgment call is whether to rename the already-generic
+`receive-probe` and share it, with the rename preferred and a second arm
+allowed — but not two copies of the same three lines. D3 asks it to answer, in
+the report, which cases besides the probe send a bare flush on `upload-pack`
+and whether 200-with-empty-body is right for each.
 
 ## `archive-progress.md`
 
