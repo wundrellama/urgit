@@ -96,6 +96,12 @@ observation.
 
 ### The schema
 
+> **Superseded on 2026-08-22 by `STATE-MIGRATION.md`.** The queue field now
+> lives in a new `state-3` and `on-load` migrates a stored `%2` forward, so a
+> pier holding a pre-change `%2` state no longer has to be nuked. The account
+> below is the state of the schema at `9f6bece` and is kept for the record. The
+> queue fix itself is unchanged.
+
 `state-2` changed in place, per `AGENTS.md`: no `state-3`, no migration, no
 compatibility shim. The brief's own instruction ("change the schema in place,
 nuke and revive") is the one followed, over its preceding sentence about a
