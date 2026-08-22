@@ -233,6 +233,72 @@ only.
 
 ---
 
+## 8. `%rate` is unreachable on the Mesa path too, because the runtime never sends the task
+
+**Severity: medium — blocks instrumentation, not throughput.** This closes item 4.
+Item 4 showed `%rate` is dead on Fine and pointed at Mesa as the path that might
+work. It does not.
+
+Measured 2026-08-22 on Vere 4.6, `brass-408k-1.pill`, two fake galaxies, a chum pair.
+Full evidence in `ARCHIVE-PROGRESS.md`. Line cites are from the **running** kernel,
+read back out of the ship: `ames.hoon` 524,590 bytes, `lull.hoon` 163,765 bytes.
+These differ from the line numbers in items 4 and 5, which cite the 553,425-byte
+`ames.hoon` under `moons/naprys-nocsyp-dozzod-labbel`.
+
+`%prog` does reach `+ev-add-rate` on a chum and does register the cell interest.
+Proved by a control: a peek with `%prog` gives a `%rate` gift, the same peek without
+`%prog` does not.
+
+The gift is empty. `+ev-give-sage` (`ames.hoon:9795`) hard-codes it:
+
+```hoon
+%.  (ev-emit:c hen %give %rate her^path ~)
+```
+
+`+ev-give-rate` (`9798`) is the arm that carries `[boq fag tot]`, and during a
+transfer nothing calls it. Its only real caller is `+pe-rate` (`13227`), which
+handles the `%rate` **task**. `lull.hoon:891` says where that task comes from:
+
+```hoon
+[%rate =spar rate]          :: get rate progress for +peeks, from unix
+```
+
+**Vere 4.6 never sends it.** Disassemble the binary and count the 4-byte mote
+constants: `%rate` (`0x65746172`) appears **0** times, against `%mess` 1, `%heer` 3
+and `%whey` 1. `mesa.c` reassembles fragments in C and injects one finished message.
+A 22.9 MB peek that took 24.7 seconds printed `hear page packet` once. Arvo never
+sees a fragment, so no vane change can count fragments.
+
+**Ask:** send the `%rate` task from `mesa.c`, at the `feq` the listener asked for.
+Everything on the Arvo side is already written.
+
+**A second defect blocks that fix.** `+ev-add-rate` (`9854`) records the interest
+with `boq=*@ud`, which is 0:
+
+```hoon
+u.ms(for (~(put ju for.u.ms) hen %rate boq=*@ud freq))
+```
+
+`+ev-give-rate` (`9804`) then asserts, rather than filters:
+
+```hoon
+?>  ?&  ?=(^ rate)
+        =(boq.rate boq.int)
+        =(0 (mod fag.rate feq.int))
+    ==
+```
+
+Mesa fragments are `boq=13` (item 7). A runtime that starts sending a real `%rate`
+will fail `=(boq.rate boq.int)` and crash the Ames event. Fix both together: take
+the `boq` from the `%prog` caller, or make `+ev-give-rate` skip a mismatch the way
+`+fi-give-rate` does.
+
+**urgit consequence:** unchanged from item 4. The `[%peer %rate @ @ ~]` arm at
+`app/urgit.hoon:8916` stays as dead code, on both transports. urgit sends no `%prog`
+and should not start.
+
+---
+
 ## Recording discipline
 
 Everything above was measured without modifying the source kernel tree. The
