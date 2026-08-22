@@ -3,8 +3,13 @@
 ## Status
 
 This brief supersedes the earlier `%archive` sub-page progress scope. That work
-is still here as Tier 3, unchanged in substance, but two defects found during a
-live production trial come first — they are cheaper and they hurt more.
+is still here as Tier 3, unchanged in substance, but three defects found during
+a live production trial come first — they are cheaper and they hurt more.
+
+**Four tiers, in order: Tier 0 is a correctness bug (a reload strands a fork),
+Tiers 1-2 are the visibility defects the operator actually hit, Tier 3 is the
+original progress work.** Do not let Tier 3 consume the run before the earlier
+tiers are done and proven.
 
 Six performance and correctness fixes have landed on this branch. Read
 `briefs/README.md` for the ledger. None of them touched the progress or
@@ -25,6 +30,74 @@ ms with no log output, concluded it was idle, and built an elaborate wrong
 theory about a stalled handshake. **The transfer was working perfectly the
 entire time.** A working transfer and a dead one are indistinguishable today.
 That is the defect.
+
+---
+
+## Tier 0 — a reload strands a fork permanently
+
+**Do this first. It is a correctness bug, not a display bug, and the later
+tiers touch the same lifecycle.**
+
+### The defect, confirmed at source
+
+`peer-prepare-queue` is declared outside the persisted state
+(`desk/app/urgit.hoon:2047`) and `on-load` explicitly wipes it (`:2088`):
+
+```hoon
+:_  this(state loaded, ..., peer-prepare-queue ~, peer-serving ~, ...)
+```
+
+The serve flow is three steps:
+
+1. a fork request arrives, gets queued in `peer-prepare-queue`, and the server
+   sends `%accepted` back to the requester (`:3088-3096`)
+2. a `~s1` Behn timer fires `/peer/prepare-start`
+3. the timer handler looks the transfer up in the queue and builds the snapshot
+   (`:8689-8702`)
+
+**If the agent reloads between steps 1 and 3, the queue is empty and the timer
+finds nothing.** It hits `?~ queued \`this` and returns silently. The requester
+is holding an `%accepted` and waits forever for pages nobody will build. The
+transfer shows as active on the acquiring ship and never resolves.
+
+An agent reload in that window is not exotic. Every `|install`, every OTA sweep
+that touches the desk, and every desk commit triggers one.
+
+### Decided direction
+
+Move `peer-prepare-queue` into the persisted state so it survives a reload, and
+re-arm the timer on load for anything still queued.
+
+`state-2` is small (`desk/sur/git.hoon:333-338`): `repositories`, `peers`,
+`github-token`. Adding a field means a **`state-3`**. Per `AGENTS.md` this
+project keeps persisted schemas at the current version and nukes/revives during
+development rather than writing migrations — **follow that**: change the schema
+in place, nuke and revive, do not add a compatibility shim.
+
+On load, for every entry still in the queue, re-arm the `~s1`
+`/peer/prepare-start` timer. A queue that survives but never gets its timer back
+is the same bug with extra steps.
+
+### The judgment call
+
+`peer-serving`, `peer-receiving`, `peer-stream-jobs` and the browse queues are
+wiped by the same line and have the same shape of problem. **Do not fix them all
+in this run.** Fix `peer-prepare-queue`, because it strands the requester with no
+recovery path. For the others, say in your report which ones you believe have
+the same defect and what a fix would need — a written finding is the deliverable
+there, not a change.
+
+If moving the queue turns out to require touching state the later tiers also
+change, say so and sequence it rather than doing both at once.
+
+### Prove it
+
+- **Reproduce the strand**: start a fork, force an agent reload during the
+  `~s1` window, and show the requester stuck at active. If you cannot reproduce
+  it, say so plainly — the reading above is from source, not from a live repro,
+  and it may be wrong.
+- **Show the same sequence completing after the fix.**
+- A normal fork with no reload still works. This is the regression that matters.
 
 ---
 
@@ -193,13 +266,15 @@ crashes the vane. Gate on `=(%archive mode.flight)` and say where you put it.
 
 `TRANSFER-VISIBILITY.md` at the repository root:
 
-1. What a real fork now prints and shows, per tier.
-2. The T3a result first: does `%prog` deliver on a chum, yes or no, with
+1. Tier 0 first: did the strand reproduce, and does it survive a reload now.
+2. The T3a result: does `%prog` deliver on a chum, yes or no, with
    evidence.
-3. What you changed per file and why.
-4. Your `feq` choice and its event cost.
-5. The subscription design: what path, what facts, what happens on reconnect.
-6. **A section titled "What I could not measure and why."** Do not omit it.
+3. What a real fork now prints and shows, per tier.
+4. What you changed per file and why.
+5. Your `feq` choice and its event cost.
+6. The subscription design: what path, what facts, what happens on reconnect.
+7. Which other transient-state maps you believe carry the Tier 0 defect.
+8. **A section titled "What I could not measure and why."** Do not omit it.
 
 ## Fences
 
@@ -230,17 +305,14 @@ crashes the vane. Gate on `=(%archive mode.flight)` and say where you put it.
   landed, verified work.
 - Commit on `feat/progress-and-joinall`. **Do not push.**
 
-## Known adjacent bug — not yours, but do not make it worse
+## Known adjacent bug — related, and now Tier 0
 
-`peer-prepare-queue` is transient state that `on-load` wipes
-(`desk/app/urgit.hoon:2088`). The serve flow queues a request, sends
-`%accepted`, then relies on a `~s1` Behn timer to do the work. **An agent reload
-in that window strands the transfer permanently** — the requester holds an
-`%accepted` and waits forever.
-
-This is a real latent defect and it deserves its own fix. It is out of scope
-here. But your subscription work touches the same lifecycle, so do not deepen
-the dependency on transient state, and note it if you trip over it.
+The `peer-prepare-queue` strand described in Tier 0 was originally scoped as a
+separate dispatch. It was folded in here because it collides with this work in
+three places in `desk/app/urgit.hoon`: `on-load` at `:2088` (Tier 2 territory),
+`peer-archive-accept` at `:3417-3420` (Tier 3's main edit site), and the
+`on-arvo` timer handler at `:8696-8699`, adjacent to `on-watch`. Two runs
+editing those regions in the same 368 KB file would merge badly.
 
 ## Escape hatch
 
