@@ -111,6 +111,12 @@ revived; `!<` will crash otherwise, by design.
 
 ## 2. T3a — does `%prog` deliver on a chum
 
+> **Superseded on 2026-08-22 by `ARCHIVE-PROGRESS.md`, which answers this section
+> in full.** `%prog` does deliver a `%rate` gift on a chum. The gift carries
+> `rate = ~` and arrives once, at completion, so it cannot report progress. The
+> section below is the state of the question before that run and is kept for its
+> account of how the chum pair was built.
+
 **Half answered. `%prog` is reachable and does not crash on a chum; I could not
 show a `%rate` gift arriving.** The reason it took work to get even that far is
 that on a stock fake network the path does not exist at all.
@@ -489,10 +495,23 @@ transfer identifiers, so a reset changes nothing.
 
 ## 8. What I could not measure and why
 
-**Whether `%prog` delivers a `%rate` gift on a chum.** The delivery half of
-T3a. §2 establishes the chum pair and shows `%prog` is accepted without
-crashing, but no `%rate` gift was seen, and the request it was meant to track
-was never shown to be valid. What closes this is a Mesa peek whose path is
+**Whether `%prog` delivers a `%rate` gift on a chum.** ~~The delivery half of
+T3a.~~ **Answered on 2026-08-22. See `ARCHIVE-PROGRESS.md`.** The recipe below
+worked: grow a large noun into spider's scry namespace on the serving ship, chum
+that exact path, send `%prog` for the same spar in the same event, and take signs.
+A 22.9 MB peek resolves and delivers its `%sage`.
+
+The answer is negative. `%prog` does register its interest, and a `%rate` gift does
+arrive, but it carries `rate = ~` and it arrives once, at completion. The runtime
+holds the fragment counter and never sends the `%rate` task the vane waits for. Vere
+4.6 contains zero occurrences of the mote. Sub-page progress on `%archive` is not
+reachable from a desk, so T3b, T3c and T3d are not implementable as written. The
+kernel detail is item 8 of `specs/upstream-findings.md`.
+
+The original text of this entry follows, because the recipe in it is still the right
+one and the next run may need it: §2 establishes the chum pair and shows `%prog` is
+accepted without crashing, but no `%rate` gift was seen, and the request it was meant
+to track was never shown to be valid. What closes this is a Mesa peek whose path is
 known to resolve and whose payload is large enough to fragment: grow a large
 noun into a scry path on the serving ship, chum that exact path from the
 requester, then `%prog` the same spar and take signs. The urgit code already
@@ -572,11 +591,10 @@ three that were already red.
 
 ## 10. Left undone
 
-- **Tier 3 entirely.** T3b, T3c and T3d are not written. T3a is half answered
-  (§2): `%prog` is reachable and does not crash on a chum, but no `%rate` gift
-  was observed on a request I could show was valid. That is a different
-  situation from the negative the brief's stop condition anticipated, so it is
-  recorded as open rather than closed.
+- **Tier 3 entirely.** T3b, T3c and T3d are not written. T3a was half answered
+  here (§2) and is now closed by `ARCHIVE-PROGRESS.md`: the `%rate` gift arrives
+  but carries `rate = ~`, so T3b, T3c and T3d cannot be built as written. The
+  block is in Vere, not in urgit.
 - **The nineteen other transient maps.** Findings only, §7, as the brief
   directed.
 - **`waitForPeerTransfer` still polls** `/peer/transfers` every 750 ms while a
