@@ -93,8 +93,13 @@ mesa: ~pec: give %rate=/g/x/1/spider//1/probe/blob5     <- run C, %keen namespac
 ```
 
 `grep -cE 'bail:|crud'` over `~med`'s whole log is **0**, and the ship answers
-scries after every run. That confirms the earlier finding that `%prog` is safe on a
-chum. It is safe and it is useless.
+scries after every run. `~med` is the ship that received every `%prog`. That
+confirms the earlier finding that `%prog` is safe on a chum. It is safe and it is
+useless.
+
+The same grep on `~pec` returns 2. Both are mine, and neither involves `%prog`:
+`! /gx/~pec/spider/2//1/probe/blob2` and `! /gx/~pec/spider/3//1/probe/blob2`, from
+a thread that probed which revision a grown path lands on. The answer is 1.
 
 ### Which kernel this was measured against
 
