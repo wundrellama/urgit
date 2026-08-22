@@ -2005,6 +2005,149 @@
   ?~  remaining  total
   $(remaining t.remaining, total (add total p.data.+.i.remaining))
 ::
+::  transfer visibility: one projection, three consumers
+::
+::    $peer-ui-state is everything /peer/activity and /peer/transfers read.
+::    The two polling endpoints and the /peer/activity subscription all go
+::    through +peer-ui-json, so a subscriber and a poller can never disagree
+::    about shape.
+::
++$  peer-ui-state
+  $:  activities=(list peer-activity)
+      notes=(list notification-activity)
+      results=(map @uv peer-result)
+      receiving=(map @uv peer-receive)
+      outgoing=(map @uv peer-offer-flight)
+  ==
+::
+++  peer-ui-path  `path`/peer/activity
+::
+++  peer-ui-activity-json
+  |=  ui=peer-ui-state
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  activities.ui
+    |=  event=peer-activity
+    %-  pairs:enjs:format
+    :~  ['id' s+(scot %uv id.event)]
+        ['kind' s+kind.event]
+        ['direction' s+direction.event]
+        ['ship' s+(scot %p peer.event)]
+        ['repository' s+repository.event]
+        ['status' s+status.event]
+        ['message' s+message.event]
+        ['when' s+(scot %da when.event)]
+    ==
+  =/  notifications=(list json)
+    %+  turn  notes.ui
+    |=  event=notification-activity
+    %-  pairs:enjs:format
+    :~  ['id' s+(scot %uv id.event)]
+        ['event' s+event.event]
+        ['repository' s+repository.event]
+        ['message' s+message.event]
+        ['when' s+(scot %da when.event)]
+    ==
+  (pairs:enjs:format ~[['activity' [%a entries]] ['notifications' [%a notifications]]])
+::
+++  peer-ui-transfers-json
+  |=  ui=peer-ui-state
+  ^-  json
+  =/  entries=(list json)
+    %+  turn  ~(tap by results.ui)
+    |=  entry=[@uv peer-result]
+    =/  transfer=@uv  -.entry
+    =/  result=peer-result  +.entry
+    =/  flight=(unit peer-receive)  (~(get by receiving.ui) transfer)
+    =/  offer=(unit peer-offer-flight)  (~(get by outgoing.ui) transfer)
+    %-  pairs:enjs:format
+    :~  ['transfer' s+(scot %uv transfer)]
+        ['active' b+|(?=(^ flight) ?=(^ offer))]
+        ['ok' b+status.result]
+        ['message' s+message.result]
+        ['repository' s+repository.result]
+        ['received' n+(decimal ?~(flight 0 received.u.flight))]
+        ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
+        ['expectedBytes' n+(decimal ?~(flight 0 expected-bytes.u.flight))]
+        ['pages' n+(decimal ?~(flight 0 pages.u.flight))]
+        ['completedPages' n+(decimal ?~(flight 0 ~(wyt in completed.u.flight)))]
+        ['fineFragmentsReceived' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum)))))]
+        ['fineFragmentsTotal' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum)))))]
+    ==
+  (pairs:enjs:format ~[['transfers' [%a entries]]])
+::
+::  +peer-ui-json: what both polling endpoints return, in one object.  No
+::  third shape is invented; the keys are the ones already served.
+::
+++  peer-ui-json
+  |=  ui=peer-ui-state
+  ^-  json
+  =/  activity=json  (peer-ui-activity-json ui)
+  =/  transfers=json  (peer-ui-transfers-json ui)
+  ?.  ?=([%o *] activity)  activity
+  ?.  ?=([%o *] transfers)  activity
+  [%o (~(uni by p.activity) p.transfers)]
+::
+::  +peer-ui-digest: a cheap fingerprint of everything +peer-ui-json shows.
+::  Reads only scalars out of .receiving, never its object maps, so testing
+::  it on every event costs nothing that scales with repository size.
+::
+++  peer-ui-digest
+  |=  ui=peer-ui-state
+  ^-  *
+  :^    activities.ui
+      notes.ui
+    [~(tap by results.ui) ~(tap by outgoing.ui)]
+  %+  turn  ~(tap by receiving.ui)
+  |=  entry=[@uv peer-receive]
+  =/  flight=peer-receive  +.entry
+  :*  -.entry
+      received.flight
+      expected.flight
+      expected-bytes.flight
+      pages.flight
+      ~(wyt in completed.flight)
+      %+  roll  ~(val by fine-progress.flight)
+      |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum))
+      %+  roll  ~(val by fine-progress.flight)
+      |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum))
+  ==
+::
+::  +peer-ui-notify: append a fact when an event moved anything the transfer
+::  UI shows.  Gall discards facts for subscribers that have gone away, so
+::  this cannot crash the agent on a closed browser.
+::
+++  peer-ui-notify
+  |=  [before=peer-ui-state after=peer-ui-state cards=(list card)]
+  ^-  (list card)
+  ?:  =((peer-ui-digest before) (peer-ui-digest after))  cards
+  %+  snoc  cards
+  [%give %fact ~[peer-ui-path] %json !>((peer-ui-json after))]
+::
+::  +peer-mode-note: one line naming the chosen transfer mode and its size
+::
+++  peer-mode-note
+  |=  [mode=peer-transfer-mode objects=@ud bytes=@ud pages=@ud]
+  ^-  @t
+  %-  crip
+  ;:  weld
+    "serving "  (scow %ud objects)  " objects, "  (scow %ud bytes)
+    " bytes as %"  (trip `@tas`mode)  " in "  (scow %ud pages)
+    ?:(=(1 pages) " page" " pages")
+  ==
+::
+::  +peer-mode-tang: the same line, addressed, for the pier log
+::
+++  peer-mode-tang
+  |=  [transfer=@uv target=ship repository=@t note=@t]
+  ^-  tang
+  :_  ~
+  :-  %leaf
+  ;:  weld
+    "urgit: peer-prepare "  (scow %uv transfer)  " -> "  (scow %p target)
+    " "  (trip repository)  ": "  (trip note)
+  ==
+::
 ++  peer-directed
   |=  [target=ship our=ship now=@da]
   ^-  ?
@@ -2102,6 +2245,9 @@
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
+  =/  before=peer-ui-state
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  result=(quip card _this)
   |^
   ?+  mark  (on-poke:def mark vase)
       %git-action
@@ -3198,13 +3344,15 @@
       (peer-fail target transfer.req 'repository contains an object larger than the Mesa archive limit')
     =/  archive-flight=peer-serve
       [target transfer.req repository.req %archive 0 object-bytes %.n objects]
+    =/  note=@t  (peer-mode-note %archive object-count object-bytes 1)
     =.  peer-serving  (~(put by peer-serving) transfer.req archive-flight)
     =.  peer-activities
-      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
+      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req note)
     =/  final-cards=(list card)
       :~  (peer-card target /peer/archive-ready/(scot %uv transfer.req) [%archive-ready transfer.req repository.req head.u.found refs.u.found object-count object-bytes])
           [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %archive 1))]
       ==
+    %-  (slog (peer-mode-tang transfer.req target repository.req note))
     :_  this
     (weld cleanup-cards final-cards)
   =/  object-sizes-ok=?
@@ -3222,9 +3370,10 @@
     =/  pages=(list octs)  (peer-object-pages objects)
     =/  flight=peer-serve
       [target transfer.req repository.req %pack (lent pages) object-bytes %.n objects]
+    =/  note=@t  (peer-mode-note %pack object-count object-bytes (lent pages))
     =.  peer-serving  (~(put by peer-serving) transfer.req flight)
     =.  peer-activities
-      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
+      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req note)
     =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
     =/  object-pages=(list card)
       %+  turn  pages
@@ -3234,6 +3383,7 @@
       :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
           [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %pack (lent pages)))]
       ==
+    %-  (slog (peer-mode-tang transfer.req target repository.req note))
     :_  this
     (weld cleanup-cards (weld object-pages final-cards))
   =/  pages=@ud  stream-pages
@@ -3241,11 +3391,13 @@
     [target transfer.req repository.req %objects pages object-bytes %.n objects]
   =/  job=peer-stream-job
     [target transfer.req repository.req head.u.found refs.u.found (lent objects) pages 1 objects 0 %.n]
+  =/  note=@t  (peer-mode-note %objects object-count object-bytes pages)
   =.  peer-serving  (~(put by peer-serving) transfer.req flight)
   =.  peer-stream-jobs
     (~(put by peer-stream-jobs) transfer.req job)
   =.  peer-activities
-    (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
+    (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req note)
+  %-  (slog (peer-mode-tang transfer.req target repository.req note))
   :_  this
   %+  weld  cleanup-cards
   :~  (peer-card our.bowl /peer/stream-next/(scot %uv transfer.req) [%stream-next transfer.req])
@@ -4220,28 +4372,8 @@
 ::
 ++  peer-results-json
   ^-  json
-  =/  entries=(list json)
-    %+  turn  ~(tap by peer-results)
-    |=  entry=[@uv peer-result]
-    =/  transfer=@uv  -.entry
-    =/  result=peer-result  +.entry
-    =/  flight=(unit peer-receive)  (~(get by peer-receiving) transfer)
-    =/  outgoing=(unit peer-offer-flight)  (~(get by peer-outgoing) transfer)
-    %-  pairs:enjs:format
-    :~  ['transfer' s+(scot %uv transfer)]
-        ['active' b+|(?=(^ flight) ?=(^ outgoing))]
-        ['ok' b+status.result]
-        ['message' s+message.result]
-        ['repository' s+repository.result]
-        ['received' n+(decimal ?~(flight 0 received.u.flight))]
-        ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
-        ['expectedBytes' n+(decimal ?~(flight 0 expected-bytes.u.flight))]
-        ['pages' n+(decimal ?~(flight 0 pages.u.flight))]
-        ['completedPages' n+(decimal ?~(flight 0 ~(wyt in completed.u.flight)))]
-        ['fineFragmentsReceived' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum)))))]
-        ['fineFragmentsTotal' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum)))))]
-    ==
-  (pairs:enjs:format ~[['transfers' [%a entries]]])
+  %-  peer-ui-transfers-json
+  [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
 ::
 ++  peer-discoveries-json
   ^-  json
@@ -4424,30 +4556,8 @@
 ::
 ++  peer-activities-json
   ^-  json
-  =/  entries=(list json)
-    %+  turn  peer-activities
-    |=  event=peer-activity
-    %-  pairs:enjs:format
-    :~  ['id' s+(scot %uv id.event)]
-        ['kind' s+kind.event]
-        ['direction' s+direction.event]
-        ['ship' s+(scot %p peer.event)]
-        ['repository' s+repository.event]
-        ['status' s+status.event]
-        ['message' s+message.event]
-        ['when' s+(scot %da when.event)]
-    ==
-  =/  notifications=(list json)
-    %+  turn  notification-activities
-    |=  event=notification-activity
-    %-  pairs:enjs:format
-    :~  ['id' s+(scot %uv id.event)]
-        ['event' s+event.event]
-        ['repository' s+repository.event]
-        ['message' s+message.event]
-        ['when' s+(scot %da when.event)]
-    ==
-  (pairs:enjs:format ~[['activity' [%a entries]] ['notifications' [%a notifications]]])
+  %-  peer-ui-activity-json
+  [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
 ::
 ++  github-results-json
   ^-  json
@@ -8567,7 +8677,11 @@
   ^-  (list card)
   %+  give-simple-payload:app:server  eyre-id
   [[status headers] body]
---
+  --
+  =/  after=peer-ui-state
+    =>  +.result
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  [(peer-ui-notify before after -.result) +.result]
 ::
 ++  on-peek
   |=  =path
@@ -8658,11 +8772,23 @@
   ^-  (quip card _this)
   ?+  path  (on-watch:def path)
       [%http-response @ ~]  [~ this]
+  ::
+      ::  a browser joining mid-transfer gets the current state at once,
+      ::  so it never waits for the next event to render something.
+      ::
+      [%peer %activity ~]
+    =/  now-state=peer-ui-state
+      [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+    :_  this
+    ~[[%give %fact ~ %json !>((peer-ui-json now-state))]]
   ==
 ++  on-leave  on-leave:def
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card _this)
+  =/  before=peer-ui-state
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  result=(quip card _this)
   ?.  =(/clay-push wire)
     (on-agent:def wire sign)
   =/  maybe-pending=(unit clay-push)  pending-clay
@@ -8689,9 +8815,16 @@
   :~  [%pass /clay-timeout %arvo %b %rest timeout-at.pending]
       [%pass /clay-report %arvo %b %wait report-at]
   ==
+  =/  after=peer-ui-state
+    =>  +.result
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  [(peer-ui-notify before after -.result) +.result]
 ++  on-arvo
   |=  [=wire =sign-arvo]
   ^-  (quip card _this)
+  =/  before=peer-ui-state
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  result=(quip card _this)
   =/  error-cards
     |=  [eyre-id=@ta status=@ud message=@t]
     ^-  (list card)
@@ -9601,5 +9734,9 @@
     =/  jon=json  (pairs:enjs:format ~)
     [[200 ~[['content-type' 'application/vnd.git-lfs+json'] ['cache-control' 'no-store']]] `(json-to-octs:server jon)]
   ==
+  =/  after=peer-ui-state
+    =>  +.result
+    [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  [(peer-ui-notify before after -.result) +.result]
 ++  on-fail   on-fail:def
 --
