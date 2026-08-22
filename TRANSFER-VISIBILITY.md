@@ -4,10 +4,11 @@ Brief: `briefs/transfer-visibility.md`. Branch `feat/progress-and-joinall`.
 Commits `9f6bece` (Tier 0) and `53a49aa` (Tiers 1 and 2).
 
 **Tier 0, Tier 1 and Tier 2 are implemented and proven on live ships. Tier 3
-was not reached.** T3a has no answer, and the reason is not the one the brief
-expected: the `%prog` path was never reachable, because neither test ship ever
-became a chum, so `%archive` never ran. §2 gives the evidence and §8 says what
-would settle it.
+was not reached.** T3a is half answered. The reason it is only half is not the
+one the brief expected: two fake ships never become chums by themselves, so
+`%archive` never ran and there was nothing to attach `%prog` to. I built a chum
+pair on purpose and showed `%prog` does not crash on it; I could not show a
+`%rate` gift arriving. §2 gives the evidence and §8 says what closes it.
 
 Test ships: `~bud` at `/home/michael/piers/vb2`, HTTP 8096, Ames 31339, and
 `~wes` at `/home/michael/piers/vw2`, HTTP 8097, Ames 31340. Both booted from
@@ -144,8 +145,44 @@ dead on a stock fake network. On the production moon it evidently is not — the
 trial's four-minute transfer was an `%archive` — which means the chum was
 established by traffic outside urgit.
 
-Tier 3 was not attempted beyond this. Per the brief's stop condition, reporting
-the negative and stopping is the answer. §8 records what a real T3a needs.
+### A partial answer, from a chum pair built on purpose
+
+With turns left over I built the chum pair the fake network does not produce by
+itself. Two more fake ships, `~med` (Ames 31341, HTTP 8098) and `~pec` (Ames
+31342), booted from the same pill; `[%load %mesa]` sent to Ames on each
+**before** first contact; then one `%helm-hi` from `~med` to `~pec`. `~med`'s
+map is then no longer empty:
+
+```
+vm3 chums: [0 %avow 0 %noun '~[[p=~pec q=%known]]']
+```
+
+That settles the mechanism: `find-peer` checks `chums` first, `peers` second,
+and only then falls back to `core.ames-state`, whose default is `%ames`. A pair
+that is already in `peers` is never promoted, which is why `~bud` and `~wes`
+could not be rescued after the fact. `core` must be `%mesa` before the ships
+first speak.
+
+**Half of T3a is answered: `%prog` for a chum does not crash.** Three
+`[%prog [~pec /c/x/1/base/sys/hoon] [%chum ~] 16]` tasks were sent to Ames on
+`~med`, whose `find-peer ~pec` returns the `%mesa` branch with `[~ %known *]`.
+`grep -cE 'crud|bail:|%hunk'` over `~med`'s whole pier log returns **0**, and
+the ship still answers scries afterwards. On an ames-core peer the same task is
+a bare `!!` and would have crashed the Ames event with a printed stack.
+
+**The other half is still unanswered: no `%rate` gift was observed.** I did not
+establish a valid in-flight Mesa peek to attach the rate interest to. The
+`%chum` spar path I used, `/c/x/1/base/sys/hoon`, is a guess at Clay's remote
+scry form and was never confirmed to resolve; the first attempt returned a sign
+immediately and later identical attempts returned none within 90 seconds, which
+is what a settled or rejected request looks like. **That is not evidence that
+`%rate` fails to arrive.** It is evidence that I did not construct the request
+correctly, and I am not going to report the absence of a gift on a request I
+cannot show was valid.
+
+So: `pe-prog` is reachable and safe on a chum, the premise the brief calls
+"the guard that would otherwise be mandatory" is real, and the delivery half of
+T3a is open. §8 says what closes it.
 
 ---
 
@@ -450,16 +487,23 @@ transfer identifiers, so a reset changes nothing.
 
 ## 8. What I could not measure and why
 
-**Whether `%prog` delivers a `%rate` gift on a chum.** The whole of T3a. Two
-fake ships on a stock fake network never enter each other's `chums` map, so
-`peer-directed` is false, `%archive` never runs, and `pe-prog`'s Mesa branch is
-unreachable. Settling it needs one of: a pair booted with
-`[%load %mesa]` sent to Ames **before** first contact, so both land in `chums`
-rather than `peers` — `find-peer` checks `chums` first and never promotes an
-existing `peers` entry; or a thread that sends `[%prog spar task freq]`
-directly and takes the resulting sign, which tests `pe-prog` without needing
-urgit to reach it. I did neither. Everything in §2 about `pe-prog` is read from
-the vane source, not run.
+**Whether `%prog` delivers a `%rate` gift on a chum.** The delivery half of
+T3a. §2 establishes the chum pair and shows `%prog` is accepted without
+crashing, but no `%rate` gift was seen, and the request it was meant to track
+was never shown to be valid. What closes this is a Mesa peek whose path is
+known to resolve and whose payload is large enough to fragment: grow a large
+noun into a scry path on the serving ship, chum that exact path from the
+requester, then `%prog` the same spar and take signs. The urgit code already
+writes such paths — `peer-prepare` grows `/fine/<name>` and reads it back at
+`/g/x/<rev>/urgit//1/fine/<name>` — so the shortest route is to install urgit
+on the chum pair, run a fork that takes the `%archive` branch, and attach
+`%prog` to that. That is T3b's edit site, so at that point T3a and T3b converge.
+
+**Whether a fork between chums actually chooses `%archive`.** `peer-directed`
+should now return true for the `~med`/`~pec` pair, but urgit was never
+installed on them, so no fork ran and the `%archive` branch of `peer-prepare`
+— including the Tier 1 line it would print — has still never executed on a live
+ship in this run.
 
 **The event cost of the `peer-ui-digest` comparison.** §5 argues from its
 construction that it cannot scale with repository size, and the largest
@@ -526,9 +570,11 @@ three that were already red.
 
 ## 10. Left undone
 
-- **Tier 3 entirely.** T3b, T3c and T3d are not written. T3a is unanswered for
-  the reason in §2, which is a different reason from the one the brief's stop
-  condition anticipated, so it is recorded rather than treated as a negative.
+- **Tier 3 entirely.** T3b, T3c and T3d are not written. T3a is half answered
+  (§2): `%prog` is reachable and does not crash on a chum, but no `%rate` gift
+  was observed on a request I could show was valid. That is a different
+  situation from the negative the brief's stop condition anticipated, so it is
+  recorded as open rather than closed.
 - **The nineteen other transient maps.** Findings only, §7, as the brief
   directed.
 - **`waitForPeerTransfer` still polls** `/peer/transfers` every 750 ms while a
