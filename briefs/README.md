@@ -17,7 +17,7 @@ measurement of the editing.
 | `push-defects.md` | opus-5, effort high, 200 turns | **landed** — `7c86699`, `f70e6a8`, `455bcb6`, 123 turns, $10.04. Report: `PUSH-DEFECTS.md`. Also verified `bf3dbea` in-tree over 637 REF_DELTA objects at chain depth 6. |
 | `resolve-entries.md` | opus-5, effort high, 200 turns | **landed** — `b53e06f`, `035673f`, 169 turns, $23.08. Attribution closes at 97.3%. Report: `RESOLVE-ENTRIES-PERFORMANCE.md` |
 | `gzip-request.md` | opus-5, effort high, 200 turns | **landed** — `74ad8c0`, `e19cfa5`, 128 turns, $13.27. Report: `GZIP-REQUEST.md`. Proved the zlib-jet route circular by experiment. |
-| `upload-pack-probe.md` | opus-5, effort high | dispatched — see below |
+| `upload-pack-probe.md` | opus-5, effort high, 200 turns | **landed** — `fa1defd`, `846a6c2`, 117 turns, $8.11. Report: `UPLOAD-PACK-PROBE.md`. Built a 22,001-ref repository and proved the default-settings case. |
 | `archive-progress.md` | not yet | — |
 
 ## `join-all.md`
@@ -254,6 +254,45 @@ verification. Its one judgment call is whether to rename the already-generic
 allowed — but not two copies of the same three lines. D3 asks it to answer, in
 the report, which cases besides the probe send a bare flush on `upload-pack`
 and whether 200-with-empty-body is right for each.
+
+Outcome: **landed.** `fa1defd` answers the probe after auth and `decoded-body`
+and before `v2-command`. The run **took the rename**: `receive-probe` is now
+`flush-only-body`, one arm called from both handlers, body unchanged. No stale
+reference remains anywhere in `desk/`.
+
+It corrected the brief on two points, both worth keeping.
+
+**The 400 did not come from a parse failure.** The brief said
+`parse-upload-request` rejects a flush-only body. It does not — a flush-only
+body parses fine, to an upload request with an empty want set, and the 400 came
+from the want check at `urgit.hoon:7872` with the message `upload-pack request
+has no wants`. Same symptom, different mechanism. Confirmed at source.
+
+**The ~21,000-ref case was not impractical.** The brief allowed relying on a
+forced probe if a repository that large could not be built. The run built
+`big1`, 22,001 refs in a star topology, and cloned it **at default settings
+with no `-c` flag** on both protocols: exit 0, 22,003 objects, hash matching the
+source, `fsck --full` clean. The same two clones exit 128 and 141 before the fix.
+
+The D3 answer is measured rather than argued: it ran the real
+`/usr/libexec/git-core/git-http-backend` as a CGI program with a 4-byte body.
+Stock writes no `Status:` header, so the server returns 200 with a zero-length
+`application/x-git-upload-pack-result` body, identically on both protocol
+versions. Three cases reach the arm — the `probe_rpc` probe, a v0 client that
+wants nothing, and a v2 body naming no command — and 200 is right for all three.
+
+It also recorded a caution rather than overclaiming: stock returns 200 for
+`0000GARBAGE` too, because CGI writes headers before `upload-pack` starts. So
+urgit's 400 for malformed bodies rests on the D4 matrix, not on stock behavior.
+
+D4 was taken twice on the same ship, pre-fix and post-fix. Every 400 row is
+byte-identical across the pair, message included; only the flush-only rows moved
+400 → 200. The rename's blast radius is covered by three pushes, including
+9.77 MB and 5.27 MB over the probe.
+
+Also measured the v2 `http.postBuffer` floor exactly: **65,524** is the smallest
+usable value on git 2.55.0; 65,523 and below abort with
+`BUG: remote-curl.c:1533`.
 
 ## `archive-progress.md`
 
