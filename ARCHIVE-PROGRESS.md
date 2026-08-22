@@ -28,8 +28,18 @@ chum, so `find-peer ~pec` returns the Mesa branch:
 vm3 chums: [0 %avow 0 %noun 127 '[[252 474.450.194.027] 0 0]']
 ```
 
-`252` is `~pec` and `474.450.194.027` is the cord `%known`. `~pec`'s own map is
-empty, which does not matter: the peek runs in the `~med` to `~pec` direction.
+`252` is `~pec` and `474.450.194.027` is the cord `%known`. The pair is two-sided.
+`~pec` holds `~med` the same way:
+
+```
+vp3 chums: [0 %avow 0 %noun 252 '[[127 474.450.194.027] 0 0]']
+```
+
+`~pec`'s map was **empty** when the ships first came up and stayed empty while a
+port mismatch stopped all traffic (§5). It held `~med` after the first `%helm-hi`
+went through, and it still did after run D. I did not capture the exact event that
+filled it, so I can say the four runs below ran on a two-sided pair, and I cannot
+say the pair was two-sided before the first `%helm-hi`.
 
 The publisher grows a large list into spider's scry namespace on `~pec`. `~med`
 reads it back at `/g/x/1/spider//1/probe/blob<N>`. Four runs, each a fresh path so
@@ -224,10 +234,19 @@ watch the same transfer over a minute or more. Traffic shaping needs root on thi
 host. The argument that it cannot matter is structural — the gift has no sender —
 but the measurement is loopback only.
 
-**Whether `~pec` would behave differently as a symmetric chum.** `~med` holds `~pec`
-in `chums`; `~pec`'s map is empty and `~med` sits in its `peers`. The peek resolved
-anyway, which says the publisher side of a Mesa peek does not need the requester to
-be a chum. I did not build a two-sided pair and repeat the four runs.
+**The Ames port.** This is not a gap, but it cost an hour and the next run should
+not repeat it. Booting `~med` on `-p 31341` and `~pec` on `-p 31342` looks fine:
+both ships bind, both print a boot banner, and `~med` prints
+`push %peek on lanes=[~pec, ...]`. Nothing arrives, and `~pec`'s log stays silent.
+`~med` addresses `~pec` at the port Vere derives for that galaxy, which the boot
+banner names: `ames: czar: overriding port 31589 with -p 31342`. Boot the pair on
+31464 and 31589 and the traffic flows. A `%helm-hi` that hangs, rather than a peek
+that fails, is the fast way to see this.
+
+**When `~pec` became a chum of `~med`.** §1 records what I observed. `~pec`'s map
+was empty at the start and held `~med` at the end. I did not instrument the moment
+in between, so the four runs are known to have run on a two-sided pair, and the
+one-sided case is untested.
 
 **Whether a real `%archive` fork between chums chooses `%archive` and prints the
 Tier 1 line.** urgit is still not installed on `~med` or `~pec`. This run answered
