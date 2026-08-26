@@ -1,67 +1,61 @@
-# %urgit
+# `%urgit`
 
-## `|install ~matwet %urgit`
+Install from `~matwet`:
 
-<img width="947" height="585" alt="image" src="https://github.com/user-attachments/assets/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18" />
+```hoon
+|install ~matwet %urgit
+```
 
-`%urgit` makes an Urbit ship a native Git remote. Standard Git clients use Smart HTTP through Eyre while Gall owns the object database, refs, and repository policy. No Git executable or server-side sidecar is involved.
+<img width="947" height="585" alt="Urgit repository view" src="https://github.com/user-attachments/assets/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18" />
 
-## Features
+`%urgit` turns an Urbit ship into a Git remote and collaborative forge. Standard Git clients connect over Smart HTTP, while the ship itself owns repositories, objects, refs, permissions, and collaboration state. No Git executable or server-side sidecar is required.
 
-- clone, fetch, push, force-update, and delete refs with ordinary Git clients
-- canonical SHA-1 object storage for blobs, trees, commits, and tags
-- native pkt-line parsing and pack v2 encoding/decoding in Hoon
-- Git wire protocols v0/v1 and v2, including command-based `ls-refs` and `fetch`
-- native zlib/DEFLATE plus `REF_DELTA` and `OFS_DELTA` pack ingestion
-- reachability-limited packs with native ACK negotiation and incremental closure subtraction
-- shallow clone, relative deepening, and unshallow fetches with stock Git clients
-- partial clone filters for `blob:none` and `blob:limit`, including on-demand promisor blob fetches
-- atomic ref transactions protected by per-repository write credentials
-- per-branch protection with Git-native force-push and deletion rejections
-- authenticated and public branch comparison with complete tree diffs and downloadable `git apply` patches for bounded text changes
-- optional branch-to-desk bindings that apply pushed commits directly to Clay
-- Clay-gated pushes: invalid desks are rejected by Git with the complete Ford stack trace
-- Clay-to-Git publishing that snapshots a bound desk as canonical blobs, trees, and commits
-- native Clay revision history for bound branches, including revision numbers, canonical timestamps, takos, mapped Git commits, per-file history, and revision diffs
-- bridge status and explicit synchronization controls that compare the live desk with the linked branch and can safely apply either side
-- GitHub-style web interface for repositories, rendered Markdown READMEs, branch creation/defaults/deletion, expandable file trees, deep-linked source lines, branch-aware file creation/editing/deletion, history, line blame, authorship, diffs, and repository settings
-- branch-aware repository code search with line-level results that open directly in the highlighted source view
-- lightweight and annotated tag management with contextual commit/revision actions, unique abbreviated commit IDs, and standards-compliant peeled advertisements
-- tags can target native Clay revisions; the selected revision is materialized as a canonical Git commit and recorded in the revision-to-commit map without moving the bound branch
-- releases rooted at existing tags, with notes and deterministic source tar archives for authenticated and public repository pages
-- signed outgoing webhooks for pushes, tags, pull requests, issues, releases, and successful Clay synchronization, with a bounded delivery ledger
-- signed incoming GitHub webhooks: pushes create explicit upstream-update prompts, while pull-request events refresh linked PR metadata in the background
-- unauthenticated read-only repository pages for public projects, including branches, files, history, and commit diffs
-- an unauthenticated `/urgit` profile with the ship's published Landscape alias, avatar, cover, bio, and public repositories
-- repository summaries report files, commits, branches, tags, and LFS files instead of internal object counts
-- one-click publication of any mounted Clay desk as a Git repository
-- verified, incremental native forks with explicit pull-from-origin refresh: Mesa-connected peers negotiate a bounded archive header, then send every missing immutable object as one authenticated repository noun regardless of repository size; Fine object or Git-pack pages are used only when directed Mesa is unavailable; duplicate requests coalesce and active transfers can be cancelled
-- persistent ship peers in the sidebar, with on-demand discovery of public repositories and private repositories shared with that ship
-- per-repository ship reader ACLs for private native browsing, issue and pull-request discussion, and forks without update rights
-- ship write ACLs with fast-forward-only native push-back from authorized forks
-- native pull requests between ships or local branches, with selectable source and target repositories and branches, pinned branch tips, close/reopen lifecycle, per-file red/green diffs, resolvable review comments, cross-ship discussion at the origin, fast-forward or conflict-checked three-way merges, and Clay gating
-- native issues authored by ship identity, with remote creation, open/close lifecycle, origin-authoritative cross-ship comments, labels, assignees, public read-only views, and linked `~ship/repository#number` references
-- per-repository Landscape notifications for incoming native issues, pull requests, and comments, with event-level muting, Hark-owned `%urgit` history, and an Urgit-only top-bar feed
-- explicit Clay revision-to-commit history for both pushed Git trees and published desk snapshots
-- bidirectional GitHub synchronization through Git Smart HTTP: safe fast-forward pulls and branch-selectable pushes preserving canonical object IDs
-- optional GitHub token support for private imports, GitHub forks, and opening pull requests
-- paginated, deduplicated GitHub issue and pull-request lists with conditional load-more controls, request-scoped full bodies and unified pull-request diffs, and upstream file contents fetched on demand
-- Git and Clay histories loaded in pages of 50, with commit and revision detail available from every displayed identifier
-- browser-local draft recovery for file creation and editing, issue composition, pull-request titles, and local or remote discussion comments
-- JSON scries and HTTP APIs for repository summaries, refs, first-parent history, and file trees
-- Git LFS batch uploads and downloads backed by the ship's configured object storage
-- Git LFS file locking compatible with stock `git lfs lock`, `locks`, and `unlock`
-- explicit reachability-based cleanup of verified LFS payloads no longer referenced by any repository ref
-- direct, short-lived Signature V4 transfer actions so large LFS payloads bypass the loom
-- stable Smart HTTP remotes at:
+## What it provides
+
+### A native Git remote
+
+Clone, fetch, and push with ordinary Git clients at a stable URL:
 
 ```text
 https://ship.example/git/<repository>
 ```
 
-## Repository access
+Urgit stores canonical Git blobs, trees, commits, and tags and verifies their SHA-1 object IDs on ingestion. It supports branches, protected refs, force updates, tag and release management, shallow and partial clones, and Git LFS uploads, downloads, locking, and cleanup.
 
-Urgit applies separate read and write rules to native ship traffic.
+### A web forge
+
+The authenticated app at `/apps/urgit` provides repository and branch management, file browsing and editing, Markdown READMEs, history, blame, search, diffs, patches, releases, issues, pull requests, webhooks, and repository settings. Public repositories have read-only pages, and `/urgit` publishes a profile and public-repository index using the ship's Landscape identity.
+
+### Urbit-native collaboration
+
+Ships can discover shared repositories, keep peers in the sidebar, fork repositories, pull updates from an origin, and send authorized fast-forward updates back. Native issues, discussions, review comments, pull requests, merges, and Landscape notifications use ship identity rather than a separate account system. Private repositories keep read and write access as separate permissions.
+
+### A Git–Clay bridge
+
+A repository branch can be bound to a Clay desk. Git pushes to that branch are projected into Clay and only become authoritative after Clay and Ford accept the desk; failures are returned to the Git client without moving the ref. The reverse operation snapshots a live desk into canonical Git objects and records the relationship between Clay revisions and Git commits.
+
+### GitHub, LFS, and automation
+
+Urgit can import from and synchronize with GitHub over Git Smart HTTP, optionally using a server-side token for private repositories and GitHub API operations. Signed incoming and outgoing webhooks connect pushes, tags, reviews, issues, releases, and Clay synchronization to external automation. Large LFS payloads move directly through the ship's configured object storage using short-lived signed requests, keeping those bytes out of the loom.
+
+## How it works
+
+| Component | Responsibility |
+|---|---|
+| Eyre | Owns `/git/<repository>` Smart HTTP and web/API routing. |
+| `%urgit` Gall agent | Authenticates requests; validates objects and packs; owns repositories, refs, policy, collaboration, and atomic updates. |
+| React frontend | Presents authenticated, public, and peer repository views without receiving repository secrets. |
+| Clay bridge | Projects a bound Git tree into a desk and publishes desk revisions back into Git. |
+| Ames, Mesa, and Fine | Coordinate peer operations and transport verified repository snapshots between ships. |
+| Object storage | Holds verified Git LFS payloads behind signed transfer actions. |
+
+Git wire data is parsed and produced natively in Hoon, including pkt-lines, pack v2, zlib/DEFLATE, and delta objects. Incoming updates are staged and fully validated before objects and refs change together. Peer transfers follow the same rule: recompute object IDs, validate the referenced graph, then install atomically.
+
+See [`specs/architecture.md`](specs/architecture.md) for protocol behavior and trust boundaries, and [`specs/roadmap.md`](specs/roadmap.md) for planned work.
+
+## Access model
+
+Native ship access distinguishes readers from writers:
 
 | Access | Discover, browse, and fork | Open issues and join discussions | Send native branch updates |
 |---|---:|---:|---:|
@@ -70,67 +64,39 @@ Urgit applies separate read and write rules to native ship traffic.
 | Writer | Yes | Yes | Yes |
 | Owner | Yes | Yes | Yes |
 
-A writer also has reader access. Branch protection still applies to every native update.
+Writers also receive reader access, and branch protection still applies to their updates. Public pages and peer responses omit tokens, ACLs, and other administration fields.
 
-These ACLs authenticate Urbit ships on native Ames and Fine requests. They do not authenticate ordinary Git clients over Smart HTTP.
+Git clients use a separate per-repository write token over HTTP Basic authentication. Any username is accepted; the token is the password. Public repositories allow unauthenticated fetches and LFS downloads, while private reads and all writes require the token.
 
-Smart HTTP and Git LFS use the repository write token. Public repositories continue to allow unauthenticated fetches and LFS downloads.
+## Getting started
 
-Public pages, public scries, and remote peer responses omit reader lists, writer lists, tokens, and other repository administration fields.
+1. Install Urgit and open `/apps/urgit` on the ship.
+2. Create an empty repository, publish a mounted desk, fork from another ship, or import from GitHub.
+3. Copy the repository's Smart HTTP URL into `git clone` or `git remote add`.
+4. For pushes, create or rotate the write token in repository settings and give it to your Git credential helper when prompted.
 
-### State compatibility
-
-This branch preserves the published `%1` state mold and stores reader ACLs and branch-labeled pull requests in `%2`.
-
-The `%1` to `%2` migration preserves repositories, objects, refs, writer ACLs, forge data, webhooks, and configuration. It initializes each reader ACL as empty.
-
-Old pull requests did not store source branch names. The migration keeps their commit IDs, marks the source branch as unknown, and uses the old default branch as the target.
-
-The migration is forward-only. The current upstream build cannot read `%2`. Returning to current upstream requires upstream support or a hard nuke that deletes all Urgit state.
-
-Further protocol work is tracked in [`specs/roadmap.md`](specs/roadmap.md). Protocol boundaries are documented in [`specs/architecture.md`](specs/architecture.md).
+To connect Git and Clay, bind a repository branch to a mounted desk in repository settings. The repository page reports whether the branch and desk are synchronized, ahead, or divergent, and exposes explicit actions to apply either side.
 
 ## Development
 
-Build directly into a mounted desk:
+The build requires Git, Zig, and Node.js 22 (or Node.js 20.19+). Build the source desk and copy it onto a mounted ship desk with:
 
 ```sh
 zig build -Ddesk=/path/to/pier/urgit
 ```
 
-The build requires Git, Zig, and Node.js 22 (or Node.js 20.19 or newer). It installs the locked frontend dependencies with `npm` before building the app.
+The Zig build installs the locked frontend dependencies and builds `fe/` into `desk/web/`. During frontend work, run its tests directly:
 
-Then commit the `%urgit` desk and run the protocol vectors:
-
-```hoon
-+urgit!git-access-vector
-+urgit!git-migration-vector
-+urgit!git-codec-vector
-+urgit!git-pack-vector
-+urgit!git-pack-decode-vector
-+urgit!git-stock-pack-vector
-+urgit!git-delta-pack-vector
-+urgit!git-ofs-delta-pack-vector
-+urgit!git-storage-vector
-+urgit!git-clay-vector
-+urgit!git-tree-vector
-+urgit!git-archive-vector
-+urgit!git-shallow-vector
-+urgit!git-blame-vector
-+urgit!git-github-vector
-+urgit!git-webhook-vector
+```sh
+cd fe
+npm test
+npm run build
 ```
 
-The codec vector's blob OID must be `3b18e512dba79e4c8300dd08aeb37f8e728b8dad`, matching `git hash-object` for `hello world\n`. The pack vectors cover local round trips and stock Git packs containing binary tree data, `REF_DELTA`, and `OFS_DELTA` entries. The storage vector checks that object-store transfers contain authorization, date, and payload-hash headers. The archive vector checks executable and symbolic-link tar entries. The webhook vector checks a standard HMAC-SHA256 value and GitHub push parsing.
+After updating and reviving the desk, run the relevant Hoon protocol vectors from the Dojo. The complete set lives in [`desk/gen`](desk/gen); for example:
 
-Each repository can be assigned a write token with the `%set-write-token` action. Git and Git LFS clients use any Basic-auth username and that token as the password. The token authorizes fetch and push for private repositories. Public repositories permit unauthenticated fetches and LFS downloads; uploads require the write token or an authenticated ship session.
-
-A repository branch can be linked to a Clay desk with `%bind-desk`. A push to that branch is accepted only after Clay applies and validates the projected desk. Ford failures are returned as ordinary Git `ng` report-status messages, so command-line clients, CI, and coding agents receive the compiler trace while the Git ref remains unchanged.
-
-`%publish-desk` snapshots the current bound desk into the linked branch. Clay pages are rendered to their canonical source representation, assembled into ordinary Git blobs and recursively sorted trees, and committed with the ship as author and committer. The existing branch tip becomes the parent.
-
-The web read model is available through `%urgit` scries at `/repositories/json`, `/repository/<name>/json`, `/repository/<name>/commits/json`, and `/repository/<name>/files/json`. A desk-bound branch reports Clay's native revision sequence through the history endpoint; ordinary branches report Git commits.
-
-The repository settings page compares the current branch tree with the live bound desk and reports whether they are synchronized, ahead on either side, divergent, or not yet mapped. “Apply branch to desk” uses the same Clay-gated transaction as a linked Git push; “Publish desk to branch” snapshots Clay in the other direction.
-
-The authenticated web app is served at `/apps/urgit`. `/urgit` is the ship's public profile and repository index; it uses the ship's Landscape alias, avatar, cover, bio, status, and color. Installing Urgit therefore publishes those self-profile fields at this route. Public repositories also have a read-only page at `/apps/urgit/public/<repository>` that requires no Urbit login. The new-repository dialog creates a blank repository, publishes a mounted desk, forks from a ship, or imports from GitHub. The API manages repository policy and Clay bindings, browses, searches, compares, and edits local files, keeps peer bookmarks, remotely browses bounded public-repository overviews, forks and refreshes repositories, manages native issues and releases, opens or merges native pull requests, and configures incoming and outgoing webhooks. GitHub pull and push packs are limited to 64 MiB and 25,000 objects to protect the loom; large file payloads belong in LFS. The static frontend is built from `fe/` into `desk/web/` by the normal Zig build.
+```hoon
++urgit!git-codec-vector
++urgit!git-pack-vector
++urgit!git-clay-vector
+```

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+const githubAttachmentUrl = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function safeUrl(value) {
   const url = value.trim()
   if (/^(https?:|mailto:|#|\/)/i.test(url) || (!/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith('//'))) return url
@@ -11,7 +13,60 @@ function safeUrl(value) {
 const relativeUrl = (value) => !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(value)
 const assetType = (path) => ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' })[(path.split('.').pop() || '').toLowerCase()]
 
-function MarkdownImage({ src, alt, loadAsset }) {
+function decodeHtmlAttribute(value) {
+  return value.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(amp|quot|apos|lt|gt));/gi, (entity, decimal, hexadecimal, named) => {
+    if (decimal || hexadecimal) {
+      const codePoint = decimal ? Number(decimal) : parseInt(hexadecimal, 16)
+      return codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff) ? String.fromCodePoint(codePoint) : '\ufffd'
+    }
+    return ({ amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' })[named.toLowerCase()]
+  })
+}
+
+function githubImageNode(value) {
+  const tag = value.trim().match(/^<img\b([\s\S]*?)\/?\s*>$/i)
+  if (!tag) return null
+
+  const attributes = {}
+  let source = tag[1]
+  while (source.trim()) {
+    const attribute = source.match(/^\s*([a-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    if (!attribute) return null
+    const name = attribute[1].toLowerCase()
+    if (!['src', 'alt', 'width', 'height'].includes(name) || name in attributes) return null
+    attributes[name] = decodeHtmlAttribute(attribute[2] ?? attribute[3])
+    source = source.slice(attribute[0].length)
+  }
+
+  if (!githubAttachmentUrl.test(attributes.src || '')) return null
+  const dimensions = {}
+  for (const name of ['width', 'height']) {
+    if (attributes[name] && /^\d{1,5}$/.test(attributes[name]) && Number(attributes[name]) > 0) dimensions[name] = Number(attributes[name])
+  }
+  return {
+    type: 'image',
+    url: attributes.src,
+    alt: attributes.alt || '',
+    title: null,
+    data: { hProperties: dimensions },
+  }
+}
+
+function remarkGithubImages() {
+  return (tree) => {
+    const visit = (node) => {
+      if (!node.children) return
+      node.children = node.children.map((child) => {
+        if (child.type === 'html') return githubImageNode(child.value) || child
+        visit(child)
+        return child
+      })
+    }
+    visit(tree)
+  }
+}
+
+function MarkdownImage({ src, alt, loadAsset, width, height }) {
   const [resolved, setResolved] = useState(relativeUrl(src) && loadAsset ? '' : safeUrl(src))
   useEffect(() => {
     let active = true
@@ -23,13 +78,13 @@ function MarkdownImage({ src, alt, loadAsset }) {
   }, [src, loadAsset])
   if (!resolved) return <span className="markdown-image-loading">{alt}</span>
   if (resolved === '#') return alt
-  return <img src={resolved} alt={alt} loading="lazy" />
+  return <img src={resolved} alt={alt} width={width} height={height} loading="lazy" />
 }
 
 export default function Markdown({ children, className = '', loadAsset, onOpenPath }) {
   return <div className={`markdown-body ${className}`.trim()}>
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkGithubImages]}
       urlTransform={safeUrl}
       components={{
         a: ({ node: _node, href = '', children: content, ...props }) => {
@@ -43,7 +98,7 @@ export default function Markdown({ children, className = '', loadAsset, onOpenPa
             onClick={repositoryPath ? (event) => { event.preventDefault(); onOpenPath(href) } : undefined}
           >{content}</a>
         },
-        img: ({ node: _node, src = '', alt = '' }) => <MarkdownImage src={src} alt={alt} loadAsset={loadAsset} />,
+        img: ({ node: _node, src = '', alt = '', width, height }) => <MarkdownImage src={src} alt={alt} width={width} height={height} loadAsset={loadAsset} />,
       }}
     >{String(children || '')}</ReactMarkdown>
   </div>

@@ -110,6 +110,26 @@ onOpenPath: metadata-handler
   assert.match(html, /<a href="docs\/file\.md">Repository file<\/a>/)
 })
 
+test('renders GitHub user-attachment HTML image tags inline', async () => {
+  const source = 'Before <img width="947" height="585" alt="image" src="https://github.com/user-attachments/assets/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18" /> after'
+  const html = await renderMarkdownDocument(source)
+
+  assert.match(html, /<p>Before <img /)
+  assert.match(html, /src="https:\/\/github\.com\/user-attachments\/assets\/b13cdad5-ab95-4e9a-95af-e3fc81fbdd18"/)
+  assert.match(html, /alt="image"/)
+  assert.match(html, /width="947"/)
+  assert.match(html, /height="585"/)
+  assert.match(html, /\/> after<\/p>/)
+})
+
+test('does not enable arbitrary raw HTML images', async () => {
+  const source = '<img alt="tracking" src="https://example.com/tracker.png" />'
+  const html = await renderMarkdownDocument(source)
+
+  assert.doesNotMatch(html, /<img/)
+  assert.match(html, /&lt;img alt=&quot;tracking&quot;/)
+})
+
 test('keeps frontmatter metadata compact and usable in narrow Markdown panels', async () => {
   const css = await readFile(new URL('./frontmatter.css', import.meta.url), 'utf8')
   const tableRule = css.match(/\.markdown-frontmatter\s*\{([^}]*)\}/)?.[1] || ''
