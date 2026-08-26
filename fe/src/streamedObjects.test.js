@@ -95,20 +95,16 @@ test('transfer-id capability negotiation preserves the legacy request wire and p
   assert.match(peerPrepare, /capable=\?/)
   assert.match(peerPrepare, /capable=\?\s+\(peer-object-capable transfer\.req\)/)
   assert.match(peerPrepare, /object-count=@ud\s+\(lent objects\)/)
-  assert.match(
-    peerPrepare,
-    /directed=\?[\s\S]*?\(peer-directed target our\.bowl now\.bowl\)/,
-  )
-  assert.match(peerPrepare, /\?:  directed[\s\S]*?%archive-ready/)
-  assert.ok(
-    peerPrepare.indexOf('?:  directed') < peerPrepare.indexOf('peer-stream-max-objects'),
-    'Mesa selection must happen before Fine-only object bounds',
-  )
+  // Serving is chunked unconditionally: there is no %archive branch and no
+  // routing heuristic in front of it. %archive survives only on the receive
+  // side, for peers that still serve it.
+  assert.doesNotMatch(peerPrepare, /directed=\?/)
+  assert.doesNotMatch(peerPrepare, /peer-directed/)
+  assert.doesNotMatch(peerPrepare, /%archive-ready/)
   assert.match(peerPrepare, /\?\.  streamable[\s\S]*?peer-object-pages objects/)
   assert.match(peerPrepare, /flight=peer-serve[\s\S]*?%pack/)
   assert.match(backend, /\+\+  peer-fine-name[\s\S]*?\(cut 0 \[0 64\] transfer\)/)
-  assert.match(peerDirected, /\/chums/)
-  assert.match(peerDirected, /~\(has by chums\) target/)
+  assert.equal(peerDirected, '')
 })
 
 test('transfer modes and stream jobs are transient and reset on init and load', () => {
@@ -138,7 +134,8 @@ test('transfer constructors explicitly retain their transport mode', () => {
   const serveConstructors = [...backend.matchAll(/=\/  flight=peer-serve\s+([^\n]+)/g)]
   assert.ok(serveConstructors.length >= 1)
   assert.ok(serveConstructors.some(({ 1: fields }) => /\[target transfer\.req repository\.req %objects/.test(fields)))
-  assert.match(peerPrepare, /archive-flight=peer-serve[\s\S]*?%archive/)
+  // No %archive serve constructor: the serving side never mints one.
+  assert.doesNotMatch(peerPrepare, /archive-flight=peer-serve/)
 
   const receiveConstructors = [...backend.matchAll(/=\/  flight=peer-receive\s*\n\s+:\*([\s\S]*?)\n\s+==/g)]
   assert.equal(receiveConstructors.length, 2)
@@ -366,9 +363,12 @@ test('hostile object announcements and partial assembly state have hard limits',
   assert.match(peerPrepare, /\(lte object-count peer-stream-max-objects\)/)
   assert.match(peerPrepare, /\(lte stream-pages peer-stream-max-pages\)/)
   assert.match(peerPrepare, /\(lte p\.data\.\+\.entry peer-stream-max-object-bytes\)/)
-  assert.match(peerPrepare, /\(gth object-count peer-archive-max-objects\)/)
-  assert.match(peerPrepare, /\(gth object-bytes peer-archive-max-bytes\)/)
-  assert.match(peerPrepare, /\(lte p\.data\.\+\.entry peer-archive-max-object-bytes\)/)
+  // The archive bounds now guard only the receive side: a peer may still serve
+  // us an %archive, and those limits are what keep an announcement honest.
+  assert.doesNotMatch(peerPrepare, /peer-archive-max/)
+  assert.match(peerArchiveReady, /\(gth objects\.msg peer-archive-max-objects\)/)
+  assert.match(peerArchiveReady, /\(gth bytes\.msg peer-archive-max-bytes\)/)
+  assert.match(peerArchive, /\(lte p\.data\.\+\.entry peer-archive-max-object-bytes\)/)
   assert.match(peerBeginObjects, /\(lte objects\.msg peer-stream-max-objects\)/)
   assert.match(peerBeginObjects, /\(lte pages\.msg peer-stream-max-pages\)/)
   assert.match(peerBeginObjects, /\(lte pages\.msg \(mul objects\.msg 16\)\)/)
@@ -402,7 +402,9 @@ test('streamed snapshots scale their source lifetime while Fine rates do not hid
   assert.match(peerServeLifetime, /=\(%archive mode\)\s+~d1/)
   assert.match(peerServeLifetime, /=\(%objects mode\)/)
   assert.match(peerServeLifetime, /\(min ~d1 \(add ~m10 \(mul pages ~m2\)\)\)/)
-  assert.match(peerPrepare, /peer-serve-lifetime %archive/)
+  // %archive keeps its lifetime for inbound transfers; the serving side only
+  // ever schedules the two chunked lifetimes.
+  assert.doesNotMatch(peerPrepare, /peer-serve-lifetime %archive/)
   assert.match(peerPrepare, /peer-serve-lifetime %pack/)
   assert.match(peerPrepare, /peer-serve-lifetime %objects/)
   assert.match(rateHandler, /fine-progress/)
@@ -437,13 +439,12 @@ test('Mesa archives retain a distinct mode and validate negotiated object bounds
 })
 
 test('Mesa handshake separates preparation from bulk delivery timeouts', () => {
-  assert.match(peerPrepare, /\[%archive-ready transfer\.req repository\.req head\.u\.found refs\.u\.found object-count object-bytes\]/)
-  assert.doesNotMatch(
-    peerPrepare.slice(peerPrepare.indexOf('?:  directed'), peerPrepare.indexOf('=/  object-sizes-ok')),
-    /\[%archive transfer\.req/,
-  )
+  // The serving side no longer announces an archive; %archive-ready is a
+  // message we receive, not one we send.
+  assert.doesNotMatch(peerPrepare, /\[%archive-ready transfer\.req/)
+  assert.doesNotMatch(peerPrepare, /\[%archive transfer\.req/)
   assert.match(prepareTimeout, /accepted\.u\.found/)
   assert.match(prepareTimeout, /=\('' head\.u\.found\)/)
   assert.match(archiveTimeout, /=\(%archive mode\.u\.found\)/)
-  assert.match(archiveTimeout, /Mesa repository transfer did not complete within one day/)
+  assert.match(archiveTimeout, /repository archive transfer did not complete within one day/)
 })
