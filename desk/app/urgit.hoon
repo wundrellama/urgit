@@ -3265,31 +3265,57 @@
   =/  object-count=@ud  (lent objects)
   =/  object-bytes=@ud  (peer-object-bytes objects)
   =/  capable=?  (peer-object-capable transfer.req)
-  ::  The capability negotiates a bounded, single-noun archive.  Ames carries
-  ::  that noun over the best transport available to Ames.
   ?.  capable
     (peer-fail target transfer.req 'peer must update %urgit to transfer repositories')
-  ?:  (gth object-count peer-archive-max-objects)
-    (peer-fail target transfer.req 'repository exceeds the archive object limit')
-  ?:  (gth object-bytes peer-archive-max-bytes)
-    (peer-fail target transfer.req 'repository exceeds the archive byte limit')
-  =/  archive-object-sizes-ok=?
+  ::  serve the repository in chunks: %objects streams object fragments page by
+  ::  page, and %pack falls back to whole packed pages when the object set
+  ::  outgrows the fragment stream's bounds.  both are drained by the peer over
+  ::  %keen, so the receiver sees page-level progress and the serving ship
+  ::  yields between pages instead of building one unbounded noun.
+  ::
+  =/  object-sizes-ok=?
     %+  levy  objects
     |=  entry=[oid:git object:git]
-    (lte p.data.+.entry peer-archive-max-object-bytes)
-  ?.  archive-object-sizes-ok
-    (peer-fail target transfer.req 'repository contains an object larger than the archive limit')
-  =/  archive-flight=peer-serve
-    [target transfer.req repository.req %archive 0 object-bytes %.n objects]
-  =.  peer-serving  (~(put by peer-serving) transfer.req archive-flight)
+    (lte p.data.+.entry peer-stream-max-object-bytes)
+  =/  stream-pages=@ud  (peer-object-batch-count objects)
+  =/  streamable=?
+    ?&  (lte object-count peer-stream-max-objects)
+        object-sizes-ok
+        (lte stream-pages peer-stream-max-pages)
+    ==
+  ?.  streamable
+    =/  pages=(list octs)  (peer-object-pages objects)
+    =/  flight=peer-serve
+      [target transfer.req repository.req %pack (lent pages) object-bytes %.n objects]
+    =.  peer-serving  (~(put by peer-serving) transfer.req flight)
+    =.  peer-activities
+      (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
+    =/  snapshot-path=path  /fine/(peer-fine-name transfer.req)
+    =/  object-pages=(list card)
+      %+  turn  pages
+      |=  page=octs
+      [%pass /peer/grow/(scot %uv transfer.req) %grow snapshot-path noun+!>(page)]
+    =/  final-cards=(list card)
+      :~  [%pass /peer/ready/(scot %uv transfer.req) %agent [our.bowl %urgit] %poke %git-peer !>([%ready transfer.req repository.req head.u.found refs.u.found (lent objects) (lent pages)])]
+          [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %pack (lent pages)))]
+      ==
+    :_  this
+    (weld cleanup-cards (weld object-pages final-cards))
+  =/  pages=@ud  stream-pages
+  =/  flight=peer-serve
+    [target transfer.req repository.req %objects pages object-bytes %.n objects]
+  =/  job=peer-stream-job
+    [target transfer.req repository.req head.u.found refs.u.found (lent objects) pages 1 objects 0 %.n]
+  =.  peer-serving  (~(put by peer-serving) transfer.req flight)
+  =.  peer-stream-jobs
+    (~(put by peer-stream-jobs) transfer.req job)
   =.  peer-activities
     (peer-activity-start (peer-serve-activity-id transfer.req) %serve %incoming target repository.req 'repository snapshot requested')
-  =/  final-cards=(list card)
-    :~  (peer-card target /peer/archive-ready/(scot %uv transfer.req) [%archive-ready transfer.req repository.req head.u.found refs.u.found object-count object-bytes])
-        [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %archive 1))]
-    ==
   :_  this
-  (weld cleanup-cards final-cards)
+  %+  weld  cleanup-cards
+  :~  (peer-card our.bowl /peer/stream-next/(scot %uv transfer.req) [%stream-next transfer.req])
+      [%pass /peer/serve-timeout/(scot %uv transfer.req) %arvo %b %wait (add now.bowl (peer-serve-lifetime %objects pages))]
+  ==
 ::
 ++  peer-stream-next
   |=  transfer=@uv
@@ -3394,12 +3420,69 @@
 ++  peer-begin
   |=  msg=begin:git-peer
   ^-  (quip card _this)
-  (peer-snapshot-fail transfer.msg 'peer must update %urgit to transfer repositories')
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl source.u.found)
+          =(repository.msg source-repository.u.found)
+      ==
+    `this
+  ?.  ?&  (gth pages.msg 0)
+          (lte pages.msg (max 1 objects.msg))
+      ==
+    :_  this
+    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced an invalid Fine page count'])]
+    ==
+  =/  next=peer-receive
+    u.found(mode %pack, head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, pending-pages ~, progress-at now.bowl, fine-progress ~, assemblies ~)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  =.  peer-results
+    (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
+  ?:  =(src.bowl our.bowl)
+    =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer.msg)
+    ?~  serving
+      (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
+    (peer-snapshot transfer.msg (silt objects.u.serving))
+  :_  this
+  =/  scry-path=path
+    /g/x/1/urgit//1/fine/(peer-fine-name transfer.msg)
+  :~  [%pass /peer/fine/(scot %uv transfer.msg)/1 %keen %.n src.bowl scry-path]
+  ==
 ::
 ++  peer-begin-objects
   |=  msg=begin-objects:git-peer
   ^-  (quip card _this)
-  (peer-snapshot-fail transfer.msg 'peer must update %urgit to transfer repositories')
+  =/  found=(unit peer-receive)  (~(get by peer-receiving) transfer.msg)
+  ?~  found  `this
+  ?.  ?&  =(src.bowl source.u.found)
+          =(repository.msg source-repository.u.found)
+      ==
+    `this
+  ?.  ?&  (gth objects.msg 0)
+          (lte objects.msg peer-stream-max-objects)
+          (gth pages.msg 0)
+          (lte pages.msg peer-stream-max-pages)
+          (lte pages.msg (mul objects.msg 16))
+          =(revision.msg 1)
+      ==
+    :_  this
+    :~  [%pass /peer/begin-error/(scot %uv transfer.msg) %agent [our.bowl %urgit] %poke %git-peer !>([%snapshot-error transfer.msg 'peer announced invalid streamed object bounds'])]
+    ==
+  =/  next=peer-receive
+    u.found(mode %objects, head head.msg, refs refs.msg, expected objects.msg, pages pages.msg, completed ~, pending-pages ~, progress-at now.bowl, fine-progress ~, assemblies ~, assembly-bytes 0, assembly-count 0)
+  =.  peer-receiving  (~(put by peer-receiving) transfer.msg next)
+  =.  peer-results
+    (~(put by peer-results) transfer.msg [%.n 'reading repository over Fine' local-repository.u.found])
+  ?:  =(src.bowl our.bowl)
+    =/  serving=(unit peer-serve)  (~(get by peer-serving) transfer.msg)
+    ?~  serving
+      (peer-snapshot-fail transfer.msg 'local repository snapshot is unavailable')
+    (peer-snapshot transfer.msg (silt objects.u.serving))
+  :_  this
+  %+  turn  (gulf 1 (min pages.msg peer-stream-window))
+  |=  revision=@ud
+  =/  scry-path=path
+    /g/x/(scot %ud revision)/urgit//1/fine/(peer-fine-name transfer.msg)
+  [%pass /peer/fine/(scot %uv transfer.msg)/(scot %ud revision) %keen %.n src.bowl scry-path]
 ::
 ++  peer-release
   |=  transfer=@uv
