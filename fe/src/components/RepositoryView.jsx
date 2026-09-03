@@ -9,6 +9,7 @@ import { CopyIcon } from './Icons'
 import Readme from './Readme'
 import MarkdownDocument from './MarkdownDocument'
 import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
+import { describeGroup, describeHost, describeRole, findGroup, policyFlag, roleOptions } from '../groupPolicy'
 
 const shortOid = (oid) => oid ? oid.slice(0, 8) : '—'
 const pullRefLabel = (ref, oid) => `${ref ? ref.replace('refs/heads/', '') : 'unknown branch'} · ${shortOid(oid)}`
@@ -30,6 +31,10 @@ const notificationEvents = [
   ['pull-request', 'New pull requests', 'A native pull request arrives from another ship.'],
   ['pull-comment', 'Pull request comments', 'Another ship comments on a native pull request.'],
 ]
+
+const groupCapabilities = ['none', 'read', 'write']
+const capabilityLabels = { none: 'No access', read: 'Read', write: 'Write (implies read)' }
+const groupRoleRows = (policy) => Object.entries(policy?.roles || {}).map(([role, capability]) => ({ role, capability }))
 
 function CopyableHash({ value }) {
   return <span className="tako-chip"><code title={value}>{value}</code><button type="button" className="hash-copy" title="Copy revision hash" aria-label="Copy revision hash" onClick={() => navigator.clipboard.writeText(value)}><CopyIcon /></button></span>
@@ -1036,6 +1041,11 @@ function Settings({ repo, onMutate }) {
   const [token, setToken] = useState('')
   const [writer, setWriter] = useState('')
   const [reader, setReader] = useState('')
+  const [groupFlag, setGroupFlag] = useState(policyFlag(repo.groupPolicy))
+  const [groupBase, setGroupBase] = useState(repo.groupPolicy?.base || 'none')
+  const [groupRoles, setGroupRoles] = useState(groupRoleRows(repo.groupPolicy))
+  const [groups, setGroups] = useState(null) // groups this ship is in; null until the Groups scry answers
+  const [groupsError, setGroupsError] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [syncResult, setSyncResult] = useState('')
@@ -1051,7 +1061,43 @@ function Settings({ repo, onMutate }) {
     setDesk(repo.binding?.desk || '')
     setBranch(repo.binding?.branch || repo.head || 'refs/heads/main')
     setGithubBranch(repo.head || 'refs/heads/main')
+    setGroupFlag(policyFlag(repo.groupPolicy))
+    setGroupBase(repo.groupPolicy?.base || 'none')
+    setGroupRoles(groupRoleRows(repo.groupPolicy))
   }, [repo])
+
+  useEffect(() => {
+    let stale = false
+    setGroups(null)
+    setGroupsError('')
+    api.listGroups(repo.owner).then(
+      (list) => { if (!stale) setGroups(list) },
+      (cause) => { if (!stale) setGroupsError(cause.message) },
+    )
+    return () => { stale = true }
+  }, [repo.owner])
+
+  const groupsReady = Boolean(groups) && !groupsError
+  const selectedGroup = findGroup(groups, groupFlag)
+  const savedGroup = findGroup(groups, policyFlag(repo.groupPolicy))
+  const nextRole = roleOptions(selectedGroup, groupRoles)[0]
+  const staleRoles = selectedGroup ? groupRoles.filter((row) => !selectedGroup.roles.some((role) => role.id === row.role)) : []
+  const canSaveGroupPolicy = groupsReady && Boolean(selectedGroup) && !staleRoles.length
+
+  // switching groups drops the role rows: ids belong to one group; the saved rows come back with the saved group
+  function chooseGroup(flag) {
+    setGroupFlag(flag)
+    setGroupRoles(flag && flag === policyFlag(repo.groupPolicy) ? groupRoleRows(repo.groupPolicy) : [])
+  }
+
+  function updateGroupRole(index, patch) {
+    setGroupRoles((rows) => rows.map((row, at) => (at === index ? { ...row, ...patch } : row)))
+  }
+
+  function saveGroupPolicy() {
+    const roles = Object.fromEntries(groupRoles.filter((row) => row.role).map((row) => [row.role, row.capability]))
+    return act('group-policy', () => api.setGroupPolicy(repo.name, { host: selectedGroup.host, group: selectedGroup.slug, base: groupBase, roles }))
+  }
 
   async function loadBridgeStatus() {
     if (!repo.binding?.bound) { setBridgeStatus(null); return }
@@ -1257,6 +1303,33 @@ function Settings({ repo, onMutate }) {
             {(repo.writers || []).map((ship) => <div key={ship}><code>{ship}</code><button className="text-button danger-text" onClick={() => act(`writer-${ship}`, () => api.setWriter(repo.name, ship, false))}>Revoke</button></div>)}
             {!repo.writers?.length && <small className="quiet">No remote writers.</small>}
           </div>
+        </div>
+        <div className="subsection">
+          <div className="section-title"><div><h3>Group access</h3><p>Members of a group this ship is in, hosted here or elsewhere, can read or send fast-forward updates by role. Members with no roles get the base capability. Explicit readers and writers still apply.</p></div>{repo.groupPolicy && <span className={`status ${groupsReady && !savedGroup ? 'warn' : 'good'}`}>{describeGroup(groups, repo.groupPolicy)}</span>}</div>
+          {repo.groupPolicy && <p className="group-policy-saved">Saved: <strong>{describeGroup(groups, repo.groupPolicy)}</strong> · members with no roles: {capabilityLabels[repo.groupPolicy.base]}{groupRoleRows(repo.groupPolicy).map((row) => <span key={row.role}> · {describeRole(savedGroup, row.role)}: {capabilityLabels[row.capability]}</span>)}</p>}
+          {groupsError && <small className="field-error">{groupsError.startsWith('Groups unavailable') ? groupsError : `Groups unavailable: ${groupsError}`}</small>}
+          <label><span>Group</span><select value={groupFlag} disabled={!groupsReady} onChange={(e) => chooseGroup(e.target.value)}>
+            <option value="">{groupsError ? 'Groups unavailable' : !groups ? 'Loading groups…' : groups.length ? 'Choose a group this ship is in' : 'This ship is in no groups'}</option>
+            {groupFlag && !selectedGroup && <option value={groupFlag}>{groupsReady ? `missing group \`${groupFlag}\`` : groupFlag}</option>}
+            {(groups || []).map((group) => <option key={group.flag} value={group.flag}>{group.title} ({group.flag}, {describeHost(group)})</option>)}
+          </select></label>
+          <label><span>Members with no roles</span><select value={groupBase} onChange={(e) => setGroupBase(e.target.value)}>{groupCapabilities.map((capability) => <option key={capability} value={capability}>{capabilityLabels[capability]}</option>)}</select></label>
+          <div className="writer-list group-role-list">
+            {groupRoles.map((row, index) => {
+              const options = roleOptions(selectedGroup, groupRoles, row.role)
+              return <div key={index}>
+                <select value={row.role} disabled={!groupsReady} onChange={(e) => updateGroupRole(index, { role: e.target.value })}>
+                  {!options.some((role) => role.id === row.role) && <option value={row.role}>{describeRole(selectedGroup, row.role)}</option>}
+                  {options.map((role) => <option key={role.id} value={role.id}>{role.title} ({role.id})</option>)}
+                </select>
+                <select value={row.capability} onChange={(e) => updateGroupRole(index, { capability: e.target.value })}>{groupCapabilities.map((capability) => <option key={capability} value={capability}>{capabilityLabels[capability]}</option>)}</select>
+                <button className="text-button danger-text" onClick={() => setGroupRoles((rows) => rows.filter((_, at) => at !== index))}>Remove</button>
+              </div>
+            })}
+            {!groupRoles.length && <small className="quiet">No roles mapped; unmapped roles grant nothing.</small>}
+            {staleRoles.length > 0 && <small className="field-error">Remove the missing roles before saving.</small>}
+          </div>
+          <div className="form-actions split"><button className="text-button" disabled={!nextRole} onClick={() => setGroupRoles((rows) => [...rows, { role: nextRole.id, capability: 'read' }])}>Add role</button><div>{repo.groupPolicy && <button className="text-button danger-text" onClick={() => act('clear-group-policy', () => api.setGroupPolicy(repo.name, null))}>Clear</button>} <button className="button" disabled={busy || !canSaveGroupPolicy} onClick={saveGroupPolicy}>{busy === 'group-policy' ? 'Saving…' : 'Save'}</button></div></div>
         </div>
         <div className="subsection">
           <div className="section-title"><div><h3>Protected branches</h3><p>Protected branches accept fast-forward updates, but reject force-pushes and deletion.</p></div></div>

@@ -27,7 +27,7 @@ function moldFields(block) {
   )
 }
 
-test('published repository-1 remains reader-free and state-2 owns the current repository mold', () => {
+test('published repository-1 remains reader-free and state-4 owns the current repository mold', () => {
   const repository1 = sourceBlock(surface, '+$  repository-1', '+$  state-1')
   assert.deepEqual(moldFields(repository1), [
     'owner',
@@ -63,14 +63,26 @@ test('published repository-1 remains reader-free and state-2 owns the current re
 
   const state2 = sourceBlock(surface, '+$  state-2', '+$  state-3')
   assert.match(state2, /\$:\s+%2/)
-  assert.match(state2, /repositories=\(map @t repository\)/)
+  assert.match(state2, /repositories=\(map @t repository-3\)/)
 
-  const state3 = sourceBlock(surface, '+$  state-3', '+$  action')
+  const state3 = sourceBlock(surface, '+$  state-3', '+$  state-4')
   assert.match(state3, /\$:\s+%3/)
-  assert.match(state3, /repositories=\(map @t repository\)/)
+  assert.match(state3, /repositories=\(map @t repository-3\)/)
+
+  const state4 = sourceBlock(surface, '+$  state-4', '+$  action')
+  assert.match(state4, /\$:\s+%4/)
+  assert.match(state4, /repositories=\(map @t repository\)/)
 })
 
-test('state-2 keeps the four fields installed ships stored, and state-3 adds the queue', () => {
+test('repository-3 freezes the pre-group shape and the current repository only appends the policy', () => {
+  const repository3 = sourceBlock(surface, '+$  repository-3', '+$  state-2')
+  const currentRepository = sourceBlock(surface, '+$  repository\n', '+$  state-0')
+  assert.deepEqual(moldFields(currentRepository), [...moldFields(repository3), 'group-policy'])
+  assert.match(currentRepository, /group-policy=\(unit group-policy\)/)
+  assert.doesNotMatch(repository3, /group-policy/)
+})
+
+test('state-2 keeps the four fields installed ships stored, state-3 adds the queue, and state-4 keeps it', () => {
   // A stored %2 noun predates the fork queue. If state-2 grows a field, every
   // installed ship fails to load rather than migrating.
   const state2 = sourceBlock(surface, '+$  state-2', '+$  state-3')
@@ -80,7 +92,7 @@ test('state-2 keeps the four fields installed ships stored, and state-3 adds the
     'github-token',
   ])
 
-  const state3 = sourceBlock(surface, '+$  state-3', '+$  action')
+  const state3 = sourceBlock(surface, '+$  state-3', '+$  state-4')
   assert.deepEqual(moldFields(state3), [
     'repositories',
     'peers',
@@ -88,10 +100,13 @@ test('state-2 keeps the four fields installed ships stored, and state-3 adds the
     'peer-prepare-queue',
   ])
   assert.match(state3, /peer-prepare-queue=\(map @uv peer-prepare-entry\)/)
+
+  const state4 = sourceBlock(surface, '+$  state-4', '+$  action')
+  assert.deepEqual(moldFields(state4), moldFields(state3))
 })
 
 test('migrate-state-2 carries the repositories forward and defaults the queue empty', () => {
-  const migrate = sourceBlock(agent, '++  migrate-state-2', '++  settle-webhook-state')
+  const migrate = sourceBlock(agent, '++  migrate-state-2', '++  migrate-state-3')
   assert.match(migrate, /\|=  stored=state-2:git/)
   assert.match(migrate, /\^-  state-3:git/)
   // The repositories must come across; a migration that drops them is worse
@@ -106,6 +121,14 @@ test('migrate-state-2 carries the repositories forward and defaults the queue em
   const migrateOne = sourceBlock(agent, '++  migrate-state-1', '++  migrate-state-2')
   assert.match(migrateOne, /\^-  state-2:git/)
   assert.match(migrateOne, /\[%2 migrated peers\.stored github-token\.stored\]/)
+})
+
+test('migrate-state-3 rewrites every stored repository without a group policy', () => {
+  const migrate = sourceBlock(agent, '++  migrate-state-3', '++  settle-webhook-state')
+  assert.match(migrate, /\|=  stored=state-3:git/)
+  assert.match(migrate, /\^-  state-4:git/)
+  assert.match(migrate, /\(repository-3-to-4:git-migrate \+\.i\.remaining\)/)
+  assert.match(migrate, /\[%4 migrated peers\.stored github-token\.stored peer-prepare-queue\.stored\]/)
 })
 
 test('published pull mold is preserved while current pulls pin source and target refs', () => {
@@ -143,21 +166,22 @@ test('published pull mold is preserved while current pulls pin source and target
   assert.match(currentRepository, /native-pulls=\(list native-pull\)/)
 })
 
-test('on-load migrates zero, one and two forward while accepting three', () => {
-  assert.match(agent, /=\|  state-3:git/)
+test('on-load migrates zero through three forward while accepting four', () => {
+  assert.match(agent, /=\|  state-4:git/)
   const onLoad = sourceBlock(agent, '++  on-load', '++  on-poke')
   assert.match(onLoad, /\?\+\s+-\.q\.old\s+!!/)
-  assert.match(onLoad, /=\/  loaded=state-3:git/)
+  assert.match(onLoad, /=\/  loaded=state-4:git/)
   assert.ok(
     onLoad.includes(
-      '%0  (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))',
+      '%0  (migrate-state-3 (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old)))))',
     ),
   )
   assert.ok(
-    onLoad.includes('%1  (migrate-state-2 (migrate-state-1 !<(state-1:git old)))'),
+    onLoad.includes('%1  (migrate-state-3 (migrate-state-2 (migrate-state-1 !<(state-1:git old))))'),
   )
-  assert.ok(onLoad.includes('%2  (migrate-state-2 !<(state-2:git old))'))
-  assert.ok(onLoad.includes('%3  !<(state-3:git old)'))
+  assert.ok(onLoad.includes('%2  (migrate-state-3 (migrate-state-2 !<(state-2:git old)))'))
+  assert.ok(onLoad.includes('%3  (migrate-state-3 !<(state-3:git old))'))
+  assert.ok(onLoad.includes('%4  !<(state-4:git old)'))
 })
 
 test('pure repository migration seam and non-empty Hoon vector are present', () => {
@@ -169,8 +193,13 @@ test('pure repository migration seam and non-empty Hoon vector are present', () 
   const vector = readFileSync(vectorUrl, 'utf8')
   assert.match(migration, /\+\+  repository-1-to-2/)
   assert.match(migration, /repo=repository-1:git/)
+  assert.match(migration, /\^-  repository-3:git/)
+  assert.match(migration, /\+\+  repository-3-to-4/)
+  assert.match(migration, /repo=repository-3:git/)
   assert.match(migration, /\^-  repository:git/)
   assert.match(vector, /repository-1-to-2:git-migrate/)
+  assert.match(vector, /repository-3-to-4:git-migrate/)
+  assert.match(vector, /\?>(?:\s+)?=\(~ group-policy\.current\)/)
   assert.match(vector, /old=repository-1:git/)
   assert.match(vector, /refs=\(map @t oid:git\)/)
   assert.match(vector, /objects=\(map oid:git object:git\)/)
