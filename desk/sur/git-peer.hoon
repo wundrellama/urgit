@@ -54,12 +54,30 @@
 +$  catalog-request
   $:  request=@uv
   ==
+::  the catalog entry older peers send and expect under %catalog
+::
++$  catalog-repository-legacy
+  $:  name=@t
+      head=@t
+      refs=@ud
+      objects=@ud
+      writable=?
+  ==
++$  catalog-legacy
+  $:  request=@uv
+      repositories=(list catalog-repository-legacy)
+  ==
+::  via names the group whose policy granted the read; ~ when the owner,
+::  a public repository, or an explicit reader or writer entry did.
+::  sent under %catalog-via, which only newer peers understand
+::
 +$  catalog-repository
   $:  name=@t
       head=@t
       refs=@ud
       objects=@ud
       writable=?
+      via=(unit [host=@p name=@tas])
   ==
 +$  catalog
   $:  request=@uv
@@ -110,7 +128,8 @@
       [%stream-next transfer=@uv]
       [%stream-grown transfer=@uv]
       [%catalog-request catalog-request=catalog-request]
-      [%catalog catalog=catalog]
+      [%catalog catalog=catalog-legacy]
+      [%catalog-via catalog=catalog]
       [%catalog-error request=@uv message=@t]
       [%browse-request request=@uv repository=@t view=browse-view number=@ud file-path=path]
       [%browse-accepted request=@uv]
