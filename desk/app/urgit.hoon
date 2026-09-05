@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  git, git-peer
-/+  dbug, default-agent, git-access, git-archive, git-blame, git-clay, git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
+/+  dbug, default-agent, git-access, git-archive, git-blame, git-catalog, git-clay, git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  profile-value  $@(~ [kind=@tas value=*])
@@ -125,13 +125,8 @@
       number=@ud
       file-path=path
   ==
-+$  peer-discovery
-  $:  peer=ship
-      active=?
-      ok=?
-      message=@t
-      repositories=(list catalog-repository:git-peer)
-  ==
+::  group is set when the discovery was fanned out to a group's members
++$  peer-discovery  discovery:git-catalog
 +$  peer-browse
   $:  peer=ship
       repository=@t
@@ -507,10 +502,16 @@
   =.  events  (~(put in events) %pull-request)
   (~(put in events) %pull-comment)
 ::
-++  repository-readable
-  |=  [repo=repository:git requester=@p]
-  ^-  ?
-  (can-read:git-access public-read.repo owner.repo readers.repo writers.repo requester)
+++  group-policy-json
+  |=  policy=(unit group-policy:git)
+  ^-  json
+  ?~  policy  ~
+  %-  pairs:enjs:format
+  :~  ['host' s+(scot %p host.group.u.policy)]
+      ['group' s+name.group.u.policy]
+      ['base' s+base.u.policy]
+      ['roles' [%o (~(run by roles.u.policy) |=(cap=capability:git s+cap))]]
+  ==
 ::
 ++  profile-field
   |=  [contact=profile-contact field=@tas kind=@tas]
@@ -668,6 +669,7 @@
       ['writeTokenSet' b+?=(^ write-token-hash.repo)]
       ['writers' [%a writers-json]]
       ['readers' [%a readers-json]]
+      ['groupPolicy' (group-policy-json group-policy.repo)]
       ['pullRequests' [%a pulls-json]]
       ['nativeIssues' [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]]
       ['releases' [%a releases-json]]
@@ -707,6 +709,7 @@
   =.  fields  (~(del by fields) 'writeTokenSet')
   =.  fields  (~(del by fields) 'writers')
   =.  fields  (~(del by fields) 'readers')
+  =.  fields  (~(del by fields) 'groupPolicy')
   =.  fields  (~(del by fields) 'binding')
   =.  fields  (~(del by fields) 'peerOrigin')
   =.  fields  (~(del by fields) 'webhooks')
@@ -1916,7 +1919,7 @@
   |=  stored=state-1:git
   ^-  state-2:git
   =/  remaining=(list [@t repository-1:git])  ~(tap by repositories.stored)
-  =/  migrated=(map @t repository:git)  ~
+  =/  migrated=(map @t repository-3:git)  ~
   =.  migrated
     |-
     ?~  remaining  migrated
@@ -1933,9 +1936,25 @@
   ^-  state-3:git
   [%3 repositories.stored peers.stored github-token.stored ~]
 ::
-++  settle-webhook-state
+::  a stored %3 predates group policies; every repository starts without one
+::
+++  migrate-state-3
   |=  stored=state-3:git
-  ^-  state-3:git
+  ^-  state-4:git
+  =/  remaining=(list [@t repository-3:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      %+  ~(put by migrated)  -.i.remaining
+      (repository-3-to-4:git-migrate +.i.remaining)
+    $(remaining t.remaining)
+  [%4 migrated peers.stored github-token.stored peer-prepare-queue.stored]
+::
+++  settle-webhook-state
+  |=  stored=state-4:git
+  ^-  state-4:git
   =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
   =/  settled=(map @t repository:git)  ~
   |-
@@ -2144,7 +2163,7 @@
 --
 ::
 %-  agent:dbug
-=|  state-3:git
+=|  state-4:git
 =*  state  -
 =/  in-flight  *(map @uv lfs-request)
 =/  lfs-deletes  *(map @uv lfs-delete)
@@ -2157,6 +2176,9 @@
 =/  peer-results  *(map @uv peer-result)
 =/  peer-outgoing  *(map @uv peer-offer-flight)
 =/  peer-discoveries  *(map @uv peer-discovery)
+::  the catalog request still unacked per ship: one rides at a time, and
+::  a hold an hour old gives way to a fresh request
+=/  peer-inflight  *ledger:git-catalog
 =/  peer-browses  *(map @uv peer-browse)
 =/  peer-browse-prepare-queue  *(map @uv peer-browse-job)
 =/  peer-browse-serving  *(map @uv peer-browse-serve)
@@ -2184,12 +2206,13 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-3:git
+  =/  loaded=state-4:git
     ?+  -.q.old  !!
-      %0  (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))
-      %1  (migrate-state-2 (migrate-state-1 !<(state-1:git old)))
-      %2  (migrate-state-2 !<(state-2:git old))
-      %3  !<(state-3:git old)
+      %0  (migrate-state-3 (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old)))))
+      %1  (migrate-state-3 (migrate-state-2 (migrate-state-1 !<(state-1:git old))))
+      %2  (migrate-state-3 (migrate-state-2 !<(state-2:git old)))
+      %3  (migrate-state-3 !<(state-3:git old))
+      %4  !<(state-4:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
   ::  re-arm the snapshot-build timer for every request still queued: a queue
@@ -2204,7 +2227,7 @@
     :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
         [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
     ==
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-inflight ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   (weld requeued connect-cards)
 ::
 ++  on-poke
@@ -2236,6 +2259,124 @@
   |=  [target=ship wire=wire packet=packet:git-peer]
   ^-  card
   [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
+::
+::  a guarded read of this ship's %groups: ~ unless %groups is running,
+::  knows the group, and answers the path without crashing.  each scry is
+::  guarded by one that cannot answer [~ ~], because that answer kills the
+::  event even under +mule on the current runtime: gall itself answers the
+::  /$ liveness check, and %groups answers /u/groups/<flag> with a loobean
+::  whether the group exists or not.  the path read is
+::  /<under>/groups/<host>/<name>/<rest>, and rest ends in the mark asked
+::  for: gall hands the answer over as-is when %groups serves that mark,
+::  and otherwise converts it through the %groups desk's marks at request
+::  time, so a read asks for the served mark where that is known.  the only
+::  arm that scries %groups
+::
+++  group-peek
+  |=  [group=[host=@p name=@tas] under=path rest=path]
+  ^-  (unit *)
+  =/  prefix=path  /(scot %p our.bowl)/groups/(scot %da now.bowl)
+  =/  flag=path  /groups/(scot %p host.group)/[name.group]
+  =/  live=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix /$))
+  ?.  ?&(?=(%& -.live) p.live)  ~
+  =/  known=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix flag))
+  ?.  ?&(?=(%& -.known) p.known)  ~
+  =/  raw=(each * tang)
+    %-  mule  |.
+    .^(* %gx (weld prefix (weld under (weld flag rest))))
+  ?.  ?=(%& -.raw)  ~
+  `p.raw
+::
+::  the requester's seat in the repository's group, read from %groups in this
+::  event and never cached.  fails closed: anything short of a seat that
+::  soft-casts to our minimal shape is ~.
+::
+::  a group hosted here is authoritative.  a joined group is the host's
+::  mirror, believed only while %groups reports it initialised and this
+::  ship is still seated in it (+mirror-trusted); the initialised bit is
+::  the tail of the /v2/ui/groups/<flag> peek, [group init=? member-count=@ud],
+::  which %groups resets together with its copy whenever it rebuilds one.
+::  the only arm that turns %groups into a capability.
+::
+++  group-seat
+  |=  [policy=(unit group-policy:git) requester=@p]
+  ^-  (unit group-seat:git)
+  ?~  policy  ~
+  =/  group=[host=@p name=@tas]  group.u.policy
+  =/  seat-of
+    |=  who=@p
+    ^-  (unit group-seat:git)
+    =/  raw=(unit *)  (group-peek group / /seats/(scot %p who)/noun)
+    ?~  raw  ~
+    =/  seat=(each (unit group-seat:git) tang)
+      %-  mule  |.
+      ;;((unit group-seat:git) u.raw)
+    ?.  ?=(%& -.seat)  ~
+    p.seat
+  =/  net=?(%pub %sub)  ?:(=(our.bowl host.group) %pub %sub)
+  =/  init=?
+    ?:  ?=(%pub net)  %.y
+    =/  raw=(unit *)  (group-peek group /v2/ui /noun)
+    ?~  raw  %.n
+    =/  ui=(each [* init=? member-count=@ud] tang)
+      %-  mule  |.
+      ;;([* init=? member-count=@ud] u.raw)
+    ?.  ?=(%& -.ui)  %.n
+    init.p.ui
+  =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our.bowl)))
+  ?.  (mirror-trusted:git-access net init seated)  ~
+  (seat-of requester)
+::
+::  the ships seated in a group, for fanning discovery out to them.  the
+::  group is believed on exactly the terms +group-seat believes it for
+::  access, with this ship as the requester, so an untrusted mirror or a
+::  group this ship is not seated in lists nobody.  %groups serves
+::  /seats/ships as %ships, a (set ship), and is asked for it by that mark
+::
+++  group-members
+  |=  group=[host=@p name=@tas]
+  ^-  (unit (set ship))
+  ?~  (group-seat `[group %none ~] our.bowl)  ~
+  =/  raw=(unit *)  (group-peek group / /seats/ships/ships)
+  ?~  raw  ~
+  =/  ships=(each (set ship) tang)
+    %-  mule  |.
+    ;;((set ship) u.raw)
+  ?.  ?=(%& -.ships)  ~
+  `p.ships
+::
+++  repository-group-capability
+  |=  [repo=repository:git requester=@p]
+  ^-  capability:git
+  ?~  group-policy.repo  %none
+  ?:  =(requester owner.repo)  %none
+  (group-capability:git-access group-policy.repo (group-seat group-policy.repo requester))
+::
+++  repository-readable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  %-  can-read:git-access
+  :*  public-read.repo
+      owner.repo
+      readers.repo
+      writers.repo
+      (repository-group-capability repo requester)
+      requester
+  ==
+::
+++  repository-writable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  %-  can-write:git-access
+  :*  owner.repo
+      writers.repo
+      (repository-group-capability repo requester)
+      requester
+  ==
 ::
 ++  peer-activity-put
   |=  event=peer-activity
@@ -2596,6 +2737,7 @@
           ~
           ~
           default-notification-events
+          ~
       ==
     u.existing(head head.flight, refs refs.flight, objects objects.flight, peer-origin `[[source.flight source-repository.flight]])
   =.  repositories  (~(put by repositories) local-repository.flight repo)
@@ -2673,6 +2815,9 @@
     (peer-catalog-request catalog-request.packet)
   ::
       %catalog
+    (peer-catalog-legacy catalog.packet)
+  ::
+      %catalog-via
     (peer-catalog catalog.packet)
   ::
       %catalog-error
@@ -2736,6 +2881,13 @@
     (peer-error transfer.packet message.packet)
   ==
 ::
+::  answer a peer's catalog request with the repositories it may read.
+::  an entry is tagged via the repository's group when the group policy
+::  is the only thing letting the peer read it: the same +can-read, asked
+::  once more with the group's capability withheld.  the answer goes out
+::  under the older %catalog shape unless some entry carries a group, so
+::  older peers keep understanding it
+::
 ++  peer-catalog-request
   |=  msg=catalog-request:git-peer
   ^-  (quip card _this)
@@ -2745,10 +2897,24 @@
     =/  name=@t  -.entry
     =/  repo=repository:git  +.entry
     ?.  (repository-readable repo src.bowl)  ~
-    `[name head.repo ~(wyt by refs.repo) ~(wyt by objects.repo) (~(has in writers.repo) src.bowl)]
+    =/  explicit=?
+      (can-read:git-access public-read.repo owner.repo readers.repo writers.repo %none src.bowl)
+    =/  via=(unit [host=@p name=@tas])
+      ?:  explicit  ~
+      ?~  group-policy.repo  ~
+      `group.u.group-policy.repo
+    `[name head.repo ~(wyt by refs.repo) ~(wyt by objects.repo) (repository-writable repo src.bowl) via]
+  =/  answer=(list catalog-repository:git-peer)  (scag 200 readable-repositories)
   :_  this
-  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) [%catalog request.msg (scag 200 readable-repositories)])
+  :~  (peer-card src.bowl /peer/catalog/(scot %uv request.msg) (pack:git-catalog request.msg answer))
   ==
+::
+::  a %catalog from an older peer: nothing it lists came through a group
+::
+++  peer-catalog-legacy
+  |=  msg=catalog-legacy:git-peer
+  ^-  (quip card _this)
+  (peer-catalog request.msg (turn repositories.msg from-legacy:git-catalog))
 ::
 ++  peer-catalog
   |=  msg=catalog:git-peer
@@ -2757,7 +2923,7 @@
   ?~  found  `this
   ?.  =(src.bowl peer.u.found)  `this
   =.  peer-discoveries
-    (~(put by peer-discoveries) request.msg u.found(active %.n, ok %.y, message 'complete', repositories repositories.msg))
+    (~(put by peer-discoveries) request.msg (answered:git-catalog u.found repositories.msg))
   `this
 ::
 ++  peer-catalog-error
@@ -2767,7 +2933,7 @@
   ?~  found  `this
   ?.  =(src.bowl peer.u.found)  `this
   =.  peer-discoveries
-    (~(put by peer-discoveries) request u.found(active %.n, ok %.n, message message))
+    (~(put by peer-discoveries) request (refused:git-catalog u.found message))
   `this
 ::
 ++  peer-browse-request
@@ -3108,7 +3274,7 @@
   =/  authorized=?
     ?:  pull-request.offer
       (repository-readable u.found src.bowl)
-    (~(has in writers.u.found) src.bowl)
+    (repository-writable u.found src.bowl)
   ?.  authorized
     =/  denied-message=@t
       ?:(pull-request.offer 'ship is not authorized to read this repository' 'ship is not authorized to update this repository')
@@ -3763,6 +3929,7 @@
           ~
           ~
           default-notification-events
+          ~
       ==
     `this(repositories (~(put by repositories) name.act repo))
   ::
@@ -3845,6 +4012,17 @@
     ?~  found  `this
     =/  repo=repository:git  u.found(readers (~(del in readers.u.found) reader.act))
     `this(repositories (~(put by repositories) repository.act repo))
+  ::
+      %set-group-policy
+    =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+    ?~  found  `this
+    ::  a group can drive access only while this ship is seated in it: hosted
+    ::  groups are authoritative, joined ones are read from a trusted mirror
+    ~|  %group-policy-this-ship-not-a-member
+    ?>  ?|  ?=(~ policy.act)
+            !=(~ (group-seat policy.act our.bowl))
+        ==
+    `this(repositories (~(put by repositories) repository.act u.found(group-policy policy.act)))
   ::
       %set-write-token
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)
@@ -4230,6 +4408,59 @@
   ?~  body.request.req  ~
   (de:json:html q.u.body.request.req)
 ::
+++  parse-capability
+  |=  text=@t
+  ^-  (unit capability:git)
+  ?+  text  ~
+    %none   `%none
+    %read   `%read
+    %write  `%write
+  ==
+::
+::  the policy object the settings panel posts:
+::  {"host": "~sampel", "group": "crew", "base": "none", "roles": {"verified": "write"}},
+::  "host" defaulting to this ship; anything else is a 422 message.  the
+::  group must be one this ship is seated in right now, hosted here or
+::  joined, read the same way every later access check reads it
+::
+++  parse-group-policy
+  |=  jon=json
+  ^-  (each group-policy:git @t)
+  =/  host-text=(unit @t)  (string-at 'host' jon)
+  =/  host=(unit @p)  ?~(host-text `our.bowl (slaw %p u.host-text))
+  ?~  host
+    [%| 'host must be a valid ship name']
+  =/  group-text=(unit @t)  (string-at 'group' jon)
+  =/  group=(unit @tas)  ?~(group-text ~ (slaw %tas u.group-text))
+  ?~  group
+    [%| 'group must be a valid group name']
+  ?~  (group-seat `[[u.host u.group] %none ~] our.bowl)
+    [%| 'this ship is not a member of that group']
+  =/  base-text=(unit @t)  (string-at 'base' jon)
+  =/  base=(unit capability:git)  ?~(base-text `%none (parse-capability u.base-text))
+  ?~  base
+    [%| 'base must be none, read or write']
+  =/  roles-json=(unit json)  (json-at 'roles' jon)
+  ?.  ?|(?=(~ roles-json) ?=([~ %o *] roles-json))
+    [%| 'roles must map role ids to none, read or write']
+  =/  remaining=(list [@t json])
+    ?~  roles-json  ~
+    ?.  ?=([%o *] u.roles-json)  ~
+    ~(tap by p.u.roles-json)
+  =/  roles=(map @tas capability:git)  ~
+  |-
+  ?~  remaining
+    [%& [[u.host u.group] u.base roles]]
+  =/  role=(unit @tas)  (slaw %tas -.i.remaining)
+  ?~  role
+    [%| 'role ids must be valid role names']
+  =/  cap=(unit capability:git)
+    ?.  ?=([%s *] +.i.remaining)  ~
+    (parse-capability p.+.i.remaining)
+  ?~  cap
+    [%| 'roles must map role ids to none, read or write']
+  $(remaining t.remaining, roles (~(put by roles) u.role u.cap))
+::
 ++  valid-repository-name
   |=  name=@t
   ^-  ?
@@ -4304,6 +4535,7 @@
           ['refs' n+(decimal refs.repo)]
           ['objects' n+(decimal objects.repo)]
           ['writable' b+writable.repo]
+          ['via' (group-flag-json via.repo)]
       ==
     %-  pairs:enjs:format
     :~  ['request' s+(scot %uv request)]
@@ -4311,15 +4543,31 @@
         ['active' b+active.discovery]
         ['ok' b+ok.discovery]
         ['message' s+message.discovery]
+        ['status' s+(status-text:git-catalog status.discovery)]
         ['repositories' [%a repositories-json]]
+        ['group' (group-flag-json group.discovery)]
+        ['heldSince' ?~(held-since.discovery ~ s+(iso:git-catalog u.held-since.discovery))]
     ==
   (pairs:enjs:format ~[['discoveries' [%a entries]]])
+::
+::  a group flag as Groups writes it, "~host/name", or null
+::
+++  group-flag-json
+  |=  group=(unit [host=@p name=@tas])
+  ^-  json
+  ?~  group  ~
+  s+(rap 3 (scot %p host.u.group) '/' name.u.group ~)
+::
+++  parse-group-flag
+  |=  text=@t
+  ^-  (unit [host=@p name=@tas])
+  (rush text ;~(plug ;~(pfix sig fed:ag) ;~(pfix fas sym)))
 ::
 ++  peers-json
   ^-  json
   =/  entries=(list json)
     (turn ~(tap in peers) |=(peer=@p s+(scot %p peer)))
-  (pairs:enjs:format ~[['peers' [%a entries]]])
+  (pairs:enjs:format ~[['ship' s+(scot %p our.bowl)] ['peers' [%a entries]]])
 ::
 ++  peer-browses-json
   ^-  json
@@ -5519,14 +5767,96 @@
     =/  request=@uv
       `@uv`(shas %git-peer-discovery (cat 3 eny.bowl request-count))
     =.  request-count  +(request-count)
+    ::  a request to this ship still unacked and not yet an hour old: record
+    ::  it as pending, ask nothing
+    =/  decision  (plan:git-catalog peer-inflight ~ u.source now.bowl)
+    ?:  ?=(%hold -.decision)
+      =.  peer-discoveries
+        (~(put by peer-discoveries) request (held:git-catalog u.source ~ since.decision))
+      :_  this
+      (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
     =.  peer-discoveries
-      (~(put by peer-discoveries) request [u.source %.y %.n 'contacting peer' ~])
+      (~(put by peer-discoveries) request (waiting:git-catalog u.source ~))
+    =.  peer-inflight  (sent:git-catalog peer-inflight u.source request now.bowl)
     :_  this
     %+  weld
       :~  (peer-card u.source /peer/catalog-request/(scot %uv request) [%catalog-request request])
           [%pass /peer/discovery-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
       ==
     (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
+  ::  fan one catalog request out to every seated member of a group, the
+  ::  group being the address book: nobody types a ship or repository name.
+  ::  the seats come from this ship's %groups on the same terms access
+  ::  does; each member is asked with the ordinary %catalog-request and
+  ::  answers with what it lets this ship read, so the group grants nothing
+  ::  here.  a member already being asked on this group's behalf is not
+  ::  asked again, and one with an earlier request still unacked is not
+  ::  asked at all, only recorded as pending, until that hold is an hour
+  ::  old and a fresh request replaces it; the fan-out stops at 200 members
+  ::
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %discover-group ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  group-text=(unit @t)  (string-at 'group' u.jon)
+    ?~  group-text
+      :_  this
+      (api-error eyre-id 422 'group is required')
+    =/  group=(unit [host=@p name=@tas])  (parse-group-flag u.group-text)
+    ?~  group
+      :_  this
+      (api-error eyre-id 422 'group must be a Groups flag, ~host/name')
+    =/  members=(unit (set ship))  (group-members u.group)
+    ?~  members
+      :_  this
+      (api-error eyre-id 422 'this ship is not a member of that group')
+    =/  others=(list ship)  (sort ~(tap in (~(del in u.members) our.bowl)) lth)
+    =/  capped=?  (gth (lent others) 200)
+    =/  targets=(list ship)  (scag 200 others)
+    =/  active-for=(map ship @uv)
+      %-  ~(rep by peer-discoveries)
+      |=  [entry=[request=@uv discovery=peer-discovery] acc=(map ship @uv)]
+      ?.  ?&(active.discovery.entry =(group.discovery.entry group))  acc
+      (~(put by acc) peer.discovery.entry request.entry)
+    =|  requests=(list @uv)
+    =|  cards=(list card)
+    |-
+    ?^  targets
+      =/  decision  (plan:git-catalog peer-inflight active-for i.targets now.bowl)
+      ?:  ?=(%reuse -.decision)
+        $(targets t.targets, requests [request.decision requests])
+      =/  request=@uv
+        `@uv`(shas %git-peer-discovery (cat 3 eny.bowl request-count))
+      =.  request-count  +(request-count)
+      ?:  ?=(%hold -.decision)
+        =.  peer-discoveries
+          (~(put by peer-discoveries) request (held:git-catalog i.targets group since.decision))
+        $(targets t.targets, requests [request requests])
+      =.  peer-discoveries
+        (~(put by peer-discoveries) request (waiting:git-catalog i.targets group))
+      =.  peer-inflight  (sent:git-catalog peer-inflight i.targets request now.bowl)
+      =/  ask=card
+        (peer-card i.targets /peer/catalog-request/(scot %uv request) [%catalog-request request])
+      =/  timeout=card
+        [%pass /peer/discovery-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+      %=  $
+        targets   t.targets
+        requests  [request requests]
+        cards     [ask timeout cards]
+      ==
+    :_  this
+    %+  weld  (flop cards)
+    %^  api-json  eyre-id  202
+    %-  pairs:enjs:format
+    :~  ['ok' b+%.y]
+        ['group' (group-flag-json group)]
+        ['requests' [%a (turn (flop requests) |=(request=@uv s+(scot %uv request)))]]
+        ['members' n+(decimal (lent others))]
+        ['capped' b+capped]
+    ==
   ?:  ?&  =(%'DELETE' method)
           ?=([%apps %urgit %api %peer %discoveries ~] site)
       ==
@@ -7179,6 +7509,28 @@
       (api-with-action eyre-id 200 [%grant-reader name u.reader])
     (api-with-action eyre-id 200 [%revoke-reader name u.reader])
   ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %repository @ %group-policy ~] site)
+      ==
+    =/  name=@t  i.t.t.t.t.site
+    ?.  (~(has by repositories) name)
+      :_  this
+      (api-error eyre-id 404 'repository not found')
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  policy-json=(unit json)  (json-at 'policy' u.jon)
+    ?~  policy-json
+      :_  this
+      (api-error eyre-id 422 'policy is required; null clears it')
+    ?~  u.policy-json
+      (api-with-action eyre-id 200 [%set-group-policy name ~])
+    =/  parsed=(each group-policy:git @t)  (parse-group-policy u.policy-json)
+    ?:  ?=(%| -.parsed)
+      :_  this
+      (api-error eyre-id 422 p.parsed)
+    (api-with-action eyre-id 200 [%set-group-policy name `p.parsed])
+  ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %protected ~] site)
       ==
     =/  name=@t  i.t.t.t.t.site
@@ -8707,6 +9059,22 @@
   =/  before=peer-ui-state
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
   =/  result=(quip card _this)
+  ::  the ack of a catalog request settles the ledger: the ship is back,
+  ::  so it may be asked again.  a nack means the ship does not run
+  ::  urgit, and settles the discovery now rather than at the timer
+  ::
+  ?:  ?=([%peer %catalog-request @ ~] wire)
+    ?.  ?=(%poke-ack -.sign)  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    ?~  request  `this
+    =.  peer-inflight  (settled:git-catalog peer-inflight u.request)
+    ?~  p.sign  `this
+    =/  found=(unit peer-discovery)  (~(get by peer-discoveries) u.request)
+    ?~  found  `this
+    ?.  active.u.found  `this
+    =.  peer-discoveries
+      (~(put by peer-discoveries) u.request (nacked:git-catalog u.found))
+    `this
   ?.  =(/clay-push wire)
     (on-agent:def wire sign)
   =/  maybe-pending=(unit clay-push)  pending-clay
@@ -9138,7 +9506,7 @@
     ?~  found  `this
     ?.  active.u.found  `this
     =.  peer-discoveries
-      (~(put by peer-discoveries) u.request u.found(active %.n, ok %.n, message 'peer discovery timed out'))
+      (~(put by peer-discoveries) u.request (timed-out:git-catalog u.found))
     `this
   ::
       [%clay-publish ~]
@@ -9544,6 +9912,7 @@
           ~
           ~
           default-notification-events
+          ~
           ==
         u.existing(head head.u.context, refs next-refs, objects combined, github-origin `origin)
       =.  repositories  (~(put by repositories) repository.u.context repo)

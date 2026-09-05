@@ -68,6 +68,11 @@ button { color: inherit; }
 .peer-children > small { padding: 7px 10px; color: var(--muted); font-size: 10px; }
 .remote-repo-link { min-height: 31px; padding-left: 8px; font-size: 11px; }
 .write-badge { margin-left: auto; color: #1a7f37; font-size: 8px; text-transform: uppercase; }
+.via-badge { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.via-badge + .write-badge { margin-left: 0; }
+.host-tag { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.group-refresh:hover { color: var(--accent); }
+.group-refresh:disabled { color: var(--muted); background: transparent; cursor: default; }
 .peer-empty { display: block; padding: 8px 10px; font-size: 10px; line-height: 1.45; }
 .workspace { min-width: 0; }
 .public-shell { min-height: 100vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
@@ -323,6 +328,7 @@ p { color: var(--muted); line-height: 1.55; }
 .section-title p, .danger-zone p { margin-bottom: 20px; font-size: 13px; }
 .status { align-self: flex-start; padding: 4px 7px; border-radius: 5px; background: var(--soft); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .status.good { color: #178342; background: #e6f5ea; }
+.status.warn { color: #9a6700; background: #fff5d6; }
 .binding-card { display: grid; grid-template-columns: 70px 1fr; gap: 9px 16px; margin: 12px 0 20px; padding: 14px; border-radius: 8px; background: var(--soft); }
 .binding-card span { color: var(--muted); font-size: 12px; }
 .binding-card code { font-size: 12px; }
@@ -504,6 +510,9 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .subsection h3 { margin: 0; font-size: 13px; }
 .writer-list { display: grid; gap: 4px; margin-top: 10px; }
 .writer-list > div { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 0 8px; border-radius: 6px; background: var(--soft); }
+.group-policy-saved { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.group-role-list > div { gap: 8px; padding: 4px 8px; }
+.group-role-list select { flex: 1; min-width: 0; }
 .branch-policy-list { display: grid; gap: 5px; margin-top: 10px; }
 .check-row.compact { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; }
 .pull-list { display: grid; }

@@ -1,4 +1,7 @@
+import { normalizeGroups } from './groupPolicy.js'
+
 const BASE = '/apps/urgit/api'
+const GROUPS_SCRY = '/~/scry/groups/groups/light.json'
 
 const fileRoute = (name, path) => {
   const parts = path.split('/').filter(Boolean).map(encodeURIComponent)
@@ -73,6 +76,8 @@ export const api = {
   peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
+  // one catalog request to every seated member of a group this ship is in; `group` is a flag, ~host/name
+  peerDiscoverGroup: (group) => request('/peer/discover-group', { method: 'POST', body: JSON.stringify({ group }) }),
   peerDiscoveries: () => request('/peer/discoveries'),
   peerDeleteDiscovery: (requestId) => request('/peer/discoveries', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   peerTransfers: () => request('/peer/transfers'),
@@ -163,6 +168,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ship, allowed }),
     }),
+  setGroupPolicy: (name, policy) =>
+    request(`/repository/${encodeURIComponent(name)}/group-policy`, {
+      method: 'POST',
+      body: JSON.stringify({ policy }),
+    }),
+  // every group this ship is in, hosted here or joined, read straight from the
+  // Groups agent's light scry; `ourShip` only marks the ones hosted here
+  listGroups: async (ourShip) => {
+    let response
+    try {
+      response = await fetch(GROUPS_SCRY, { credentials: 'same-origin' })
+    } catch (cause) {
+      throw new Error(`Groups unavailable: ${cause.message}`)
+    }
+    if (!response.ok) throw new Error(`Groups unavailable: HTTP ${response.status}`)
+    let data
+    try {
+      data = JSON.parse(await response.text())
+    } catch {
+      throw new Error('Groups unavailable: unreadable answer')
+    }
+    return normalizeGroups(data, ourShip)
+  },
   setProtected: (name, ref, protectedBranch) =>
     request(`/repository/${encodeURIComponent(name)}/protected`, {
       method: 'POST',

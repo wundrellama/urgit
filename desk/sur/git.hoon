@@ -232,6 +232,33 @@
       delta=nori:clay
   ==
 ::
+::  what a group seat may do with a repository; write implies read
+::
+::    $? bunts to its last entry, so %none goes last: a defaulted capability
+::    must grant nothing.
+::
++$  capability  ?(%write %read %none)
+::
+::  optional access derived from a %groups group hosted by this ship
+::
+::    a seated member with no roles gets .base; a seated member with roles gets
+::    the strongest capability its mapped roles carry. unseated ships, unmapped
+::    roles and an unreadable group contribute nothing.
+::
++$  group-policy
+  $:  group=[host=@p name=@tas]
+      base=capability
+      roles=(map @tas capability)
+  ==
+::
+::  the part of a %groups seat this desk reads; tlon's sur is not vendored, so
+::  peek results are soft-cast to this and anything else fails closed
+::
++$  group-seat
+  $:  roles=(set @tas)
+      joined=@da
+  ==
+::
 +$  repository
   $:  owner=@p
       public-read=?
@@ -259,6 +286,7 @@
       webhook-deliveries=(list webhook-delivery)
       upstream-updates=(list upstream-update)
       notification-events=(set notification-event)
+      group-policy=(unit group-policy)
   ==
 ::
 +$  state-0
@@ -346,21 +374,62 @@
       req=peer-prepare-request
   ==
 ::
+::  the repository shape installed ships stored before group policies
+::
++$  repository-3
+  $:  owner=@p
+      public-read=?
+      description=@t
+      head=@t
+      refs=(map @t oid)
+      protected-refs=(set @t)
+      objects=(map oid object)
+      writers=(set @p)
+      readers=(set @p)
+      write-token-hash=(unit @)
+      lfs-objects=(map @t lfs-object)
+      lfs-uploads=(map @t lfs-upload)
+      lfs-locks=(map @ud lfs-lock)
+      binding=(unit desk-binding)
+      peer-origin=(unit peer-origin)
+      github-origin=(unit github-origin)
+      github-issues=(list forge-item)
+      github-pulls=(list forge-item)
+      native-pulls=(list native-pull)
+      native-issues=(list native-issue)
+      releases=(map @t release)
+      webhooks=(map @ud webhook)
+      incoming-hook=(unit incoming-hook)
+      webhook-deliveries=(list webhook-delivery)
+      upstream-updates=(list upstream-update)
+      notification-events=(set notification-event)
+  ==
+::
 ::  the shape installed ships stored before the queue became persistent
 ::
 +$  state-2
   $:  %2
-      repositories=(map @t repository)
+      repositories=(map @t repository-3)
       peers=(set @p)
       github-token=(unit @t)
   ==
 ::
+::  the shape installed ships stored before group policies
+::
 +$  state-3
   $:  %3
-      repositories=(map @t repository)
+      repositories=(map @t repository-3)
       peers=(set @p)
       github-token=(unit @t)
       ::  persisted so an agent reload cannot strand a queued fork
+      peer-prepare-queue=(map @uv peer-prepare-entry)
+  ==
+::
++$  state-4
+  $:  %4
+      repositories=(map @t repository)
+      peers=(set @p)
+      github-token=(unit @t)
       peer-prepare-queue=(map @uv peer-prepare-entry)
   ==
 ::
@@ -378,6 +447,8 @@
       [%revoke-writer repository=@t writer=@p]
       [%grant-reader repository=@t reader=@p]
       [%revoke-reader repository=@t reader=@p]
+      ::  ~ clears the policy; this ship must be seated in the group
+      [%set-group-policy repository=@t policy=(unit group-policy)]
       [%set-write-token repository=@t token=@t]
       [%clear-write-token repository=@t]
       [%bind-desk repository=@t desk-name=desk branch=@t]

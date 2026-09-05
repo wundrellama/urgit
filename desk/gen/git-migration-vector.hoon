@@ -1,4 +1,4 @@
-::  Persisted repository %1 to %2 migration vector.
+::  Persisted repository %1 to %2 and %3 to %4 migration vectors.
 ::
 /-  git
 /+  git-migrate
@@ -94,11 +94,11 @@
       upstream-updates
       notification-events
   ==
-=/  migrated=repository:git
+=/  migrated=repository-3:git
   (repository-1-to-2:git-migrate old)
 =/  old-pull=native-pull-1:git  (snag 0 native-pulls.old)
 =/  migrated-pull=native-pull:git  (snag 0 native-pulls.migrated)
-=/  expected=repository:git
+=/  expected=repository-3:git
   :*  owner.old
       public-read.old
       description.old
@@ -149,4 +149,40 @@
 ?>  =(head.old-pull head.migrated-pull)
 ?>  =(base.old-pull base.migrated-pull)
 ?>  =(comments.old-pull comments.migrated-pull)
+::  a stored %3 repository comes forward field for field with no group policy
+::
+=/  current=repository:git  (repository-3-to-4:git-migrate migrated)
+?>  =(~ group-policy.current)
+=/  expected-current=repository:git
+  :*  owner.migrated
+      public-read.migrated
+      description.migrated
+      head.migrated
+      refs.migrated
+      protected-refs.migrated
+      objects.migrated
+      writers.migrated
+      readers.migrated
+      write-token-hash.migrated
+      lfs-objects.migrated
+      lfs-uploads.migrated
+      lfs-locks.migrated
+      binding.migrated
+      peer-origin.migrated
+      github-origin.migrated
+      github-issues.migrated
+      github-pulls.migrated
+      native-pulls.migrated
+      native-issues.migrated
+      releases.migrated
+      webhooks.migrated
+      incoming-hook.migrated
+      webhook-deliveries.migrated
+      upstream-updates.migrated
+      notification-events.migrated
+      ~
+  ==
+?>  =(expected-current current)
+?>  =(readers.migrated readers.current)
+?>  =(writers.migrated writers.current)
 %.y

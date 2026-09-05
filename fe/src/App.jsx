@@ -37,6 +37,7 @@ const repoFromHash = () => {
 function PrivateApp() {
   const [repositories, setRepositories] = useState([])
   const [peers, setPeers] = useState([])
+  const [ourShip, setOurShip] = useState('')
   const [selected, setSelected] = useState(repoFromHash())
   const [remoteSelected, setRemoteSelected] = useState(null)
   const remoteSelectedRef = useRef(null)
@@ -91,7 +92,7 @@ function PrivateApp() {
 
   useEffect(() => { refresh() }, [])
   const refreshPeers = useCallback(async () => {
-    try { const data = await api.peers(); setPeers(data.peers || []) } catch (cause) { setError(cause.message) }
+    try { const data = await api.peers(); setPeers(data.peers || []); setOurShip(data.ship || '') } catch (cause) { setError(cause.message) }
   }, [])
   useEffect(() => { refreshPeers() }, [refreshPeers])
   const refreshActivity = useCallback(async () => {
@@ -328,7 +329,7 @@ function PrivateApp() {
 
   return (
     <div className="app-shell">
-      <Sidebar repositories={repositories} peers={peers} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} />
+      <Sidebar repositories={repositories} peers={peers} ourShip={ourShip} selected={selected} remoteSelected={remoteSelected} onSelect={choose} onSelectRemote={chooseRemote} onCreate={() => setCreating(true)} onPeersChanged={refreshPeers} />
       <div className="workspace">
         <div className="topbar">
           <div className="topbar-navigation">

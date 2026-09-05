@@ -4,7 +4,7 @@
 |%
 ++  repository-1-to-2
   |=  repo=repository-1:git
-  ^-  repository:git
+  ^-  repository-3:git
   =/  native-pulls=(list native-pull:git)
     %+  turn  native-pulls.repo
     |=  pull=native-pull-1:git
@@ -47,5 +47,39 @@
       webhook-deliveries.repo
       upstream-updates.repo
       notification-events.repo
+  ==
+::
+::  a stored repository predates group policies; it starts without one
+::
+++  repository-3-to-4
+  |=  repo=repository-3:git
+  ^-  repository:git
+  :*  owner.repo
+      public-read.repo
+      description.repo
+      head.repo
+      refs.repo
+      protected-refs.repo
+      objects.repo
+      writers.repo
+      readers.repo
+      write-token-hash.repo
+      lfs-objects.repo
+      lfs-uploads.repo
+      lfs-locks.repo
+      binding.repo
+      peer-origin.repo
+      github-origin.repo
+      github-issues.repo
+      github-pulls.repo
+      native-pulls.repo
+      native-issues.repo
+      releases.repo
+      webhooks.repo
+      incoming-hook.repo
+      webhook-deliveries.repo
+      upstream-updates.repo
+      notification-events.repo
+      ~
   ==
 --

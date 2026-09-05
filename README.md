@@ -28,7 +28,7 @@ The authenticated app at `/apps/urgit` provides repository and branch management
 
 ### Urbit-native collaboration
 
-Ships can discover shared repositories, keep peers in the sidebar, fork repositories, pull updates from an origin, and send authorized fast-forward updates back. Native issues, discussions, review comments, pull requests, merges, and Landscape notifications use ship identity rather than a separate account system. Private repositories keep read and write access as separate permissions.
+Ships can discover shared repositories, keep peers in the sidebar, fork repositories, pull updates from an origin, and send authorized fast-forward updates back. A ship can also ask a whole Tlon Groups group it belongs to for repositories at once; the sidebar's Groups menu lists the answers by ship and repository, marking each one a group's policy alone made readable with that group's name, and counts the members that answered, run no urgit, were unreachable within 30 seconds, or are pending. A pending member is one whose earlier request is still unacknowledged: at most one request rides to a ship at a time, and that hold lapses after an hour so the next ask goes out fresh. On the current kernel a member whose urgit is suspended or nuked is held rather than refused, so it reports as unreachable, not as running no urgit. Native issues, discussions, review comments, pull requests, merges, and Landscape notifications use ship identity rather than a separate account system. Private repositories keep read and write access as separate permissions.
 
 ### A Git–Clay bridge
 
@@ -62,9 +62,13 @@ Native ship access distinguishes readers from writers:
 | Public visitor | Yes | Yes | No |
 | Reader | Yes | Yes | No |
 | Writer | Yes | Yes | Yes |
+| Group member with a read role | Yes | Yes | No |
+| Group member with a write role | Yes | Yes | Yes |
 | Owner | Yes | Yes | Yes |
 
 Writers also receive reader access, and branch protection still applies to their updates. Public pages and peer responses omit tokens, ACLs, and other administration fields.
+
+A private repository can also take readers and writers from a Tlon Groups group the ship is a member of, hosted by the ship itself or by another ship. The owner picks one of the ship's groups and its roles by title from the settings panel (Groups' slugs and role ids are shown alongside, never typed), chooses what a seated member with no roles gets (nothing by default), and maps roles to read or write; a member with several roles gets the strongest one, and roles that are not mapped grant nothing. Group membership is checked against the running `%groups` agent on every request and never stored, so if the group cannot be read, only the explicit lists apply. A group hosted elsewhere is read from the local copy `%groups` keeps of it, and counts only while `%groups` reports that copy initialised and this ship still holds a seat in the group; otherwise, again, only the explicit lists apply. Repository administration stays with the owner regardless of group roles.
 
 Git clients use a separate per-repository write token over HTTP Basic authentication. Any username is accepted; the token is the password. Public repositories allow unauthenticated fetches and LFS downloads, while private reads and all writes require the token.
 
