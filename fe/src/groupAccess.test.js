@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { api } from './api.js'
-import { describeGroup, describeHost, describeRole, findGroup, normalizeGroups, policyFlag, roleOptions } from './groupPolicy.js'
+import { describeGroup, describeHost, describeRole, filterGroups, findGroup, groupMatches, groupNeedle, normalizeGroups, policyFlag, roleOptions } from './groupPolicy.js'
 
 const repositoryView = readFileSync(
   new URL('./components/RepositoryView.jsx', import.meta.url),
@@ -143,6 +143,52 @@ test('normalizeGroups keeps every group and marks the ones hosted by this ship',
   assert.equal(findGroup(twins, '~dur/verify').hostedHere, false)
   assert.equal(findGroup(twins, '~syt/verify').hostedHere, true)
   assert.equal(findGroup(twins, 'verify'), undefined)
+})
+
+test('the Groups filter matches title or host, ignores case and surrounding space, and never widens the list', () => {
+  const groups = normalizeGroups(lightScry, '~syt')
+  const flags = (list) => list.map((group) => group.flag)
+  // by title
+  assert.deepEqual(flags(filterGroups(groups, 'veri')), ['~syt/vgrp'])
+  assert.deepEqual(flags(filterGroups(groups, 'Test')), ['~syt/v188gelp'])
+  // by host, with or without the sig; the host of a group hosted here is this ship's own name
+  assert.deepEqual(flags(filterGroups(groups, '~dur')), ['~dur/elsewhere'])
+  assert.deepEqual(flags(filterGroups(groups, 'dur')), ['~dur/elsewhere'])
+  assert.deepEqual(flags(filterGroups(groups, '~syt')), ['~syt/v188gelp', '~syt/vgrp'])
+  assert.deepEqual(flags(filterGroups(groups, 'syt')), ['~syt/v188gelp', '~syt/vgrp'])
+  // the description is not what is matched: 'hosted here' finds nothing by itself
+  assert.deepEqual(flags(filterGroups(groups, 'hosted here')), [])
+  assert.deepEqual(flags(filterGroups(groups, 'hosted')), [])
+  // case-insensitive both ways
+  assert.deepEqual(flags(filterGroups(groups, 'ELSEWHERE')), ['~dur/elsewhere'])
+  assert.deepEqual(flags(filterGroups(groups, '~DUR')), ['~dur/elsewhere'])
+  assert.deepEqual(flags(filterGroups(normalizeGroups({ '~syt/loud': { meta: { title: 'LOUD Title' } } }), 'loud t')), ['~syt/loud'])
+  // surrounding whitespace is trimmed; inner whitespace is part of the query
+  assert.deepEqual(flags(filterGroups(groups, '  verify  ')), ['~syt/vgrp'])
+  assert.deepEqual(flags(filterGroups(groups, '\t~dur\n')), ['~dur/elsewhere'])
+  assert.deepEqual(flags(filterGroups(groups, 'veri fy')), [])
+  // an empty or blank query is the whole list, the very same array
+  assert.equal(filterGroups(groups, ''), groups)
+  assert.equal(filterGroups(groups, '   '), groups)
+  assert.equal(filterGroups(groups, undefined), groups)
+  assert.equal(filterGroups(groups, null), groups)
+  // no match is an empty list, never a fallback to everything
+  assert.deepEqual(filterGroups(groups, 'nothing-like-this'), [])
+  assert.deepEqual(filterGroups(groups, '~zod'), [])
+  // a list that has not arrived filters to nothing without throwing
+  assert.deepEqual(filterGroups(null, 'x'), [])
+  assert.deepEqual(filterGroups(undefined, ''), [])
+  // the slug is not matched: two hosts' twin groups are told apart by host, not by slug text
+  const twins = normalizeGroups({ '~syt/verify': { meta: { title: 'Alpha' } }, '~dur/verify': { meta: { title: 'Beta' } } }, '~syt')
+  assert.deepEqual(flags(filterGroups(twins, 'verify')), [])
+  assert.deepEqual(flags(filterGroups(twins, 'dur')), ['~dur/verify'])
+  // the pieces the sidebar composes
+  assert.equal(groupNeedle('  MiXed '), 'mixed')
+  assert.equal(groupNeedle(''), '')
+  assert.equal(groupNeedle(null), '')
+  assert.equal(groupMatches(findGroup(groups, '~dur/elsewhere'), 'dur'), true)
+  assert.equal(groupMatches(findGroup(groups, '~dur/elsewhere'), 'syt'), false)
+  assert.equal(groupMatches(findGroup(groups, '~dur/elsewhere'), ''), true)
 })
 
 test('roleOptions offers each role once, keeping a row\'s own choice', () => {

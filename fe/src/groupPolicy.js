@@ -26,6 +26,22 @@ export const findGroup = (groups, flag) => (groups || []).find((group) => group.
 
 export const describeHost = (group) => (group.hostedHere ? 'hosted here' : `hosted by ${group.host}`)
 
+// the Groups sidebar filter: what was typed, trimmed and lowered
+export const groupNeedle = (query) => (query || '').trim().toLowerCase()
+
+// a group is kept when its title or its host contains the needle.  the host
+// is the ship Groups names, so a group hosted here is found by this ship's
+// name and not by the words 'hosted here'; the slug is not searched
+export const groupMatches = (group, needle) =>
+  !needle || group.title.toLowerCase().includes(needle) || group.host.toLowerCase().includes(needle)
+
+// an empty or blank query hands back the list it was given, not a copy
+export function filterGroups(groups, query) {
+  const list = groups || []
+  const needle = groupNeedle(query)
+  return needle ? list.filter((group) => groupMatches(group, needle)) : list
+}
+
 // roles of the group not already mapped by another row; a row keeps its own role on offer
 export function roleOptions(group, rows, own = '') {
   return (group?.roles || []).filter((role) => role.id === own || !rows.some((row) => row.role === role.id))
