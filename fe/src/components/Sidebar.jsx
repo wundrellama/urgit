@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { countParts, describeGrant, describeHold, describeReach, mergeDiscoveries } from '../groupDiscovery'
-import { describeHost } from '../groupPolicy'
+import { describeHost, filterGroups } from '../groupPolicy'
 import { GitIcon, PlusIcon } from './Icons'
 
 const idleCatalog = { loading: false, entries: [], counts: null, heldSince: null, pending: 0, settled: 0, members: 0, capped: false, error: '' }
@@ -22,6 +22,9 @@ export default function Sidebar({ repositories, peers, ourShip, selected, remote
   // members answered, and which fan-out is the current one
   const [groupsOpen, setGroupsOpen] = useState({})
   const [groupCatalogs, setGroupCatalogs] = useState({})
+  // what the Groups filter box holds; it only narrows the rows shown, and
+  // an open group hidden by it keeps its catalog for when it shows again
+  const [groupQuery, setGroupQuery] = useState('')
   const generations = useRef({})
   useEffect(() => {
     let stale = false
@@ -34,6 +37,7 @@ export default function Sidebar({ repositories, peers, ourShip, selected, remote
     const needle = query.trim().toLowerCase()
     return needle ? repositories.filter((repo) => repo.name.toLowerCase().includes(needle)) : repositories
   }, [query, repositories])
+  const visibleGroups = useMemo(() => filterGroups(groups, groupQuery), [groups, groupQuery])
 
   async function addPeer(event) {
     event.preventDefault(); setPeerError('')
@@ -153,9 +157,10 @@ export default function Sidebar({ repositories, peers, ourShip, selected, remote
         {!peers.length && <small className="quiet peer-empty">Add a ship to browse its repositories.</small>}
       </nav></>}
       <div className="sidebar-heading peer-heading"><button className="sidebar-section-toggle" onClick={() => toggleSection('groups')} aria-expanded={sectionsOpen.groups}><span className="sidebar-section-chevron">{sectionsOpen.groups ? '⌄' : '›'}</span><span>Groups</span></button></div>
-      {sectionsOpen.groups && <nav className="peer-tree">
-        {(groups || []).map((group) => <div className="peer-node" key={group.flag}>
-          <div className="peer-link-row"><button className="repo-link peer-link" onClick={() => toggleGroup(group.flag)} title={group.flag}><span className="peer-chevron">{groupsOpen[group.flag] ? '⌄' : '›'}</span><span className="truncate">{group.title}</span><span className="host-tag">{describeHost(group)}</span></button><button className="peer-remove group-refresh" onClick={(event) => refreshGroup(group.flag, event)} disabled={groupCatalogs[group.flag]?.loading} title="Ask the group again">↻</button></div>
+      {sectionsOpen.groups && <><input className="repo-search group-filter" value={groupQuery} onChange={(event) => setGroupQuery(event.target.value)} placeholder="Filter by group or host…" aria-label="Filter groups by group or host" />
+      <nav className="peer-tree">
+        {visibleGroups.map((group) => <div className="peer-node" key={group.flag}>
+          <div className="peer-link-row"><button className="repo-link peer-link group-link" onClick={() => toggleGroup(group.flag)} title={group.flag}><span className="peer-chevron">{groupsOpen[group.flag] ? '⌄' : '›'}</span><span className="group-label"><span className="group-title truncate">{group.title}</span><span className="host-tag truncate">{describeHost(group)}</span></span></button><button className="peer-remove group-refresh" onClick={(event) => refreshGroup(group.flag, event)} disabled={groupCatalogs[group.flag]?.loading} title="Ask the group again">↻</button></div>
           {groupsOpen[group.flag] && <div className="peer-children">
             {groupCatalogs[group.flag]?.loading && <small>Asking… {groupCatalogs[group.flag].settled} of {groupCatalogs[group.flag].settled + groupCatalogs[group.flag].pending}</small>}
             {groupCatalogs[group.flag]?.error && <small className="field-error">{groupCatalogs[group.flag].error}</small>}
@@ -167,7 +172,8 @@ export default function Sidebar({ repositories, peers, ourShip, selected, remote
         {groups === null && !groupsError && <small className="quiet peer-empty">Loading groups…</small>}
         {groupsError && <small className="field-error sidebar-peer-error">{groupsError}</small>}
         {groups && !groups.length && !groupsError && <small className="quiet peer-empty">Join a group in Tlon to see repositories shared with it.</small>}
-      </nav>}
+        {groups && groups.length > 0 && !visibleGroups.length && <small className="quiet peer-empty">No matching groups.</small>}
+      </nav></>}
     </aside>
   )
 }

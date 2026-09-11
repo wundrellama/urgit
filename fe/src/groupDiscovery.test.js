@@ -56,7 +56,7 @@ test('the sidebar is three sibling sections, and Peers is back to a chevron, a l
   assert.doesNotMatch(css, /peer-groups|group-catalog/)
   // Groups has the same chrome and no add button: membership is managed in Tlon
   assert.match(sidebar, /<div className="sidebar-heading peer-heading"><button className="sidebar-section-toggle" onClick=\{\(\) => toggleSection\('groups'\)\} aria-expanded=\{sectionsOpen\.groups\}><span className="sidebar-section-chevron">[^<]*<\/span><span>Groups<\/span><\/button><\/div>/)
-  assert.match(groupsSection, /\{sectionsOpen\.groups && <nav className="peer-tree">/)
+  assert.match(groupsSection, /\{sectionsOpen\.groups && <><input className="repo-search group-filter"[^\n]*\/>\n\s*<nav className="peer-tree">/)
   assert.doesNotMatch(groupsSection, /icon-button|PlusIcon/)
   // the ship comes from the agent, not from a docket global the app is not served with
   assert.match(sidebar, /api\.listGroups\(ourShip\)/)
@@ -65,9 +65,14 @@ test('the sidebar is three sibling sections, and Peers is back to a chevron, a l
   assert.match(app, /<Sidebar repositories=\{repositories\} peers=\{peers\} ourShip=\{ourShip\}/)
 })
 
-test('the Groups body lists one row per membership by title, tagged with its host, and says so when there are none', () => {
-  assert.match(groupsSection, /\(groups \|\| \[\]\)\.map\(\(group\) => <div className="peer-node" key=\{group\.flag\}>/)
-  assert.match(groupsSection, /<div className="peer-link-row"><button className="repo-link peer-link" onClick=\{\(\) => toggleGroup\(group\.flag\)\} title=\{group\.flag\}><span className="peer-chevron">\{groupsOpen\[group\.flag\] \? '⌄' : '›'\}<\/span><span className="truncate">\{group\.title\}<\/span><span className="host-tag">\{describeHost\(group\)\}<\/span><\/button>/)
+test('the Groups body lists one row per membership, title over host on two lines, and says so when there are none', () => {
+  assert.match(groupsSection, /visibleGroups\.map\(\(group\) => <div className="peer-node" key=\{group\.flag\}>/)
+  assert.doesNotMatch(groupsSection, /\(groups \|\| \[\]\)\.map/)
+  // the chevron, then one label column holding the title line and the host line, each truncating on its own
+  assert.match(groupsSection, /<div className="peer-link-row"><button className="repo-link peer-link group-link" onClick=\{\(\) => toggleGroup\(group\.flag\)\} title=\{group\.flag\}><span className="peer-chevron">\{groupsOpen\[group\.flag\] \? '⌄' : '›'\}<\/span><span className="group-label"><span className="group-title truncate">\{group\.title\}<\/span><span className="host-tag truncate">\{describeHost\(group\)\}<\/span><\/span><\/button>/)
+  // peer rows keep their one-line shape
+  assert.match(peersSection, /<button className="repo-link peer-link" onClick=\{\(\) => togglePeer\(ship\)\}><span className="peer-chevron">\{expanded\[ship\] \? '⌄' : '›'\}<\/span><code>\{ship\}<\/code><\/button>/)
+  assert.doesNotMatch(peersSection, /group-label|group-link|group-title/)
   assert.deepEqual(groups.map((group) => [group.title, group.flag, describeHost(group)]), [['Team', '~wyl/team', 'hosted by ~wyl'], ['Verify', '~sun/verify', 'hosted by ~sun']])
   assert.deepEqual(normalizeGroups({ '~sun/verify': { meta: { title: 'Verify' }, cabals: {} } }, '~sun').map(describeHost), ['hosted here'])
   assert.deepEqual(groups.map(groupOptionLabel), ['Team (~wyl/team)', 'Verify (~sun/verify)'])
@@ -76,6 +81,30 @@ test('the Groups body lists one row per membership by title, tagged with its hos
   assert.match(groupsSection, /\{groupsError && <small className="field-error sidebar-peer-error">\{groupsError\}<\/small>\}/)
   assert.match(groupsSection, /\{groups && !groups\.length && !groupsError && <small className="quiet peer-empty">Join a group in Tlon to see repositories shared with it\.<\/small>\}/)
   assert.match(sidebar, /\.catch\(\(cause\) => \{ if \(!stale\) \{ setGroups\(\[\]\); setGroupsError\(cause\.message\) \} \}\)/)
+})
+
+test('the Groups filter sits under the heading, outside the scrolling list, and narrows the rows by title or host', () => {
+  // its own state, its own memo, and the shared helper; the repository search keeps its own query
+  assert.match(sidebar, /const \[groupQuery, setGroupQuery\] = useState\(''\)/)
+  assert.match(sidebar, /const visibleGroups = useMemo\(\(\) => filterGroups\(groups, groupQuery\), \[groups, groupQuery\]\)/)
+  assert.match(sidebar, /import \{ describeHost, filterGroups \} from '\.\.\/groupPolicy'/)
+  assert.match(sidebar, /repositories\.filter\(\(repo\) => repo\.name\.toLowerCase\(\)\.includes\(needle\)\)/)
+  assert.doesNotMatch(sidebar, /filterGroups\(groups, query\)|repositories\.filter\([^\n]*groupQuery/)
+  // always there while the section is open, whatever Groups answered, and before the <nav> that scrolls
+  assert.match(groupsSection, /<input className="repo-search group-filter" value=\{groupQuery\} onChange=\{\(event\) => setGroupQuery\(event\.target\.value\)\} placeholder="Filter by group or host…" aria-label="Filter groups by group or host" \/>/)
+  assert.ok(groupsSection.indexOf('group-filter') < groupsSection.indexOf('<nav className="peer-tree">'))
+  assert.doesNotMatch(groupsSection, /groups\.length > \d+ && <input/)
+  // typing never asks the group again and never touches what is open or cached
+  assert.doesNotMatch(sidebar, /groupQuery[^\n]*discoverGroup|discoverGroup[^\n]*groupQuery/)
+  assert.doesNotMatch(sidebar, /setGroupQuery[^\n]*setGroupsOpen|setGroupQuery[^\n]*setGroupCatalogs/)
+  assert.doesNotMatch(sidebar, /useEffect\([^\n]*groupQuery/)
+  // an unmatched query says so, and only when a loaded list had groups to hide; the other three states stand as they are
+  assert.match(groupsSection, /\{groups && groups\.length > 0 && !visibleGroups\.length && <small className="quiet peer-empty">No matching groups\.<\/small>\}/)
+  assert.match(groupsSection, /\{groups === null && !groupsError && <small className="quiet peer-empty">Loading groups…<\/small>\}/)
+  assert.match(groupsSection, /\{groupsError && <small className="field-error sidebar-peer-error">\{groupsError\}<\/small>\}/)
+  assert.match(groupsSection, /\{groups && !groups\.length && !groupsError && <small className="quiet peer-empty">Join a group in Tlon to see repositories shared with it\.<\/small>\}/)
+  assert.equal(groupsSection.match(/No matching groups/g).length, 1)
+  assert.equal(sidebar.match(/No matching repositories/g).length, 1)
 })
 
 test('opening a group fans one catalog request out per member, keyed by flag so several groups can be open at once', () => {

@@ -70,7 +70,12 @@ button { color: inherit; }
 .write-badge { margin-left: auto; color: #1a7f37; font-size: 8px; text-transform: uppercase; }
 .via-badge { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 9px; }
 .via-badge + .write-badge { margin-left: 0; }
-.host-tag { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.group-link { min-height: 42px; padding-top: 5px; padding-bottom: 5px; }
+.group-link .peer-chevron { flex: 0 0 auto; }
+.group-label { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
+.group-title { min-width: 0; line-height: 1.25; }
+.host-tag { min-width: 0; color: var(--muted); font-size: 10px; line-height: 1.25; }
+.group-filter { margin-top: 0; }
 .group-refresh:hover { color: var(--accent); }
 .group-refresh:disabled { color: var(--muted); background: transparent; cursor: default; }
 .peer-empty { display: block; padding: 8px 10px; font-size: 10px; line-height: 1.45; }
