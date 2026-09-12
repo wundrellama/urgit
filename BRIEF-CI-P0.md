@@ -86,9 +86,19 @@ state-0 rule (current for new agents).
 `(repo ref)` matches. Everything else, including "no such candidate" and
 "agent not running", is `%.n`. `%urgit` calls it from a new arm
 `ci-gate-error` placed immediately after `receive-policy-error`, invoked from
-`receive-policy-error`'s caller for refs in `ci-protected-refs`. The scry is
-`.^(? %gx /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)/eligible/<repo>/<ref>/<oid>/noun)`
-under `mole`; `~` from `mole` is `%.n`. Cite: spec § Protected refs para 3
+`receive-policy-error`'s caller for every ref in the push. **Scry shape (ruled,
+Q3):** copy `group-peek`'s guard exactly (`urgit.hoon:2263–2300`): first a
+`%gu` liveness read `/(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)/$`
+under `mule`; only if that answers `%.y` do the `%gx` reads. A bare `%gx` whose
+answer is `[~ ~]` kills the event even under `mule` on this runtime — the
+repo's own comment at 2263–2272 says so. **Outage rule (ruled, Q3):** when the
+liveness read is `%.n` or crashes, `ci-gate-error` returns
+`'ci: %urgit-ci is not running; protected-ref writes are refused until it is'`
+for EVERY ref in the push, protected or not — fail closed, because membership
+cannot be read. When liveness is `%.y` and the membership scry says the ref is
+not CI-protected, the push proceeds under today's rules. A ship without
+`%urgit-ci` installed therefore cannot push at all once this lands; that is
+accepted for P0 and named in your record. Cite: spec § Protected refs para 3
 ("`%urgit` scries `%urgit-ci` for eligibility… advances the ref only when the
 candidate is eligible"); § Packaging ("`%urgit` scries `%urgit-ci` for landing
 eligibility").
@@ -116,8 +126,16 @@ fire-and-forget and the id is deterministic:
 candidate and answers the push with `ng <ref> staged as candidate <id>`").
 
 **D5 — Candidate materialization poke, `%urgit-ci` → `%urgit`.**
-`%urgit` accepts `%git-action` `[%materialize-candidate repo=@t ref=@t
-head=oid base=oid]` and answers by poking `%urgit-ci` back with
+**Mark (ruled, Q1):** `action:git` is a closed union (`sur/git.hoon:436–459`)
+and `desk/sur/git.hoon` stays untouched, so `%materialize-candidate` does NOT
+ride `%git-action`. Add a second poke mark `%ci-action` on `%urgit` — the same
+mark `%urgit-ci` already receives (S1) — whose `on-poke` case in `%urgit` accepts
+exactly `[%materialize-candidate repo=@t ref=@t head=oid base=oid]` from
+`src.bowl == our.bowl` and rejects every other `ci-action` variant. This is the
+third `%urgit` touch: a `%ci-action` case in `on-poke` (`urgit.hoon:2240`), no
+new mark file needed beyond `desk/mar/ci-action.hoon` from S1. §5's "exactly two
+arms" becomes "two arms and one `on-poke` case"; the fence is amended below.
+`%urgit` answers by poking `%urgit-ci` back with
 `%ci-action` `[%candidate-ready repo ref head base candidate=oid]` where
 `candidate` is: `head` itself when `base` is an ancestor of `head` (fast-
 forward), else the two-parent merge commit the existing PR-merge path already
@@ -175,8 +193,17 @@ Cite: spec § Execution para 2; § Storage ("A store outage yields `unknown`…
 It never yields success").
 
 **D9 — CI key prefix on the existing signer.**
-`desk/lib/ci-storage.hoon` exposes `sign-put` and `sign-get` that call
-`git-storage`'s existing SigV4 arms with the object key forced to
+**Return contract (ruled, Q2):** `git-storage`'s `sign`/`sign-hash` produce a
+header-authorized request (`signed-request` = `url` + `headers`,
+`git-storage.hoon:12–15`, authorization in the `authorization` header at
+164–172), not a presigned URL, and they take no expiry. P0 does NOT add query
+presigning. `sign-put`/`sign-get` return `(unit signed-request:git-storage)` —
+URL **plus required headers** — and the lifetime is the SigV4 request lifetime
+(`x-amz-date` ± 15 min, S3's rule), stated in the arm's head comment. The
+spec's "short-lived URL" is satisfied by that window; a standalone expiring URL
+is P5 work and out of scope here. `desk/lib/ci-storage.hoon` exposes `sign-put`
+and `sign-get` that call `git-storage`'s existing SigV4 arms with the object
+key forced to
 `ci/<repo>/<run>/<attempt>/<trust>/<name>` where `trust` is `?(%trusted
 %untrusted)`. `%urgit-ci` refuses to sign a GET whose `trust` segment differs
 from the requesting attempt's trust class. When `storage-settings` is `~`,
@@ -204,8 +231,8 @@ S4. `desk/app/urgit-ci.hoon`: `on-init`/`on-load` (state-0, Eyre bind),
     Behn timer. `desk/desk.bill` += `%urgit-ci`. `zig build`; install on the
     harness ship; `:urgit-ci +dbug` shows state `%0`.
 S5. `%urgit`: `ci-gate-error` (D2/D4) wired into the receive path; the
-    `%materialize-candidate` poke handler (D5). **Two arms and one case in
-    `on-poke`; nothing else in `urgit.hoon` changes.** `zig build`; the
+    `%ci-action` case in `on-poke` handling `%materialize-candidate` (D5).
+    **Two arms and one `on-poke` case; nothing else in `urgit.hoon` changes.** `zig build`; the
     existing `+urgit!git-migration-vector` still passes (you did not touch
     state).
 S6. Harness (§4) — run every row; paste the table.
@@ -263,8 +290,10 @@ each other on Vere-derived Ames ports; never pass `-p`.
     - H12: POST an event to attempt A with attempt B's bearer → 401.
     - H13: POST a 65 KiB event line → 413; attempt unaffected.
     - H14: `|suspend %urgit-ci`, then push an OID that WAS `%passed` → `ng`
-      (fail closed: `mole` on the scry yields `~`). `|revive`, push again →
-      `ok`.
+      with the D2 outage reason (the `%gu` liveness read is `%.n`; the `%gx`
+      reads are never attempted). Also push to an UNPROTECTED ref during the
+      suspension → `ng`, same reason (D2 outage rule). `|revive`, push both
+      again → `ok`.
     - H15: sign a GET for `%untrusted` from the `%trusted` attempt → `~`.
 11. Foreground before the final message: `+urgit!ci-event-vector`,
     `+urgit!ci-storage-vector`, `+urgit!git-migration-vector`,
@@ -294,9 +323,9 @@ Table to paste, verbatim, in `.scratch/p0-live-table.md` (committed):
   daemon binary (the harness uses a shell loop around real `act`), no UI, no
   object-store upload, no `act --list` adapter, no credential store, no
   signing key, no checkpoint. If you find yourself writing any of those, stop.
-- `%urgit` changes: exactly `ci-gate-error` + its call site, the
-  `%materialize-candidate` handler, and nothing else. `desk/sur/git.hoon` is
-  **not modified**. If landing P0 truly needs a third touch in `urgit.hoon`,
+- `%urgit` changes: exactly `ci-gate-error` + its call site, a `%ci-action`
+  case in `on-poke` for `%materialize-candidate`, and nothing else.
+  `desk/sur/git.hoon` and `desk/mar/git-action.hoon` are **not modified**. If landing P0 truly needs a third touch in `urgit.hoon`,
   keep it minimal and name it in the commit message.
 - Durable scratch under `<worktree>/.scratch/`, never `/tmp` (tmpfs) or
   `$HOME`. Logs (`*.log *.err *.out *.json`) stay out of git; reports and
@@ -315,7 +344,6 @@ Table to paste, verbatim, in `.scratch/p0-live-table.md` (committed):
 4. Verbatim tails of the five foreground suites.
 5. Boxes opened in `QUESTIONS-CI-P0.md` (or "none"); anything deliberately
    left for P1+ that a reader of the diff might mistake for an omission.
-
 ## Launch footer (operator-filled)
 
 - Worktree: `/var/home/michael/workspace/urbit/urgit-ci-p0` — branch `ci/p0-contracts`, brief frozen at `18edb6e`,
