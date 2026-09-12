@@ -315,3 +315,14 @@ Table to paste, verbatim, in `.scratch/p0-live-table.md` (committed):
 4. Verbatim tails of the five foreground suites.
 5. Boxes opened in `QUESTIONS-CI-P0.md` (or "none"); anything deliberately
    left for P1+ that a reader of the diff might mistake for an omission.
+
+## Launch footer (operator-filled)
+
+- Worktree: `/var/home/michael/workspace/urbit/urgit-ci-p0` — branch `ci/p0-contracts`, brief frozen at `18edb6e`,
+  brief sha256 prefix `4e4e927b76f0caab`.
+- Ship: `~ryx`, HTTP port `8340`, pier `/var/home/michael/piers/urgit-ci-p0-ryx` (must not exist before boot).
+- Boot line (run inside a herdr pane you create; record the pane id):
+  `/var/home/michael/workspace/urbit/bin/urbit -F ryx -B /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port 8340 -c /var/home/michael/piers/urgit-ci-p0-ryx`
+- Do NOT boot `~zod ~nec ~bud ~wes ~bel ~bus ~syt ~dur ~wep ~ser`.
+- Spike reference (read-only): `/var/home/michael/workspace/urbit/urgit/.scratch/spikes/001a-act/`.
+- Reports: `/var/home/michael/workspace/urbit/urgit-ci-p0/.scratch/p0-live-table.md` (committed). Logs: `/var/home/michael/workspace/urbit/urgit-ci-p0/.scratch/tmp/` (ignored).
