@@ -3,3 +3,11 @@
 /desk-deps/
 /fe/node_modules/
 desk/web/*
+
+REFERENCE-*.md
+QUESTIONS-CI-P0.md
+.scratch/*.log
+.scratch/*.err
+.scratch/*.out
+.scratch/*.json
+.scratch/tmp/
