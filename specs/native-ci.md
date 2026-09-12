@@ -4,6 +4,8 @@
 
 The first acceptance fixture is ERPit. Its two workflows, `suite.yml` and `fixtures.yml`, define eight jobs and use `actions/checkout@v4` and `actions/cache@v4`. The design must run those eight jobs natively before GitHub Actions is switched off for that repository.
 
+A spike on 2026-09-12 ran all eight jobs through `nektos/act` 0.2.89 in a container with the workflows unmodified. All eight passed, including the full on-ship suite (1,586 arms) and the two-ship `duo` fixture. The same spike ran `ChristopherHX/runner.server` and found two fidelity defects in its emulated server. This document adopts `act` as the job execution engine on that evidence.
+
 ## Boundary
 
 ```text
@@ -23,19 +25,19 @@ git push / PR merge / web edit
   |- credential store and CI signing key
   `- checkpoint export
 
-runner (external Linux host, one static binary)
+runner daemon (external Linux host, one static binary)
   |
-  | runner-initiated authenticated connection
+  | daemon-initiated authenticated connection
   v
 %urgit-ci assignment channel
   |
   v
-runner
-  |- supervisor: connection, claim, VM lifecycle
-  |- compiler: workflow YAML -> execution plan
-  `- executor: one job in one disposable VM
+runner daemon
+  |- connection, claim, VM lifecycle
+  |- plan: `act --list` -> job list for %urgit-ci to validate
+  `- execute: `act -j <job> --json` inside one disposable VM
 
-runner
+runner daemon
   |
   | signed PUT / GET issued by %urgit-ci
   v
@@ -46,23 +48,25 @@ ship-configured object storage
 
 ## Workflow model
 
-Workflow YAML under `.github/workflows/` is authoritative. `%urgit-ci` does not define a second workflow format. The runner's compiler reads the YAML and produces a bounded execution plan. The plan lists jobs, `needs` edges, matrix expansion limits, the step list for each job, and every action reference resolved to an exact commit. `%urgit-ci` validates the plan's structure, limits, source identity, and requested permissions before it accepts the plan.
+Workflow YAML under `.github/workflows/` is authoritative. `%urgit-ci` does not define a second workflow format. The runner daemon runs `act --list` against the checkout to produce the job list, `needs` edges, and matrix expansion. It converts that output to a bounded plan. `%urgit-ci` validates the plan's structure, limits, source identity, and requested permissions before it accepts the plan.
 
-The compiler is trusted infrastructure. It is version-pinned and executes no repository script. A validated plan is a translation, not a proof. The ship checks the plan's shape. It cannot check that the translation is faithful.
+`act` is trusted infrastructure. It is pinned to an exact release and executes no repository script during planning. A validated plan is a translation, not a proof. The ship checks the plan's shape. It cannot check that the translation is faithful.
 
-`%urgit-ci` evaluates job-level expressions. These are `if:` on a job, `needs.<job>.outputs.<name>`, and matrix expansion. Evaluation runs against accepted attempt state within fixed bounds. The executor evaluates step-level expressions inside the job. An evaluation error is an error. It never becomes `false`, `skipped`, or success.
+`%urgit-ci` evaluates job-level expressions. These are `if:` on a job, `needs.<job>.outputs.<name>`, and matrix expansion. Evaluation runs against accepted attempt state within fixed bounds. Job outputs arrive as typed `set-output` events in `act`'s `--json` stream. `act` evaluates step-level expressions inside the job. An evaluation error is an error. It never becomes `false`, `skipped`, or success.
 
-Unsupported syntax produces a diagnosed error in the run. It is never dropped silently. Each imported action is classified in one of three ways: usable unchanged, needs a native equivalent, or still GitHub-dependent. `actions/cache` needs a cache service. `actions/checkout` has GitHub API fallback behavior. The import view shows the classification before the workflow is enabled. "Imported" does not mean "verified compatible".
+Unsupported syntax produces a diagnosed error in the run. It is never dropped silently. `act` publishes its unsupported list. The import classifier reads it. Each imported action is classified in one of three ways: usable unchanged, needs a native equivalent, or still GitHub-dependent. `actions/cache` needs a cache service. `actions/checkout` has GitHub API fallback behavior. The import view shows the classification before the workflow is enabled. "Imported" does not mean "verified compatible".
 
 ## Execution
 
-The runner is one Go program with three parts. The supervisor holds the connection to `%urgit-ci`, claims assignments, and manages VM lifecycle. The compiler translates workflow YAML. The executor runs one job inside one VM. The executor derives from the Forgejo runner's single-job execution path at a pinned commit. It is not the Forgejo daemon. Upstream `act` is the fallback. GitHub's official worker is rejected because it requires GitHub's job and run services.
+The runner daemon is one Go program. It holds the connection to `%urgit-ci`, claims assignments, and manages VM lifecycle. It makes no CI decisions. Inside each VM it runs `act -j <job> --json` against the exact candidate checkout. It relays the event stream to `%urgit-ci`, uploads the full log to the object store, and destroys the VM.
 
-The supervisor opens the connection. It authenticates, reports capacity, and waits. `%urgit-ci` selects a runner and sends the assignment over that connection. No inbound port is required on the runner host. Dispatch authority stays on the ship.
+`act` is the job execution engine. It is pinned to one release. The daemon pins its parse of the `--json` stream to that same release. An `act` upgrade is a daemon change with a parity run, not a version bump. `act` emits step start and end, step and job results, `set-output`, `summary`, `group` and `endgroup`, and raw log lines. If `act` exits without a `jobResult` event, the daemon reports `infrastructure-error`. It never infers success from absence.
 
-Each job runs in a fresh VM booted from an approved image with resource limits. A workflow may start containers inside the VM. The host Docker socket is never shared. The guest cannot reach the supervisor's control socket, other Gall agents on the ship, or LAN addresses outside policy. The supervisor destroys the VM after the job ends, whatever the outcome. A failed teardown marks the slot as quarantined and blocks reuse. There is no fallback to a shared host.
+The daemon opens the connection. It authenticates, reports capacity, and waits. `%urgit-ci` selects a daemon and sends the assignment over that connection. No inbound port is required on the runner host. Dispatch authority stays on the ship. The daemon is the ship's hands. `%urgit-ci` is the controller.
 
-The supervisor enforces deadlines. After a restart it reconciles orphaned VMs against `%urgit-ci`'s assignment records. A stale attempt cannot overwrite a newer one.
+Each job runs in a fresh VM booted from an approved image with resource limits. A workflow may start containers inside the VM. `act` mounts a Docker socket into the job container by default, because that is how `container:` and `services:` work. That socket belongs to the VM, never to the host. The spike also showed that `act`'s default host network mode breaks a fake ship's Ames bind. The daemon always passes an isolated network. The guest cannot reach the daemon's control socket, other Gall agents on the ship, or LAN addresses outside policy. The daemon destroys the VM after the job ends, whatever the outcome. A failed teardown marks the slot as quarantined and blocks reuse. There is no fallback to a shared host.
+
+The daemon enforces deadlines set by `%urgit-ci`. After a restart it reconciles orphaned VMs against `%urgit-ci`'s assignment records. A stale attempt cannot overwrite a newer one.
 
 ## Trust and credentials
 
@@ -92,7 +96,7 @@ A direct push, web edit, or import to a CI-protected branch is never applied. `%
 
 Logs, artifacts, and caches go to an S3-compatible object store. `%urgit-ci` reads the endpoint, bucket, region, and credentials from the ship's `%storage` agent, the same source `%urgit` uses for Git LFS. Any store that accepts Signature Version 4 requests works. There is no separate urgit setting. If `%storage` is configured, CI uses it. If `%storage` is not configured, `%urgit-ci` refuses to enable CI on any repository and reports the missing configuration.
 
-`%urgit-ci` signs a short-lived upload URL for each attempt and a short-lived download URL for each authorized viewer. Only handles, sizes, hashes, and completion state enter Gall state. Bounded progress messages travel over the assignment channel. Full logs upload in chunks.
+`%urgit-ci` signs a short-lived upload URL for each attempt and a short-lived download URL for each authorized viewer. Only handles, sizes, hashes, and completion state enter Gall state. Bounded progress messages travel over the assignment channel. Full logs upload in chunks. `act`'s `--artifact-server-path` and `--cache-server-path` are the two seams where the daemon substitutes signed-URL access to the object store.
 
 CI keys use a prefix that LFS cleanup never scans. The operator may point CI at a separate bucket. A shared bucket with the CI prefix is the default.
 
@@ -125,9 +129,9 @@ Restore is explicit. Install the desk, import the checkpoint into a paused `%urg
 
 The web interface is unchanged in shape. `%urgit-fileserver` serves the same React application. The repository page gains a CI tab for runs, run detail, and candidate status. Settings gains runner enrollment and CI-policy sections. The application calls two API bases under one origin.
 
-The runner lives at `runner/` in this repository as one Go module. `zig build` gains an optional Go step. The deliverable is one static binary, one systemd unit, and one configuration file. The configuration names the ship URL, an enrollment token, the VM image path, and the object-store endpoint. The runner installs on any Linux host with KVM. It may share a host with the ship or not. The object store defaults to a second unit on the same host and accepts any S3-compatible endpoint.
+The runner daemon lives at `runner/` in this repository as one Go module. `zig build` gains an optional Go step. The deliverable is one static binary, one systemd unit, one configuration file, and a pinned `act` release. The configuration names the ship URL, an enrollment token, the VM image path, and the object-store endpoint. The daemon installs on any Linux host with KVM. It may share a host with the ship or not. The object store defaults to a second unit on the same host and accepts any S3-compatible endpoint.
 
-CI has one install prerequisite beyond the runner. The ship's `%storage` agent must name a reachable S3-compatible endpoint with a bucket and credentials. This is a Landscape settings step. Without it, `%urgit-ci` does not enable CI.
+CI has one install prerequisite beyond the daemon. The ship's `%storage` agent must name a reachable S3-compatible endpoint with a bucket and credentials. This is a Landscape settings step. Without it, `%urgit-ci` does not enable CI.
 
 ## Cutover
 
@@ -150,7 +154,7 @@ The supported envelope is published from what the shadow period sustained. That 
 - `desk/app/urgit.hoon` — protected-ref gate, candidate materialization handler, staged-write handoff.
 - `desk/sur/git.hoon` — a way to mark a protected ref as CI-protected. Either `repository` gains a field or `%urgit-ci` holds the set and `%urgit` scries it.
 - `fe/src/` — CI tab, Settings sections, second API base.
-- `runner/` — new Go module.
+- `runner/` — new Go module: the daemon, plus a pinned `act` release and its `--json` parser.
 - `build.zig` — optional Go step.
 - `specs/architecture.md`, `README.md` — updated.
 
@@ -161,6 +165,9 @@ The Git protocol layers, object model, pack codecs, LFS, native collaboration, G
 ## Alternatives considered
 
 - An external CI server as controller (Woodpecker, Buildbot). Rejected. The controller would live outside `%urgit`, and `%urgit` would become a webhook source.
+- A GitHub Actions emulator with a server (`ChristopherHX/runner.server`). Rejected on spike evidence. The real `actions/runner` it drives is faithful. The emulated server picked `sh -e` where GitHub picks `bash -e`. It expanded `${{ runner.temp }}` in composite-action inputs to the host path instead of the container path. Both ERPit ship jobs failed on the second defect with no workflow-side fix. One maintainer, two human commits in six months.
+- Self-hosted GitHub runners (`awesome-runners` list). Rejected. Every entry registers with GitHub or GHES and pulls jobs from GitHub's job service. None runs without GitHub.
+- Adapt the Forgejo runner's single-job execution path. Superseded. The Forgejo runner is `act` with a Forgejo front end. Using `act` directly removes the adaptation and the fork.
 - Compile workflow YAML on the ship. Rejected. The YAML and expression semantics are large, and the Hoon port becomes the bottleneck.
 - Containers on the host instead of VMs. Rejected for untrusted code. It is documented as a downgrade that is never taken silently.
 - An off-ship secret vault as the default. Rejected. The ship already holds `%storage` credentials. Another host adds a dependency without removing trust in the ship.
@@ -175,16 +182,16 @@ The Git protocol layers, object model, pack codecs, LFS, native collaboration, G
 - Is a Go directory in this repository acceptable? The alternative is a separate repository with the drift cost above.
 - Is the change to protected-ref semantics acceptable? A CI-protected branch stages a direct push instead of applying it.
 - Should CI-protection be a field on `repository` or a set held by `%urgit-ci`?
-- Is vendoring the Forgejo runner's execution path acceptable? Its license is MIT.
+- Is depending on `nektos/act` acceptable? MIT license, 72k stars, but four human commits in the last six months. The design pins one release and assumes small patches may be carried in-tree.
 - Should the ERPit workflows live in this repository as acceptance fixtures, or only a generic fixture set?
 - Should `%urgit-ci` accept its own object-store configuration, or always read `%storage`? Reading `%storage` is simpler. A separate configuration lets CI use a different store than LFS and removes the dependency on Landscape settings.
 
 ## Delivery order
 
 1. Contracts and harness: the `%urgit` to `%urgit-ci` scry and poke interface, the ship-to-runner protocol, object-store signing, and a fake-ship plus real-runner harness. Every negative test above must be able to fail.
-2. Workflow model: compiler, plan validation, job-level expressions, action classification.
+2. Workflow model: `act --list` adapter, plan validation, job-level expressions, action classification against `act`'s unsupported list.
 3. `%urgit-ci` core: runs, jobs, attempts, results, assignment.
-4. Runner: supervisor, VM lifecycle, executor adaptation.
+4. Runner daemon: connection, VM lifecycle, `act` invocation and `--json` relay.
 5. Trust: approvals, credential store, CI signing key.
 6. Storage and web interface.
 7. Protected-ref gates, shadow period, cutover.
