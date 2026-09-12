@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
-/-  git, git-peer
-/+  dbug, default-agent, git-access, git-archive, git-blame, git-catalog, git-clay, git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
+/-  ci, git, git-peer
+/+  ci-candidate, dbug, default-agent, git-access, git-archive, git-blame, git-catalog, git-clay, git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack, git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
 |%
 +$  card  card:agent:gall
 +$  profile-value  $@(~ [kind=@tas value=*])
@@ -2241,6 +2241,15 @@
       %git-action
     ?>  =(src.bowl our.bowl)
     (handle-action !<(action:git vase))
+  ::
+      ::  the one %ci-action %urgit answers: %urgit-ci asks for a candidate
+      ::  to be materialized and is poked back with the result
+      ::
+      %ci-action
+    ?>  =(src.bowl our.bowl)
+    =/  act=action:ci  !<(action:ci vase)
+    ?>  ?=(%materialize-candidate -.act)
+    (materialize-candidate repo.act ref.act head.act base.act)
   ::
       %handle-http-request
     =+  !<([eyre-id=@ta req=inbound-request:eyre] vase)
@@ -7885,6 +7894,91 @@
     `'protected branch requires a fast-forward update'
   $(remaining t.remaining)
 ::
+::  the CI gate.  %urgit-ci holds the set of CI-protected refs and the
+::  candidates it has passed; %urgit only asks.  a push to a CI-protected
+::  ref lands when the pushed tip is a candidate %urgit-ci reports as
+::  eligible, and is staged as a candidate otherwise.  the reads are
+::  guarded the way group-peek guards %groups: gall's %gu liveness answer
+::  first, under mule, and the %gx reads only once it says yes, because a
+::  bare %gx answered [~ ~] kills the event even under mule.  the gate
+::  fails closed: when %urgit-ci is not running, membership cannot be read,
+::  so every ref in the push is refused, protected or not.
+::
+++  ci-gate-error
+  |=  [repo-name=@t repo=repository:git commands=(list receive-command:git)]
+  ^-  (unit [message=@t stage=(unit [ref=@t head=oid:git base=oid:git])])
+  =/  outage=@t
+    'ci: %urgit-ci is not running; protected-ref writes are refused until it is'
+  =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+  =/  live=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix /$))
+  ?.  ?&(?=(%& -.live) p.live)
+    `[outage ~]
+  =/  peek
+    |=  rest=path
+    ^-  (unit ?)
+    =/  raw=(each ? tang)
+      %-  mule  |.
+      ;;(? .^(* %gx (weld prefix (snoc rest %noun))))
+    ?.  ?=(%& -.raw)  ~
+    `p.raw
+  =/  remaining=(list receive-command:git)  commands
+  |-
+  ?~  remaining  ~
+  =/  command=receive-command:git  i.remaining
+  =/  ci-protected=(unit ?)
+    (peek /ci-protected/(scot %t repo-name)/(scot %t ref.command))
+  ?~  ci-protected
+    `[outage ~]
+  ?.  u.ci-protected
+    $(remaining t.remaining)
+  ?~  new.command
+    `['ci-protected branch cannot be deleted' ~]
+  ?~  old.command
+    `['ci-protected branch has no tip to stage a candidate against' ~]
+  =/  eligible=(unit ?)
+    %-  peek
+    /eligible/(scot %t repo-name)/(scot %t ref.command)/(oid-text:git-codec u.new.command)
+  ?:  ?&(?=(^ eligible) u.eligible)
+    $(remaining t.remaining)
+  =/  id=@uv  (sham [repo-name ref.command u.new.command u.old.command])
+  :-  ~
+  :-  (rap 3 ~['staged as ci candidate ' (scot %uv id) '; checks pending'])
+  `[ref.command u.new.command u.old.command]
+::
+::  candidate materialization for %urgit-ci: the exact integration object
+::  for a staged head, built without moving any ref.  a fast-forward
+::  candidate is the head itself; a divergent head is merged onto the base
+::  tip with the pull-request merge, and the new objects enter the store.
+::  %urgit-ci is poked back with the object, or with a conflict.
+::
+++  materialize-candidate
+  |=  [repo-name=@t ref=@t head=oid:git base=oid:git]
+  ^-  (quip card _this)
+  =/  reply
+    |=  act=action:ci
+    ^-  card
+    [%pass /ci/materialize %agent [our.bowl %urgit-ci] %poke %ci-action !>(act)]
+  =/  found=(unit repository:git)  (~(get by repositories) repo-name)
+  ?~  found
+    :_  this  ~[(reply [%candidate-conflict repo-name ref head base])]
+  =/  outcome=outcome:ci-candidate
+    %:  materialize:ci-candidate
+      objects.u.found
+      head
+      base
+      our.bowl
+      now.bowl
+      (rap 3 ~['Merge ' (oid-text:git-codec head) ' into ' ref])
+    ==
+  ?:  ?=(%conflict -.outcome)
+    :_  this  ~[(reply [%candidate-conflict repo-name ref head base])]
+  =.  repositories
+    (~(put by repositories) repo-name u.found(objects objects.outcome))
+  :_  this
+  ~[(reply [%candidate-ready repo-name ref head base candidate.outcome])]
+::
 ++  command-for-ref
   |=  [commands=(list receive-command:git) ref=@t]
   ^-  (unit receive-command:git)
@@ -8505,6 +8599,27 @@
     :_  this
     %+  give-simple-payload:app:server  eyre-id
     (receive-payload 'invalid or unsupported pack' (receive-results commands.u.parsed %.n 'unpack failed'))
+  ::  the CI gate runs before the branch rules: a divergent push to a
+  ::  CI-protected ref is staged as a candidate, never refused as a
+  ::  non-fast-forward.  when a push is staged, the pushed objects stay
+  ::  in the store, the ref does not move, and %urgit-ci is told.
+  ::
+  =/  gate=(unit [message=@t stage=(unit [ref=@t head=oid:git base=oid:git])])
+    (ci-gate-error repo-name u.found commands.u.parsed)
+  ?^  gate
+    =?  repositories  ?=(^ stage.u.gate)
+      (~(put by repositories) repo-name u.found(objects (merge-objects objects.u.found u.staged)))
+    :_  this
+    %+  weld
+      ?~  stage.u.gate  ~
+      =/  id=@uv  (sham [repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate])
+      :_  ~
+      :*  %pass  /ci/stage/(scot %uv id)
+          %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate])
+      ==
+    %+  give-simple-payload:app:server  eyre-id
+    (receive-payload 'ok' (receive-results commands.u.parsed %.n message.u.gate))
   =/  policy-error=(unit @t)
     (receive-policy-error u.found commands.u.parsed u.staged)
   ?^  policy-error
