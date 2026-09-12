@@ -106,7 +106,7 @@
     =/  id=(unit @uv)  (slaw %uv i.t.t.path)
     =/  =trust:ci
       ?:(=(%trusted i.t.t.t.path) %trusted %untrusted)
-    =/  name=@t  i.t.t.t.t.path
+    =/  name=@t  (decode-segment:hc i.t.t.t.t.path)
     =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))
     ?~  found  ``noun+!>(`(unit @t)`~)
     =/  signed=(unit signed-request:git-storage)
@@ -219,7 +219,7 @@
   ^-  ?
   =/  repo=@t  (decode-segment repo-segment)
   =/  ref=@t  (decode-segment ref-segment)
-  =/  oid=(unit oid:git)  (parse-oid oid-segment)
+  =/  oid=(unit oid:git)  (parse-oid (decode-segment oid-segment))
   ?~  oid  %.n
   %+  lien  ~(tap by candidates)
   |=  [* c=candidate:ci]
