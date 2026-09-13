@@ -28,7 +28,7 @@ echo "== build under test: $("$P1/mutants.sh" status | tail -1); rows must $want
 rm -rf "$RUNNER_HOME/a"
 TOKEN=$("$P1/mint.sh")
 "$P1/runner.sh" start a 1 "$TOKEN" | head -1
-export REPO="ci-p1-$phase"
+export REPO="ci-p1-$phase-$(date +%H%M%S)"   # unique per phase run: row P1 needs a repo with no tip
 "$P0/api.sh" POST /repositories "{\"name\":\"$REPO\",\"publicRead\":true}" | cut -c1-30
 CLONE="$TMP/clone-$REPO"; rm -rf "$CLONE"; mkdir -p "$CLONE"; cd "$CLONE"
 git init -q -b master .; git config user.name neg; git config user.email neg@example; git config http.cookieFile "$JAR"

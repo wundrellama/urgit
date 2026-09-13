@@ -72,7 +72,7 @@ edits = [
   "    ?:  linked.u.u.tip\n      ~|  linked-refusal\n      !!\n",
   "    ?:  %.n\n      ~|  linked-refusal\n      !!\n"),
  ("P20", "runner/internal/daemon/daemon.go",
-  "\tprojected, err := plan.Project(original, a.Job)\n",
+  "\tprojected, err := plan.Project(original, a.Job, a.Attempt, a.Workflow)\n",
   "\tprojected, err := original, error(nil)\n"),
 ]
 texts = {}
