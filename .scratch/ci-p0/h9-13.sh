@@ -28,6 +28,7 @@ TOKEN_B=$(grep -o 'ci-enroll-token 0v[0-9a-v.]*' "$TMP/h12-mint.txt" | tail -1 |
 ENROLL_B=$("$api" POST /ci/daemon/enroll "{\"token\":\"$TOKEN_B\"}" -)
 echo "$ENROLL_B"
 BEARER_B=$(echo "$ENROLL_B" | grep -o '"bearer":"[^"]*"' | cut -d'"' -f4 || true)
+DAEMON_B=$(echo "$ENROLL_B" | grep -o '"daemon-id":"[^"]*"' | cut -d'"' -f4 || true)
 head -n 1 "$TMP/h7-act.log" > "$TMP/h12-line.json"
 echo "-- with B's bearer:"
 "$api" POST "/ci/attempt/$A2/event" "@$TMP/h12-line.json" "$BEARER_B"
@@ -77,4 +78,5 @@ export A3=$A3
 export A4=$A4
 export TOKEN_B=$TOKEN_B
 export BEARER_B=$BEARER_B
+export DAEMON_B=$DAEMON_B
 EOF

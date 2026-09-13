@@ -11,9 +11,10 @@ wf="${1:-fixture-pass}"; job="${2:-pass}"; tag="${3:-h7}"
 cd "$TMP/clone-a"
 git checkout -q "$THREE"
 echo "== act on $(git rev-parse HEAD) with $wf/$job"
+rc=0
 act push -W ".github/workflows/$wf.yml" -j "$job" -P ubuntu-latest=catthehacker/ubuntu:act-latest \
-  --network bridge --json --pull=false > "$TMP/$tag-act.log" 2> "$TMP/$tag-act.err" || true
-echo "act exit=$? lines=$(wc -l < "$TMP/$tag-act.log")"
+  --network bridge --json --pull=false > "$TMP/$tag-act.log" 2> "$TMP/$tag-act.err" || rc=$?
+echo "act exit=$rc lines=$(wc -l < "$TMP/$tag-act.log")"
 n=0; : > "$TMP/$tag-relay.log"
 while IFS= read -r line; do
   printf '%s' "$line" > "$TMP/$tag-line.json"
