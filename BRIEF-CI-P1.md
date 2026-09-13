@@ -179,9 +179,10 @@ Layout is yours; the contract is not: `runner/cmd/urgit-runner/main.go`;
 ubuntu-latest=` mapping), `capacity`, `work_dir`, `state_file`. The daemon
 loop: enroll if no state file → long-poll `GET /daemon/<id>/assignment` with
 `x-ci-bearer` → on `%plan`: sandbox, checkout, `act -l` per workflow, POST plan
-→ on `%job`: sandbox, checkout, `act push -W <file> -j <job> -P … --network
-<isolated> --json`, relay every stdout JSON line to `POST /attempt/<id>/event`
-as the P0 harness did (the docker-host banner is not JSON and is dropped — P0
+→ on `%job`: sandbox, checkout, **project** (CI-PROJECT-1, below), then
+`act push -W <projected-file> -j <job> -P … --network <isolated> --json`,
+relay every stdout JSON line to `POST /attempt/<id>/event` as the P0 harness
+did (the docker-host banner is not JSON and is dropped — P0
 already answers `400` to it; do not send it), then `POST /attempt/<id>/result`
 with the `jobResult` the stream carried, or **no result POST at all** when act
 exited without a `jobResult` line (D8) → destroy sandbox → poll again. Checkout:
@@ -191,6 +192,37 @@ exposes it on `refs/ci/candidate/<candidate-id>` (D9). The daemon **never
 touches the ship session, never holds `%storage` credentials, never decides
 anything** — every branch in its code that chooses between outcomes must be
 traceable to a ship-sent field or an act-emitted line.
+
+**CI-PROJECT-1 (ratified): `act -j <job>` executes the job's whole
+prerequisite DAG and re-evaluates job-level `if` itself** — proven live on
+0.2.89 (`-j b` on a two-job chain emitted `a`'s `set-output` and `jobResult`
+first; `planner.go:343–358` recursively adds `Needs()`; `run_context.go:793–
+809` evaluates `if` locally; no flag suppresses either). Under R2-A/R2.2-A
+the SHIP owns job admission, so the daemon must make act execute only what
+the ship admitted. For every `%job` assignment the daemon writes a
+**single-job projection** of the workflow into the sandbox work dir (never
+into the candidate tree, never committed): the original file with every job
+except the assigned one removed, and the assigned job's `needs:` and
+job-level `if:` keys removed. Everything else in the job — `runs-on`, `env`,
+`steps`, step-level `if`, `container`, `services`, `timeout-minutes`, and the
+workflow's top-level `env`/`defaults` — is copied byte-for-byte (a YAML
+round-trip that reorders keys or reformats scalars is a defect: use a
+node-preserving YAML library, e.g. `gopkg.in/yaml.v3` `Node`, and diff the
+projected job's subtree against the original in a unit test). The daemon
+then runs `act push -W <projected> -j <job> …`. The assignment JSON gains
+`prereq-outputs` — the ship's recorded outputs of every job in `needs`,
+shaped `{"<job>": {"<name>": "<value>"}}` — which the daemon carries into
+the sandbox as `--env NEEDS_<JOB>_OUTPUTS_<NAME>=<value>` (uppercased,
+non-alphanumerics → `_`) so a STEP that reads a prerequisite output can be
+served in a later phase; **in P1 no ERPit step references `needs.*` (all
+four references are job-level and are stripped), so the mapping is carried
+and unit-tested but has no live consumer — say that in the record.** A
+relayed event whose `jobID` is not the assigned job is refused by the ship
+(`event job does not match the assignment`, P0) — that refusal is now the
+tripwire proving the projection held. R2.3′-A's execution sentence reads,
+amended: "`act -j <job> --json` per job **on a single-job projection** in a
+disposable sandbox."
+*Cite: CI-PROJECT-1; R2-A; R2.2-A; R2.3′-A (amended).*
 
 Three more sentences the spec owes the daemon: (a) `runner/urgit-runner.service`
 is a **systemd** unit (`Type=simple`, `Restart=on-failure`, runs as an
@@ -415,7 +447,10 @@ S4. `runner/`: D7 + D10 + D8. `go build ./...` produces one static binary
     planted ERPit output; the YAML `needs`/`if` walk on both ERPit workflows;
     the event relay against a recorded `--json` stream (the spike log); the
     sandbox interface with a fake backend proving the daemon never reads the
-    sandbox filesystem after `Run`. `zig build` gains an optional `-Drunner`
+    sandbox filesystem after `Run`; the projection on both ERPit workflows —
+    for each of the eight jobs, the projected file has exactly one job, no
+    `needs`, no job-level `if`, and a job subtree byte-identical to the
+    original's otherwise (CI-PROJECT-1). `zig build` gains an optional `-Drunner`
     step that runs `go build` when Go is present and says so when it is not.
 S5. Harness (§5) and the live table. S6. `runner/README.md` (install on any
     Linux host; the four config keys the spec names; the sandbox disclosure;
@@ -449,13 +484,14 @@ relay, no dojo poke between push and verdict:
 | P12 | `Destroy` made to fail (rename `docker` on PATH mid-teardown, or a fake backend) → slot quarantined, capacity decremented, logged; next assignment still runs on the remaining slot |
 | P13 | two daemons enrolled, one at capacity → the assignment goes to the other; `~m5` stale daemon never selected |
 | P14 | `|nuke %urgit-ci` then `|revive` mid-candidate: state-0 is wiped, so the daemon's bearer hash is gone; the daemon's next poll answers `401`, the daemon logs `enrollment lost; re-enroll with a fresh token` and exits non-zero. Record exactly what the operator sees on both sides. This is the P1 behaviour by construction (greenfield state-0, no migration); a survivable nuke is not a P1 goal |
-| P15 | **ERPit for real:** clone ERPit at its current master into a fixture repo on your ship, CI-protect `master`, push a commit → plan = `suite.yml` (`plan`, `structural`, `suite`) + `fixtures.yml` (`pins`, `plan`, `replay`, `erasure`, `duo`); `suite` and `replay`/`erasure`/`duo` gated on their `plan` outputs; every job runs under the daemon; **all eight green; candidate `%passed`.** This is the row the maintainer will reproduce. Budget ~25 min of act time; three fake ships boot inside the sandbox. |
+| P15 | **ERPit for real:** clone ERPit at its current master into a fixture repo on your ship, CI-protect `master`, push a commit → plan = `suite.yml` (`plan`, `structural`, `suite`) + `fixtures.yml` (`pins`, `plan`, `replay`, `erasure`, `duo`); `suite` and `replay`/`erasure`/`duo` gated on their `plan` outputs BY THE SHIP; every job runs under the daemon **once, in its own attempt, on its projection** (eight attempts, not eight-plus-reruns); **all eight green; candidate `%passed`.** This is the row the maintainer will reproduce. Budget ~25 min of act time; three fake ships boot inside the sandbox. |
 | P16 | `refs/ci/candidate/*` absent from the repository API's ref list; absent after the candidate closes |
 | P17 | stale destination: stage candidate X on `master`, land an unrelated candidate Y first (or `%set-ref` master by hand as the operator override) → X passes CI, `%land-candidate` refused, X stays `%passed` with `verdict-reason` `'destination moved; rebase and push again'`; `master` = Y |
 | P18 | a push with no credentials and a push with a wrong write token → refused by `can-write` before the CI gate; no candidate staged; `%urgit-ci` state unchanged (mutant: skip `can-write` → a candidate IS staged from an anonymous push — RED) |
+| P20 | projection tripwire: on `fixture-chain.yml`, job `b`'s attempt stream contains NO line with `jobID:a`; `a` ran once, in its own attempt; the ship's `events` count for `b` matches `b`'s lines alone. **Mutant:** run act on the unprojected file → `a`'s `set-output`/`jobResult` arrive on `b`'s attempt → ship answers `409 event job does not match the assignment` → RED. Also: `go test` asserts the projected job subtree is byte-identical to the original minus `needs`/`if` |
 | P19 | bind a second fixture repo to a desk (`%bind-desk`, `sur/git.hoon:454`), then `%set-ci-protected` on it → refused `'CI protection is not available for desk-linked repositories in this release'`; then CI-protect a plain repo, bind it AFTER, push → staged, passes, `%land-candidate` refused with the same reason, candidate `%passed` unlanded (mutant: `linked` check → `%.n` — protection accepted and a Clay push parks in `pending-clay` — RED) |
 
-Negative rows (P1, P7–P12, P14, P17, P18, P19) get the P0 mutant treatment: one-line
+Negative rows (P1, P7–P12, P14, P17, P18, P19, P20) get the P0 mutant treatment: one-line
 sabotage per row in `mutants.sh`, RED then GREEN, both pasted. The P0 rule
 holds: **anything you type that a script did not is a Deviations entry and a
 script fix.**
