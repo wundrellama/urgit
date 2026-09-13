@@ -703,6 +703,15 @@
 ++  public-repository-json-up-to
   |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
+  ::  refs/ci/* are %urgit-ci's scratch refs (a candidate's objects kept
+  ::  reachable for the runner's clone); they are not part of the
+  ::  repository's public shape
+  ::
+  =.  refs.repo
+    %-  malt
+    %+  skip  ~(tap by refs.repo)
+    |=  [ref=@t oid:git]
+    =('refs/ci/' (end [3 8] ref))
   =/  full=json  (repository-json-up-to name repo history-limit)
   ?>  ?=([%o *] full)
   =/  fields=(map @t json)  p.full
@@ -893,6 +902,34 @@
     (flatten-commit:git-tree objects.repo commit)
   ?~  files  ~
   (~(get by u.files) file-path)
+::
+::  the %ci-file, %ci-tree and %ci-ref peeks decode their segments here: a
+::  (scot %t ...) cord or a raw one, a 40-hex oid, and a slashed file path
+::  as a clay path
+::
+++  ci-segment
+  |=  segment=@t
+  ^-  @t
+  (fall (slaw %t segment) segment)
+::
+++  ci-oid
+  |=  text=@t
+  ^-  (unit oid:git)
+  ?.  =(40 (met 3 text))  ~
+  (oid-at:git-protocol [40 text] 0)
+::
+++  ci-path
+  |=  text=@t
+  ^-  path
+  =/  chars=tape  (trip text)
+  =|  segment=tape
+  =|  out=path
+  |-
+  =/  flushed=path  ?~(segment out [(crip (flop segment)) out])
+  ?~  chars  (flop flushed)
+  ?:  =('/' i.chars)
+    $(chars t.chars, segment ~, out flushed)
+  $(chars t.chars, segment [i.chars segment])
 ::
 ++  revision-oid
   |=  [repo=repository:git revision=@t]
@@ -2242,14 +2279,20 @@
     ?>  =(src.bowl our.bowl)
     (handle-action !<(action:git vase))
   ::
-      ::  the one %ci-action %urgit answers: %urgit-ci asks for a candidate
-      ::  to be materialized and is poked back with the result
+      ::  the two %ci-actions %urgit answers: %urgit-ci asks for a candidate
+      ::  to be materialized, or for a passed candidate to be landed, and
+      ::  is poked back with the result
       ::
       %ci-action
     ?>  =(src.bowl our.bowl)
     =/  act=action:ci  !<(action:ci vase)
-    ?>  ?=(%materialize-candidate -.act)
-    (materialize-candidate repo.act ref.act head.act base.act)
+    ?+  -.act  ~|([%urgit-ci-action-not-for-urgit -.act] !!)
+        %materialize-candidate
+      (materialize-candidate repo.act ref.act head.act base.act)
+    ::
+        %land-candidate
+      (land-candidate id.act repo.act ref.act candidate.act expected.act)
+    ==
   ::
       %handle-http-request
     =+  !<([eyre-id=@ta req=inbound-request:eyre] vase)
@@ -4827,7 +4870,7 @@
   [[card ~] `[id event name message now.bowl]]
 ::
 ++  accept-receive
-  |=  $:  eyre-id=@ta
+  |=  $:  eyre-id=(unit @ta)
           name=@t
           commands=(list receive-command:git)
           applied=repository:git
@@ -4837,19 +4880,21 @@
   =.  repositories  (~(put by repositories) name applied)
   =^  push-cards  this
     (dispatch-webhooks name %push (push-event-json commands))
+  ::  a landing (land-candidate) has no request to answer
+  ::
+  =/  answer=(list card)
+    ?~  eyre-id  ~
+    %+  give-simple-payload:app:server  u.eyre-id
+    (receive-payload 'ok' (receive-results commands %.y ''))
   ?~  clay
     :_  this
-    %+  weld  push-cards
-    %+  give-simple-payload:app:server  eyre-id
-    (receive-payload 'ok' (receive-results commands %.y ''))
+    (weld push-cards answer)
   =/  data=json
     (pairs:enjs:format ~[['desk' s+desk-name.u.clay] ['commit' s+(oid-text:git-codec commit.u.clay)]])
   =^  sync-cards  this
     (dispatch-webhooks name %clay-sync data)
   :_  this
-  %+  weld  (weld push-cards sync-cards)
-  %+  give-simple-payload:app:server  eyre-id
-  (receive-payload 'ok' (receive-results commands %.y ''))
+  (weld (weld push-cards sync-cards) answer)
 ::
 ++  handle-incoming-hook
   |=  [eyre-id=@ta req=inbound-request:eyre name=@t]
@@ -7974,10 +8019,65 @@
     ==
   ?:  ?=(%conflict -.outcome)
     :_  this  ~[(reply [%candidate-conflict repo-name ref head base])]
+  ::  the candidate's objects stay reachable for the runner's clone on a
+  ::  scratch ref named by the candidate id; %urgit-ci deletes it through
+  ::  %delete-ref when the candidate closes.  upload-pack serves only
+  ::  ref-reachable objects, so the ref is the contract, not a courtesy.
+  ::
+  =/  scratch=@t
+    (rap 3 ~['refs/ci/candidate/' (scot %uv (sham [repo-name ref head base]))])
   =.  repositories
-    (~(put by repositories) repo-name u.found(objects objects.outcome))
+    %+  ~(put by repositories)  repo-name
+    %=  u.found
+      objects  objects.outcome
+      refs     (~(put by refs.u.found) scratch candidate.outcome)
+    ==
   :_  this
   ~[(reply [%candidate-ready repo-name ref head base candidate.outcome])]
+::
+::  landing for %urgit-ci (CI-LAND-1): inside this one event, the
+::  candidate's eligibility is read again from %urgit-ci under the same
+::  guards ci-gate-error uses, the ref's tip is compared with the tip the
+::  candidate was staged against, and the ref advances through the receive
+::  path's two arms for a plain repository: apply-receive compares the old
+::  tip and writes the ref into the repository value, accept-receive
+::  persists it and dispatches the webhooks.  a tip that moved refuses; the
+::  candidate stays passed and unlanded until the pusher rebases.  a
+::  repository bound to a Clay desk is refused (CI-LINKED-DESK-P1): its
+::  receive path writes the ref asynchronously, not in one event.
+::
+++  land-candidate
+  |=  [id=@uv repo-name=@t ref=@t candidate=oid:git expected=oid:git]
+  ^-  (quip card _this)
+  =/  refuse
+    |=  reason=@t
+    ^-  (quip card _this)
+    :_  this
+    ~[[%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%land-refused id reason])]]
+  =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+  =/  live=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix /$))
+  ?.  ?&(?=(%& -.live) p.live)
+    (refuse 'ci: %urgit-ci is not running; the candidate cannot be landed')
+  =/  eligible=(each ? tang)
+    %-  mule  |.
+    ;;(? .^(* %gx (weld prefix /eligible/(scot %t repo-name)/(scot %t ref)/(scot %t (oid-text:git-codec candidate))/noun)))
+  ?.  ?&(?=(%& -.eligible) p.eligible)
+    (refuse 'candidate is not eligible to land')
+  =/  found=(unit repository:git)  (~(get by repositories) repo-name)
+  ?~  found  (refuse 'repository not found')
+  ?^  binding.u.found
+    (refuse 'CI protection is not available for desk-linked repositories in this release')
+  ?.  =(`expected (~(get by refs.u.found) ref))
+    (refuse 'destination moved; rebase and push again')
+  =/  commands=(list receive-command:git)  ~[[`expected `candidate ref]]
+  =/  applied=(unit repository:git)  (apply-receive u.found commands ~)
+  ?~  applied  (refuse 'candidate object is missing from the store')
+  =^  cards  this  (accept-receive ~ repo-name commands u.applied ~)
+  :_  this
+  %+  snoc  cards
+  [%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%landed id])]
 ::
 ++  command-for-ref
   |=  [commands=(list receive-command:git) ref=@t]
@@ -8614,9 +8714,15 @@
       ?~  stage.u.gate  ~
       =/  id=@uv  (sham [repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate])
       :_  ~
+      ::  the pusher, for step 5's trust classification (CI-TRUST-P1): the
+      ::  ship's own session, or the owner by delegation through the
+      ::  write token, since write-authorized admits nothing else
+      ::
+      =/  actor=[@p via:ci]
+        ?:(authenticated.req [our.bowl %session] [owner.u.found %token])
       :*  %pass  /ci/stage/(scot %uv id)
           %agent  [our.bowl %urgit-ci]  %poke  %ci-action
-          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate])
+          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate actor])
       ==
     %+  give-simple-payload:app:server  eyre-id
     (receive-payload 'ok' (receive-results commands.u.parsed %.n message.u.gate))
@@ -8636,7 +8742,7 @@
     =/  linked-command=(unit receive-command:git)
       (command-for-ref commands.u.parsed branch.u.binding.u.applied)
     ?~  linked-command
-      (accept-receive eyre-id repo-name commands.u.parsed u.applied ~)
+      (accept-receive `eyre-id repo-name commands.u.parsed u.applied ~)
     =/  maybe-pending=(unit clay-push)  pending-clay
     ?^  maybe-pending
       :_  this
@@ -8666,7 +8772,7 @@
     ?:  =(~ p.u.delta)
       =/  clay=[desk-name=desk commit=oid:git]
         [desk-name.u.binding.u.applied u.new.u.linked-command]
-      (accept-receive eyre-id repo-name commands.u.parsed u.applied `clay)
+      (accept-receive `eyre-id repo-name commands.u.parsed u.applied `clay)
     =/  pending=clay-push
       =/  start-at=@da  (add now.bowl ~s1)
       =/  timeout-at=@da  (add now.bowl ~s15)
@@ -8689,7 +8795,7 @@
     :~  [%pass /clay-start %arvo %b %wait start-at.pending]
         [%pass /clay-timeout %arvo %b %wait timeout-at.pending]
     ==
-  (accept-receive eyre-id repo-name commands.u.parsed u.applied ~)
+  (accept-receive `eyre-id repo-name commands.u.parsed u.applied ~)
 ::
 ++  handle-lfs-locks
   |=  [eyre-id=@ta req=inbound-request:eyre line=request-line:server repo-name=@t]
@@ -9122,6 +9228,59 @@
     ?~  found  [~ ~]
     ?.  public-read.u.found  [~ ~]
     ``json+!>((public-repository-json name u.found))
+  ::
+      ::  the three reads %urgit-ci makes of a repository, private or not:
+      ::  a file at a commit, the entries under a directory at a commit,
+      ::  and a ref's tip.  segments are (scot %t ...)-encoded so a 40-hex
+      ::  oid, a dotted file name or a slashed path fits one segment.  a
+      ::  local %x read is the only way to reach them; nothing remote can.
+      ::  each answers a unit, never [~ ~], so the reading event survives.
+      ::
+      [%x %ci-file @ @ @ ~]
+    =/  name=@t  (ci-segment i.t.t.path)
+    =/  oid=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.path))
+    =/  file-path=(list @ta)  (ci-path (ci-segment i.t.t.t.t.path))
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    :^  ~  ~  %noun
+    !>  ^-  (unit octs)
+    ?~  found  ~
+    ?~  oid  ~
+    (file-at-commit u.found u.oid file-path)
+  ::
+      [%x %ci-tree @ @ @ ~]
+    =/  name=@t  (ci-segment i.t.t.path)
+    =/  oid=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.path))
+    =/  under=(list @ta)  (ci-path (ci-segment i.t.t.t.t.path))
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    :^  ~  ~  %noun
+    !>  ^-  (unit (list (list @ta)))
+    ?~  found  ~
+    ?~  oid  ~
+    =/  files=(unit (map (list @ta) octs))
+      (flatten-commit:git-tree objects.u.found u.oid)
+    ?~  files  ~
+    :-  ~
+    %+  murn  ~(tap in ~(key by u.files))
+    |=  file-path=(list @ta)
+    ^-  (unit (list @ta))
+    =/  depth=@ud  (lent under)
+    ?.  =(under (scag depth file-path))  ~
+    `(slag depth file-path)
+  ::
+      ::  the tip and whether the repository is bound to a Clay desk: a
+      ::  linked repository cannot be CI-protected or landed in this
+      ::  release (CI-LINKED-DESK-P1)
+      ::
+      [%x %ci-ref @ @ ~]
+    =/  name=@t  (ci-segment i.t.t.path)
+    =/  ref=@t  (ci-segment i.t.t.t.path)
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    :^  ~  ~  %noun
+    !>  ^-  (unit [tip=oid:git linked=?])
+    ?~  found  ~
+    =/  tip=(unit oid:git)  (~(get by refs.u.found) ref)
+    ?~  tip  ~
+    `[u.tip ?=(^ binding.u.found)]
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path
