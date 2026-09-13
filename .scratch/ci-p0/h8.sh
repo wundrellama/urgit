@@ -3,13 +3,14 @@
 # the candidate becomes %passed, and pushing the candidate OID to master
 # lands (`ok refs/heads/master`).
 source "$(dirname "$0")/env.sh"
+source "$HERE/lib.sh"
 source "$TMP/oids.env"
 api="$ROOT/.scratch/ci-p0/api.sh"
 dojo="$ROOT/.scratch/ci-p0/dojo.sh"
 echo "== result: success"
 "$api" POST "/ci/attempt/$ATTEMPT/result" '{"job-result":"success"}' "$BEARER"
 echo "== candidate status"
-"$dojo" ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CAND/noun)" 60 16 | grep -E 'status|candidate='
+cand_state "$CAND"
 echo "== eligibility scry for the candidate OID (raw 40-hex is a path syntax error when it starts with a digit: wrap it)"
 "$dojo" ".^(? %gx /=urgit-ci=/eligible/(scot %t 'ci-fixture')/(scot %t 'refs/heads/master')/(scot %t '$THREE')/noun)" 60 3 | tail -2
 echo "== push the candidate OID to master (must land)"

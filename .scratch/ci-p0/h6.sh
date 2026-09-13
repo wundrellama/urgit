@@ -22,8 +22,8 @@ echo "== enroll again with the same token (must be refused)"
 "$api" POST /ci/daemon/enroll "{\"token\":\"$TOKEN\"}" -
 echo "== poll with no credentials (401)"
 "$api" GET "/ci/daemon/$DAEMON/assignment" "" -
-WRONG="${BEARER%?}0"
-echo "== poll with a wrong bearer (401)"
+case "${BEARER: -1}" in 0) WRONG="${BEARER%?}1" ;; *) WRONG="${BEARER%?}0" ;; esac
+echo "== poll with a wrong bearer $WRONG (401)"
 "$api" GET "/ci/daemon/$DAEMON/assignment" "" "$WRONG"
 echo "== poll with the bearer (204 after ~25 s)"
 start=$(date +%s)

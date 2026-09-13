@@ -11,5 +11,5 @@ cat > "$file" <<HOON
 ;<  ~  bind:m  (poke [our $agent] $mark !>($noun))
 (pure:m !>([%poked $agent $mark]))
 HOON
-"$CLICK" -k -i "$file" "$PIER"
+"$CLICK" -k -i "$file" "$PIER" 2>/dev/null
 rm -f "$file"

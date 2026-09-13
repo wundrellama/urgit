@@ -1,15 +1,16 @@
 #!/bin/bash
 # Shut down only the ship this harness booted: find its processes by
-# /proc/<pid>/cmdline containing the pier path (never a pattern kill), send
-# ctrl+d to the dojo, wait until those pids are gone, then close the pane by
-# id. The pier directory stays on disk.
+# /proc/<pid>/cmdline (the urbit binary, naming the pier path; never a
+# pattern kill), send ctrl+d to the dojo, wait until those pids are gone,
+# then close the pane by id. The pier directory stays on disk.
 source "$(dirname "$0")/env.sh"
 pier_pids() {
   for p in /proc/[0-9]*; do
-    if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -qF -- "$PIER"; then basename "$p"; fi
+    local cmd; cmd=$({ tr '\0' ' ' < "$p/cmdline"; } 2>/dev/null)
+    case "$cmd" in "$URBIT "*"$PIER"*) basename "$p" ;; esac
   done
 }
-echo "== processes whose /proc/<pid>/cmdline names $PIER:"
+echo "== processes whose /proc/<pid>/cmdline is $URBIT … $PIER:"
 for pid in $(pier_pids); do printf '%s  %s\n' "$pid" "$(tr '\0' ' ' < /proc/$pid/cmdline | cut -c1-140)"; done
 [ -n "$(pier_pids)" ] || { echo "nothing to stop"; exit 0; }
 echo "== ctrl+d to the dojo in pane $PANE"

@@ -1,13 +1,13 @@
 #!/bin/bash
 # Negative rows H9, H13, H12, H10, H11 on the merge candidate (CAND2/MERGE).
 source "$(dirname "$0")/env.sh"
+source "$HERE/lib.sh"
 source "$TMP/oids.env"
 api="$ROOT/.scratch/ci-p0/api.sh"
 dojo="$ROOT/.scratch/ci-p0/dojo.sh"
 poll() { "$api" GET "/ci/daemon/$1/assignment" "" "$2"; }
 attempt_of() { grep -o '"attempt":"[^"]*"' | head -1 | cut -d'"' -f4; }
-cand_status() { "$dojo" ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun)" 60 16 | grep -E '^\s*status=' ; }
-att_state() { "$dojo" ".^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun)" 60 20 | grep -E '^\s*(status|events|job-result)=' ; }
+cand_status() { cand_state "$1"; }
 
 echo "########## H9: claim success with no relayed jobResult -> 409; candidate stays %pending"
 "$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON ~]" 60 3 | tail -2

@@ -120,7 +120,7 @@ relay() {
     n=$((n+1))
   done < "$TMP/$tag-act.log"
   git checkout -q master
-  echo "-- act exit=$rc, relayed $n lines, $(grep -o '"jobResult":"[a-z]*"' "$TMP/$tag-act.log" | tail -1); last answer: $(tail -n1 "$TMP/$tag-relay.log" | cut -c1-70)"
+  echo "-- act exit=$rc, relayed $n lines, $(grep -o '"jobResult":"[a-z]*"' "$TMP/$tag-act.log" | tail -1); last answer: $(grep . "$TMP/$tag-relay.log" | tail -n1 | cut -c1-70)"
 }
 # push_to <oid> <ref>: prints `ok`, `rejected: <reason>` or `error: <line>`
 push_to() {

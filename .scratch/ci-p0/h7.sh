@@ -4,6 +4,7 @@
 # route with a shell loop. Assert outputs.suite == 'true' on the attempt.
 # usage: h7.sh [workflow-name] [job]   (default fixture-pass / pass)
 source "$(dirname "$0")/env.sh"
+source "$HERE/lib.sh"
 source "$TMP/oids.env"
 api="$ROOT/.scratch/ci-p0/api.sh"
 dojo="$ROOT/.scratch/ci-p0/dojo.sh"
@@ -24,5 +25,5 @@ done < "$TMP/$tag-act.log"
 echo "relayed $n lines; last answer:"
 tail -n 2 "$TMP/$tag-relay.log"
 echo "== attempt state"
-"$dojo" ".^((unit attempt:ci) %gx /=urgit-ci=/attempt/$ATTEMPT/noun)" 60 20 | grep -E 'status|events|outputs|job-result' | tee "$TMP/$tag-attempt.txt"
+{ att_state "$ATTEMPT"; echo "outputs=$(att_field "$ATTEMPT" outputs)"; } | tee "$TMP/$tag-attempt.txt"
 git checkout -q master
