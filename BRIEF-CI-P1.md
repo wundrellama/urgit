@@ -589,9 +589,9 @@ state: `.scratch/tmp/` (ignored). Piers stay on disk at the end.
 
 ## Launch footer — chair `opus`
 
-- Worktree: `/var/home/michael/workspace/urbit/urgit-ci-p1-opus` — branch `ci/p1-opus`, base `b87dad2` (= `master`, re-frozen 2).
+- Worktree: `/var/home/michael/workspace/urbit/urgit-ci-p1-opus` — branch `ci/p1-opus`, base `5711f45` (= `master`, re-frozen 3).
 - Ship: `~ryp`, HTTP port `8346`, pier `/var/home/michael/piers/urgit-ci-p1-ryp` (must not exist before boot).
 - Rootless Docker: state dir `/run/user/1000/ci-p1-opus/`, data root `/var/home/michael/workspace/urbit/urgit-ci-p1-opus/.scratch/tmp/docker-data`, socket `/run/user/1000/ci-p1-opus/docker.sock`.
 - Boot line (inside a herdr pane you create, after the shell prompt appears): `/var/home/michael/workspace/urbit/bin/urbit -F ryp -B /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port 8346 -c /var/home/michael/piers/urgit-ci-p1-ryp`
-- Planted, untracked, read-only: `REFERENCE-CI-RULINGS.md` (carries CI-LAND-1, CI-BASELINE-P1, CI-EXPR-1, CI-TRUST-P1, CI-LINKED-DESK-P1-B), `.scratch/act-list-erpit.txt`, `.scratch/spike-001a-act-README.md`.
+- Planted, untracked, read-only: `REFERENCE-CI-RULINGS.md` (carries CI-LAND-1, CI-BASELINE-P1, CI-EXPR-1, CI-TRUST-P1, CI-LINKED-DESK-P1-B, CI-PROJECT-1-A), `.scratch/act-list-erpit.txt`, `.scratch/spike-001a-act-README.md`.
 - Reports: `/var/home/michael/workspace/urbit/urgit-ci-p1-opus/.scratch/p1-live-table.md` (committed with `git add -f`). Logs: `/var/home/michael/workspace/urbit/urgit-ci-p1-opus/.scratch/tmp/` (ignored).
