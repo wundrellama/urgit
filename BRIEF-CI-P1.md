@@ -282,10 +282,11 @@ backend pending)`.
 **D11 — `%set-ci-protected` requires an existing tip.** `%urgit`'s existing
 `[%x %repository @ ~]` peek (9119) is gated on `public-read`, so it cannot
 serve a private repo. `%urgit` gains a third `our`-only peek
-`[%x %ci-ref @ @ ~]` → `(unit oid:git)` (repo, ref) beside D2's pair.
+`[%x %ci-ref @ @ ~]` → `(unit [tip=oid:git linked=?])` (repo, ref) beside
+D2's pair; `linked` is whether the repository is bound to a Clay desk.
 `%urgit-ci` scries it before adding to `ci-protected`; absent → refuse with
-`'ref has no tip; push a commit before CI-protecting it'`. Un-protect never
-checks. **D2 + D11 together are the three `our`-only peeks on `%urgit`; §6 lists
+`'ref has no tip; push a commit before CI-protecting it'`; `linked=%.y` →
+refuse with the CI-LINKED-DESK-P1 reason (D14). Un-protect never checks. **D2 + D11 together are the three `our`-only peeks on `%urgit`; §6 lists
 the rest of the touch (D9, D14, D16).**
 *Cite: CI-EMPTY-REF-1-A.*
 
@@ -314,24 +315,47 @@ second variant beside `%materialize-candidate`:
 `[%land-candidate repo=@t ref=@t candidate=oid:git expected=oid:git]`.
 Inside that ONE Gall event `%urgit`: re-scries `%urgit-ci` eligibility for
 `[repo ref candidate]` (the D2 P0 peek, under the `%gu` guard); reads the
-ref's current tip and refuses unless it equals `expected`; then writes the
-ref through the SAME code the receive path uses after its policy checks
-(ref update, webhooks, linked-desk Clay publication) — call that code, do
-not copy it. The existing `%set-ref` (3955) is NOT the landing path: it
-checks object existence only and would split compare and write across two
-events. On success `%urgit` pokes `%urgit-ci` `[%landed candidate-id]`; on
-refusal `[%land-refused candidate-id reason=@t]`. `%urgit-ci` pokes
-`%land-candidate` the moment a candidate reaches `%passed`, with
-`expected = base` of the candidate. A stale `expected` (the ref moved since
-staging) leaves the candidate `%passed` and unlanded with `verdict-reason`
-`'destination moved; rebase and push again'` — a new negative row (P17).
+ref's current tip and refuses unless it equals `expected`; then lands
+through the receive path's two existing arms for a PLAIN repository:
+`apply-receive` (7850 — compares each command's old tip and produces the
+updated repository value) followed by `accept-receive` (4829 — persists it,
+dispatches webhooks). Build a one-command receive command list
+`[old=`expected new=`candidate ref]` and pass it through both; do not copy
+either arm. The existing `%set-ref` (3955) is NOT the landing path: it
+checks object existence only. On success `%urgit` pokes `%urgit-ci`
+`[%landed candidate-id]`; on refusal `[%land-refused candidate-id reason=@t]`.
+`%urgit-ci` pokes `%land-candidate` the moment a candidate reaches `%passed`,
+with `expected = base` of the candidate. A stale `expected` (the ref moved
+since staging) leaves the candidate `%passed` and unlanded with
+`verdict-reason` `'destination moved; rebase and push again'` — row P17.
+
+**CI-LINKED-DESK-P1 (ratified): a repository bound to a Clay desk cannot
+be CI-protected in P1.** The receive path for a linked-desk repo does NOT
+write the ref in `handle-receive-pack`: it computes a Clay delta inline
+(8635→), parks the push in `pending-clay`, and the ref write happens later
+in `on-arvo`'s `/clay-report` case (9707; write at 9726) with no re-check.
+That asynchronous completion is not one Gall event, and a landing that
+re-checks eligibility there is a refactor of the receive tail that P1 does
+not do. So D11's precondition grows a second clause: `%set-ci-protected`
+also scries `[%x %ci-ref-linked @ @ ~]` → `?` (fold it into the `ci-ref`
+peek: return `(unit [tip=oid:git linked=?])` instead of a bare `(unit
+oid:git)` — still three peeks) and refuses a linked repo with
+`'CI protection is not available for desk-linked repositories in this
+release'`. `land-candidate` asserts the same (a repo bound AFTER protection
+is refused at land time with the same reason and the candidate stays
+`%passed` unlanded; binding a CI-protected repo to a desk is not blocked in
+P1 — say so in the README). Row P19 covers the refusal with a mutant. The
+linked-desk landing path is P2's second item; astra's four-step plan
+(shared helper, `clay-push` CI reply target, re-check in the completion
+event, three rows) is recorded as its derivation.
+
 **This is the fourth `%urgit` touch** (three peeks, one filter, ref
 set/clear, and this arm) and the LAST; the arm is named `land-candidate`,
-sits beside `materialize-candidate` (7956), and is ≤60 lines because it
-calls the receive path's existing ref-write arm rather than reimplementing
-it. Identify that arm by reading `handle-receive-pack` from 8606 downward to
-the point where `refs` is written and Clay publication is decided; cite
-its name in your record.
+sits beside `materialize-candidate` (7956), and is short because it calls
+`apply-receive` + `accept-receive` rather than reimplementing them. If
+`accept-receive`'s Eyre-response argument cannot be satisfied without an
+`eyre-id`, give it a `(unit @ta)` and answer nothing when `~` — that
+signature change is inside the fence as part of this arm.
 *Cite: spec §Protected refs ¶1–2; R4.1-A; R4.3-A (a direct push is never
 applied — landing is the ship's act, not the client's).*
 
@@ -429,8 +453,9 @@ relay, no dojo poke between push and verdict:
 | P16 | `refs/ci/candidate/*` absent from the repository API's ref list; absent after the candidate closes |
 | P17 | stale destination: stage candidate X on `master`, land an unrelated candidate Y first (or `%set-ref` master by hand as the operator override) → X passes CI, `%land-candidate` refused, X stays `%passed` with `verdict-reason` `'destination moved; rebase and push again'`; `master` = Y |
 | P18 | a push with no credentials and a push with a wrong write token → refused by `can-write` before the CI gate; no candidate staged; `%urgit-ci` state unchanged (mutant: skip `can-write` → a candidate IS staged from an anonymous push — RED) |
+| P19 | bind a second fixture repo to a desk (`%bind-desk`, `sur/git.hoon:454`), then `%set-ci-protected` on it → refused `'CI protection is not available for desk-linked repositories in this release'`; then CI-protect a plain repo, bind it AFTER, push → staged, passes, `%land-candidate` refused with the same reason, candidate `%passed` unlanded (mutant: `linked` check → `%.n` — protection accepted and a Clay push parks in `pending-clay` — RED) |
 
-Negative rows (P1, P7–P12, P14, P17, P18) get the P0 mutant treatment: one-line
+Negative rows (P1, P7–P12, P14, P17, P18, P19) get the P0 mutant treatment: one-line
 sabotage per row in `mutants.sh`, RED then GREEN, both pasted. The P0 rule
 holds: **anything you type that a script did not is a Deviations entry and a
 script fix.**
@@ -446,7 +471,10 @@ Foreground: every existing `+urgit!*-vector` plus `ci-plan-vector`;
 fields on the `%stage-candidate` poke it already sends (D16). **Nothing
 else.** `desk/sur/git.hoon`, `desk/mar/git-action.hoon`, `fe/`:
 untouched. No approvals, no credential store, no signing key, no store upload,
-no web UI, no `microvm` implementation, no `state-1`. No changes to ERPit.
+no web UI, no `microvm` implementation, no `state-1`, no linked-desk
+landing (CI-LINKED-DESK-P1 refuses it). No changes to ERPit. **`handle-receive-pack`'s
+tail (8635→), `pending-clay`, `clay-push`, and the `/clay-report` case are
+untouched.**
 
 If the spec and a derivation disagree, or a derivation is unbuildable, write
 `QUESTIONS-CI-P1.md` with `## §<n>` headings — what you read, what you tried,
