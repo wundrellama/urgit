@@ -10,8 +10,8 @@
 #   P1   app/urgit-ci.hoon   %set-ci-protected: the no-tip refusal accepts silently
 #   P7   app/urgit-ci.hoon   close-attempt: every job result is %passed (P0's H11)
 #   P8   lib/ci-plan.hoon    validate: a matrix job is not refused
-#   P9   lib/ci-plan.hoon    validate: an unsupported if is not refused (the
-#                            evaluator then skips the job instead of failing the plan)
+#   P9   lib/ci-plan.hoon    validate: an unsupported if is accepted (the refusal line
+#                            continues the walk; the evaluator then skips the job)
 #   P10  app/urgit-ci.hoon   /abandon closes %job-result %success
 #   P11  app/urgit-ci.hoon   the deadline wake closes %job-result %success (P0's H10)
 #   P12  runner daemon.go    quarantine does not lower the capacity
@@ -45,8 +45,8 @@ edits = [
   "    ?:  matrix.wire-job\n",
   "    ?:  %.n\n"),
  ("P9",  "desk/lib/ci-plan.hoon",
-  "    ?:  ?=([~ %unsupported *] cond.wire-job)\n",
-  "    ?:  %.n\n"),
+  "      [%| (rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])]\n",
+  "      $(remaining t.remaining, seen (~(put in seen) k))\n"),
  ("P10", "desk/app/urgit-ci.hoon",
   "  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' u.reason])])\n",
   "  =.  state  (close-attempt u.found [%job-result %success])\n"),
