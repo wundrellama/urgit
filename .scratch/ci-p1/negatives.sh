@@ -19,7 +19,14 @@ case "$phase" in
   green) want=PASS; "$P1/mutants.sh" revert || exit 1 ;;
   *) echo "usage: negatives.sh red|green|all" >&2; exit 2 ;;
 esac
-"$P0/rebuild.sh" "neg-$phase" urgit urgit-ci | tail -3 || exit 1
+# rebuild.sh waits for both agents to reload; when the installed desk
+# already equals the working tree (a previous phase left it there) the
+# commit is a no-op and prints no reload, which is fine for this phase
+marker="neg-$phase-$(date +%s)"; "$P0/dojo.sh" "'$marker'" 60 2 >/dev/null
+"$P0/rebuild.sh" "neg-$phase" urgit urgit-ci | tail -3 || echo "(no reload: the installed desk already matches this phase's tree)"
+if herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { f = 1; next } f' | grep -q 'crud: %into event failed'; then
+  echo "negatives.sh: the $phase build failed to commit; stopping" >&2; exit 1
+fi
 ( cd "$ROOT/runner" && CGO_ENABLED=0 go build -o urgit-runner ./cmd/urgit-runner ) || exit 1
 echo "== build under test: $("$P1/mutants.sh" status | tail -1); rows must $want"
 # a fresh enrollment for this phase (the previous phase's P14 wiped the
