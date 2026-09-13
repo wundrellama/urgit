@@ -100,6 +100,7 @@
 ::  act names a set-output twice: `name` at the top level when the value
 ::  came from $GITHUB_OUTPUT (measured on 0.2.89), and `kvPairs.name` when
 ::  it came from a ::set-output:: workflow command.  both are accepted.
+::  seen live on act 0.2.89: a $GITHUB_OUTPUT file command emits top-level `name` (no kvPairs), the legacy stdout ::set-output:: emits `kvPairs.name`; the parser accepts both.
 ::
 ++  parse-command
   |=  fields=(map @t json)
