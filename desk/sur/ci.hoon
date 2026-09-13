@@ -42,11 +42,14 @@
   ==
 ::
 ::  one planned job.  jobs are keyed by [workflow id], never by id alone:
-::  `needs` never crosses a workflow file.
+::  `needs` never crosses a workflow file.  .name is the workflow's real
+::  name as `act -l` printed it from the unprojected candidate; the name
+::  act runs a job under is the attempt's projection-name (CI-PROJECT-1.1).
 ::
 +$  job
   $:  id=@t
       workflow=@t
+      name=@t
       stage=@ud
       needs=(list @t)
       cond=(unit cond)
@@ -134,6 +137,7 @@
       job-result=(unit result)
       result=(unit attempt-result)
       reason=(unit @t)
+      projection-name=(unit @t)
       started=@da
       finished=(unit @da)
   ==

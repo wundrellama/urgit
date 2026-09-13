@@ -89,11 +89,13 @@ materialize() {
   done
   echo "-- candidate $1 never materialized" >&2; return 1
 }
-# assign <cid> <daemon> [deadline] [bearer]: %assign by poke, then take the
-# assignment from the channel as the daemon (draining any older one). Sets AID.
+# assign <cid> <daemon> [deadline] [bearer] [workflow] [job]: %assign by
+# poke (P1 shape: kind %job, workflow file, job id, deadline), then take the
+# assignment from the channel as the daemon (draining any older one,
+# including P1's automatic plan assignments). Sets AID.
 assign() {
-  local cid="$1" daemon="$2" deadline="${3:-~}" bearer="${4:-$BEARER}"
-  "$dojo" ":urgit-ci &ci-action [%assign $cid $daemon $deadline]" 60 3 >/dev/null
+  local cid="$1" daemon="$2" deadline="${3:-~}" bearer="${4:-$BEARER}" wf="${5:-fixture-pass.yml}" job="${6:-pass}"
+  "$dojo" ":urgit-ci &ci-action [%assign $cid $daemon %job \`'$wf' \`'$job' $deadline]" 60 3 >/dev/null
   AID=""
   for _ in 1 2 3 4 5 6; do
     local out got_cid got_aid
@@ -135,6 +137,7 @@ push_to() {
   fi
 }
 OUTAGE='rejected: ci: %urgit-ci is not running; protected-ref writes are refused until it is'
+master_oid() { "$api" GET /repository/ci-fixture | sed 's/^[0-9]* //' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([r for r in d["refs"] if r["name"]=="refs/heads/master"][0]["oid"])'; }
 
 # ---- rows ---------------------------------------------------------------------
 if has h9; then
@@ -161,7 +164,7 @@ fi
 
 if has h11; then
 row "H11 [$phase]: fixture-fail under real act -> jobResult failure -> candidate %failed, push -> ng"
-stage_commit "$phase-h11"; materialize "$CID"; assign "$CID" "$DAEMON"
+stage_commit "$phase-h11"; materialize "$CID"; assign "$CID" "$DAEMON" '~' "$BEARER" fixture-fail.yml fail
 relay "$AID" fixture-fail fail "$OID" "neg-$phase-h11"
 out=$("$api" POST "/ci/attempt/$AID/result" '{"job-result":"failure"}' "$BEARER")
 echo "POST /result failure -> ${out:0:120}"
@@ -199,21 +202,24 @@ end_row H13
 fi
 
 if has h14; then
-row "H14 [$phase]: %urgit-ci stopped (|rein) -> a %passed OID is refused with the outage reason, an unprotected ref too; restarted -> both land"
+row "H14 [$phase]: %urgit-ci stopped (|rein) -> a push to the CI-protected ref is refused with the outage reason, an unprotected ref too; restarted -> the unprotected push lands and the protected one is staged (P1: the passed OID was landed by the ship itself, D14)"
 stage_commit "$phase-h14"; materialize "$CID"; assign "$CID" "$DAEMON"
 relay "$AID" fixture-pass pass "$OID" "neg-$phase-h14"
 out=$("$api" POST "/ci/attempt/$AID/result" '{"job-result":"success"}' "$BEARER")
 echo "POST /result success -> ${out%% *}; candidate $(cand_status "$CID")"
+sleep 3
+check "landed by the ship (D14)" "$OID" "$(master_oid)"
+cd "$TMP/clone-a" && echo "probe $(date +%s%N)" >> HISTORY.md && git commit -qam "$phase-h14 probe" && PROBE=$(git rev-parse HEAD)
 "$dojo" '|rein %urgit [%.n %urgit-ci]' 60 3 >/dev/null
 wait_live '%.n'; echo "-- liveness while stopped: $(liveness)"
-p=$(push_to "$OID" refs/heads/master); echo "push passed OID -> master while stopped: $p"
+p=$(push_to "$PROBE" refs/heads/master); echo "push probe -> master while stopped: $p"
 check "protected push while stopped" "$OUTAGE" "$p"
 p=$(push_to "$OID" "refs/heads/side-$phase"); echo "push -> side-$phase while stopped: $p"
 check "unprotected push while stopped" "$OUTAGE" "$p"
 "$dojo" '|rein %urgit [%.y %urgit-ci]' 90 3 >/dev/null
 wait_live '%.y'; echo "-- liveness after restart: $(liveness)"
-p=$(push_to "$OID" refs/heads/master); echo "push passed OID -> master after restart: $p"
-check "protected push after restart" ok "$p"
+p=$(push_to "$PROBE" refs/heads/master); echo "push probe -> master after restart: $p"
+check_prefix "protected push after restart is staged" "rejected: staged as ci candidate" "$p"
 p=$(push_to "$OID" "refs/heads/side-$phase"); echo "push -> side-$phase after restart: $p"
 check "unprotected push after restart" ok "$p"
 end_row H14

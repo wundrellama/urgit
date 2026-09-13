@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +25,9 @@ type Client struct {
 	Base   string
 	Bearer string
 	HTTP   *http.Client
+	// Capacity is reported on every poll (`x-ci-capacity`) so a restart
+	// with a new config reaches the ship without re-enrolling.
+	Capacity int
 }
 
 func New(base, bearer string) *Client {
@@ -84,6 +88,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 	}
 	if c.Bearer != "" {
 		req.Header.Set("x-ci-bearer", c.Bearer)
+	}
+	if c.Capacity > 0 {
+		req.Header.Set("x-ci-capacity", strconv.Itoa(c.Capacity))
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

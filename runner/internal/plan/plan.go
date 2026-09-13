@@ -119,13 +119,25 @@ func envToken(s string) string {
 	return b.String()
 }
 
+// ProjectionName is the workflow name act sees for an attempt: the
+// attempt id, a slash, the original name (CI-PROJECT-1.1). act names a
+// job's container and volumes from sha256(workflow.Name/job.Name) and
+// force-removes an existing container of that name, so two attempts on
+// the same job on one Docker daemon must not share the workflow name.
+func ProjectionName(attempt, original string) string {
+	return attempt + "/" + original
+}
+
 // Project writes the single-job projection of a workflow: the original
-// bytes with every job but jobID removed and jobID's own `needs` and
-// job-level `if` keys removed. Nothing is re-encoded: the projection is
-// cut from the original text by the line numbers yaml.v3 reports, so
-// every kept line is byte-identical to the source. act then runs only
-// what the ship admitted.
-func Project(data []byte, jobID string) ([]byte, error) {
+// bytes with every job but jobID removed, jobID's own `needs` and
+// job-level `if` keys removed, and the top-level `name:` rewritten to
+// ProjectionName(attempt, original) — inserted when the workflow has
+// none, where act would have used the file name. Nothing else is
+// re-encoded: the projection is cut from the original text by the line
+// numbers yaml.v3 reports, so every other kept line is byte-identical to
+// the source. act then runs only what the ship admitted, under a name no
+// other attempt shares.
+func Project(data []byte, jobID, attempt, fileName string) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
@@ -136,8 +148,9 @@ func Project(data []byte, jobID string) ([]byte, error) {
 	}
 	lines := strings.SplitAfter(string(data), "\n")
 	total := len(lines)
-	// top-level keys in document order, to bound the jobs block
-	var jobsKey, jobsVal *yaml.Node
+	// top-level keys in document order, to bound the jobs block; the
+	// name key's own line (its scalar sits on it) is the one rewritten
+	var jobsKey, jobsVal, nameKey, nameVal *yaml.Node
 	var jobsEnd = total // exclusive, 0-based line index
 	for i := 0; i+1 < len(top.Content); i += 2 {
 		k, v := top.Content[i], top.Content[i+1]
@@ -145,10 +158,18 @@ func Project(data []byte, jobID string) ([]byte, error) {
 			jobsKey, jobsVal = k, v
 			continue
 		}
+		if k.Value == "name" && k.Column == 1 {
+			nameKey, nameVal = k, v
+		}
 		if jobsKey != nil && k.Line-1 < jobsEnd {
 			jobsEnd = k.Line - 1
 		}
 	}
+	original := fileName
+	if nameVal != nil && nameVal.Kind == yaml.ScalarNode {
+		original = nameVal.Value
+	}
+	nameLine := "name: " + ProjectionName(attempt, original) + "\n"
 	if jobsKey == nil || jobsVal.Kind != yaml.MappingNode {
 		return nil, errors.New("workflow has no jobs mapping")
 	}
@@ -206,7 +227,14 @@ func Project(data []byte, jobID string) ([]byte, error) {
 		}
 	}
 	var out strings.Builder
+	if nameKey == nil {
+		out.WriteString(nameLine)
+	}
 	for l := 0; l < total; l++ {
+		if nameKey != nil && l == nameKey.Line-1 {
+			out.WriteString(nameLine)
+			continue
+		}
 		if l >= jobsKey.Line && l < jobsEnd {
 			// inside the jobs block: keep only the chosen job's lines
 			if l < chosen.start || l >= chosen.end || drop[l] {
@@ -222,11 +250,11 @@ func Project(data []byte, jobID string) ([]byte, error) {
 // text (for the projection's unit test), optionally without its needs
 // and if lines.
 func JobText(data []byte, jobID string, stripNeedsIf bool) (string, error) {
-	projected, err := Project(data, jobID)
-	if err != nil {
-		return "", err
-	}
 	if stripNeedsIf {
+		projected, err := Project(data, jobID, "0v0", "x.yml")
+		if err != nil {
+			return "", err
+		}
 		return jobBlock(projected, jobID)
 	}
 	return jobBlock(data, jobID)

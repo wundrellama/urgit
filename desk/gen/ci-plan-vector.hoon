@@ -23,7 +23,7 @@
   |=  [id=@t workflow=@t stage=@t needs=@t cond=@t extra=@t]
   ^-  @t
   %-  rap  :-  3
-  :~  '{"id":"'  id  '","workflow":"'  workflow  '","stage":'  stage
+  :~  '{"id":"'  id  '","workflow":"'  workflow  '","name":"wf","stage":'  stage
       ',"needs":'  needs  ',"cond":'  cond  ',"events":["push"]'  extra  '}'
   ==
 ::  parse then validate, giving the plan or the reason
@@ -76,9 +76,10 @@
   :~  :-  'chain: three jobs planned, keyed by [workflow id]'
       =(3 (lent chain-plan))
     ::
-      :-  'chain: b needs a, condition output-eq a.go == true'
+      :-  'chain: b needs a, condition output-eq a.go == true, real workflow name carried'
       ?&  =(~['a'] needs.job-b)
           =(`[%output-eq 'a' 'go' 'true'] cond.job-b)
+          =('wf' name.job-b)
       ==
     ::
       :-  'duplicate job id'

@@ -10,7 +10,7 @@ attempt_of() { grep -o '"attempt":"[^"]*"' | head -1 | cut -d'"' -f4; }
 cand_status() { cand_state "$1"; }
 
 echo "########## H9: claim success with no relayed jobResult -> 409; candidate stays %pending"
-"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON ~]" 60 3 | tail -2
+"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON %job \`'fixture-pass.yml' \`'pass' ~]" 60 3 | tail -2
 A2=$(poll "$DAEMON" "$BEARER" | tee "$TMP/h9-assignment.txt" | attempt_of || true)
 echo "A2=$A2"
 "$api" POST "/ci/attempt/$A2/result" '{"job-result":"success"}' "$BEARER"
@@ -36,7 +36,7 @@ echo "-- same line with A's bearer (the line itself is fine):"
 "$api" POST "/ci/attempt/$A2/event" "@$TMP/h12-line.json" "$BEARER"
 
 echo "########## H10: deadline passes with no result -> attempt %infrastructure-error, candidate %unknown; push -> ng"
-"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON \`~s20]" 60 3 | tail -2
+"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON %job \`'fixture-pass.yml' \`'pass' \`~s20]" 60 3 | tail -2
 A3=$(poll "$DAEMON" "$BEARER" | tee "$TMP/h10-assignment.txt" | attempt_of || true)
 echo "A3=$A3 (deadline-seconds: $(grep -o '"deadline-seconds":[0-9]*' "$TMP/h10-assignment.txt"))"
 echo "-- before the deadline:"
@@ -49,7 +49,7 @@ cd "$TMP/clone-b"
 git push --force origin "$MERGE:refs/heads/master" 2>&1 | tee "$TMP/h10-push.log" | grep -E 'rejected|staged|master' || true
 
 echo "########## H11: fixture-fail -> jobResult failure -> candidate %failed; push -> ng"
-"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON ~]" 60 3 | tail -2
+"$dojo" ":urgit-ci &ci-action [%assign $CAND2 $DAEMON %job \`'fixture-fail.yml' \`'fail' ~]" 60 3 | tail -2
 A4=$(poll "$DAEMON" "$BEARER" | tee "$TMP/h11-assignment.txt" | attempt_of || true)
 echo "A4=$A4"
 git checkout -q "$MERGE"

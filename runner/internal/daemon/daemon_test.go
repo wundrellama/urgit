@@ -244,11 +244,30 @@ func TestPlanAssignment(t *testing.T) {
 	if posted.OID != "0000000000000000000000000000000000000001" || len(posted.Workflows) != 1 || len(posted.Jobs) != 2 {
 		t.Fatalf("%s", sh.plans[0])
 	}
+	if !strings.Contains(sh.plans[0], `"name":"fixture-chain"`) {
+		t.Fatalf("the plan must carry the real workflow name: %s", sh.plans[0])
+	}
 	if string(posted.Jobs[0].Cond) != "null" || posted.Jobs[1].Needs[0] != "a" ||
 		!strings.Contains(string(posted.Jobs[1].Cond), `"kind":"output-eq"`) || !strings.Contains(string(posted.Jobs[1].Cond), `"v":1`) {
 		t.Fatalf("%s", sh.plans[0])
 	}
 	if !strings.Contains(strings.Join(box.ops, "\n"), "run sh -c act -l -W '.github/workflows/fixture-chain.yml' 2>&1") {
 		t.Fatalf("ops: %v", box.ops)
+	}
+}
+
+// the ship offers a delivered assignment again when its attempt shows no
+// activity; an attempt this process is already running is claimed once
+func TestClaimIgnoresInFlight(t *testing.T) {
+	d := &Daemon{inFlight: map[string]bool{}}
+	if !d.claim("0v1.att") {
+		t.Fatal("first claim must succeed")
+	}
+	if d.claim("0v1.att") {
+		t.Fatal("a second claim of a running attempt must be ignored")
+	}
+	d.release("0v1.att")
+	if !d.claim("0v1.att") {
+		t.Fatal("after release the attempt may be claimed again")
 	}
 }

@@ -26,6 +26,8 @@ import (
 	"urgit/runner/internal/sandbox"
 	"urgit/runner/internal/ship"
 	"urgit/runner/internal/state"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ExitEnrollmentLost is the exit status after the ship answers 401.
@@ -45,6 +47,7 @@ type Daemon struct {
 	capacity    int
 	quarantined []string
 	slots       chan struct{}
+	inFlight    map[string]bool // attempts this process is running now
 
 	// checkout materializes the candidate on the host; tests replace it
 	checkout func(ctx context.Context, a *ship.Assignment, dir string) error
@@ -56,7 +59,7 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 	if err != nil {
 		return nil, err
 	}
-	d := &Daemon{cfg: cfg, box: box, log: logger, capacity: cfg.Capacity}
+	d := &Daemon{cfg: cfg, box: box, log: logger, capacity: cfg.Capacity, inFlight: map[string]bool{}}
 	d.checkout = d.gitCheckout
 	st, err := state.Load(cfg.StateFile)
 	if err != nil {
@@ -83,6 +86,7 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 	// the token is consumed: forget it so it is never logged or written
 	cfg.EnrollToken = ""
 	d.client = ship.New(cfg.ShipURL, st.Bearer)
+	d.client.Capacity = cfg.Capacity
 	d.daemonID = st.DaemonID
 	d.slots = make(chan struct{}, cfg.Capacity)
 	for i := 0; i < cfg.Capacity; i++ {
@@ -171,15 +175,39 @@ func (d *Daemon) Run(ctx context.Context) int {
 			d.slots <- struct{}{}
 			continue
 		}
+		// the ship offers a delivered assignment again when its attempt
+		// shows no activity; one this process is already running is ignored
+		if !d.claim(assignment.Attempt) {
+			d.log.Printf("assignment %s for attempt %s is already running here; ignored", assignment.ID, assignment.Attempt)
+			d.slots <- struct{}{}
+			continue
+		}
 		wg.Add(1)
 		go func(a *ship.Assignment) {
 			defer wg.Done()
 			keep := d.handle(ctx, a)
+			d.release(a.Attempt)
 			if keep {
 				d.slots <- struct{}{}
 			}
 		}(assignment)
 	}
+}
+
+func (d *Daemon) claim(attempt string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.inFlight[attempt] {
+		return false
+	}
+	d.inFlight[attempt] = true
+	return true
+}
+
+func (d *Daemon) release(attempt string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.inFlight, attempt)
 }
 
 func (d *Daemon) remainingCapacity() int {
@@ -294,13 +322,19 @@ func (d *Daemon) fail(ctx context.Context, a *ship.Assignment, reason string, lo
 
 // gitCheckout clones the repository from the ship's Git endpoint and
 // checks out the candidate oid, reachable through refs/ci/candidate/<id>
-// (D9).
+// (D9), on a local branch named for the assignment's ref so act reads
+// the same github.ref a push to that ref carries (ERPit's workflows
+// filter on `branches: [master]`).
 func (d *Daemon) gitCheckout(ctx context.Context, a *ship.Assignment, dir string) error {
 	url := strings.TrimRight(d.cfg.ShipURL, "/") + "/git/" + a.Repo
+	branch := strings.TrimPrefix(a.Ref, "refs/heads/")
+	if branch == "" || branch == a.Ref {
+		branch = "ci-candidate"
+	}
 	steps := [][]string{
 		{"git", "clone", "--quiet", "--no-checkout", url, dir},
 		{"git", "-C", dir, "fetch", "--quiet", "origin", "refs/ci/candidate/" + a.Candidate},
-		{"git", "-C", dir, "checkout", "--quiet", a.OID},
+		{"git", "-C", dir, "checkout", "--quiet", "-B", branch, a.OID},
 	}
 	for _, argv := range steps {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -331,6 +365,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 	type wireJob struct {
 		ID       string     `json:"id"`
 		Workflow string     `json:"workflow"`
+		Name     string     `json:"name"`
 		Stage    int        `json:"stage"`
 		Needs    []string   `json:"needs"`
 		Cond     *plan.Cond `json:"cond"`
@@ -373,7 +408,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 				info.Needs = []string{}
 			}
 			body.Jobs = append(body.Jobs, wireJob{
-				ID: row.JobID, Workflow: file, Stage: row.Stage, Needs: info.Needs,
+				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
 				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events,
 			})
 		}
@@ -385,6 +420,19 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		return
 	}
 	logf("plan POST -> %s", resp.Error())
+}
+
+// projectionNameOf reads the workflow's own name (or the file name when
+// it has none) and prefixes it the way the projection did.
+func projectionNameOf(original []byte, attempt, fileName string) string {
+	var doc struct {
+		Name string `yaml:"name"`
+	}
+	_ = yaml.Unmarshal(original, &doc)
+	if doc.Name == "" {
+		doc.Name = fileName
+	}
+	return plan.ProjectionName(attempt, doc.Name)
 }
 
 func workflowFiles(src string) ([]string, error) {
@@ -436,7 +484,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, "workflow: "+err.Error(), logf)
 		return
 	}
-	projected, err := plan.Project(original, a.Job)
+	projected, err := plan.Project(original, a.Job, a.Attempt, a.Workflow)
 	if err != nil {
 		d.fail(ctx, a, "projection: "+err.Error(), logf)
 		return
@@ -467,7 +515,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
 		argv = append(argv, "--env", e)
 	}
-	logf("running: %s", strings.Join(argv, " "))
+	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow), strings.Join(argv, " "))
 	stream, done, err := d.box.Run(ctx, h, "/work/src", argv, nil)
 	if err != nil {
 		d.fail(ctx, a, "act start: "+err.Error(), logf)

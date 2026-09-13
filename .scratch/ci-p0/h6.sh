@@ -25,12 +25,12 @@ echo "== poll with no credentials (401)"
 case "${BEARER: -1}" in 0) WRONG="${BEARER%?}1" ;; *) WRONG="${BEARER%?}0" ;; esac
 echo "== poll with a wrong bearer $WRONG (401)"
 "$api" GET "/ci/daemon/$DAEMON/assignment" "" "$WRONG"
-echo "== poll with the bearer (204 after ~25 s)"
+echo "== poll with the bearer (P0: 204 after ~25 s; P1: the scheduler hands this daemon the automatic PLAN assignment of a pending candidate first, D4/D6)"
 start=$(date +%s)
 "$api" GET "/ci/daemon/$DAEMON/assignment" "" "$BEARER"
 echo "poll took $(( $(date +%s) - start )) s"
-echo "== assign the fast-forward candidate to the daemon by poke"
-"$dojo" ":urgit-ci &ci-action [%assign $CAND $DAEMON ~]" 60 3 | tail -2
+echo "== assign the fast-forward candidate's fixture-pass/pass job to the daemon by poke (P1 %assign shape: kind, workflow, job, deadline)"
+"$dojo" ":urgit-ci &ci-action [%assign $CAND $DAEMON %job \`'fixture-pass.yml' \`'pass' ~]" 60 3 | tail -2
 echo "== poll again: the assignment"
 "$api" GET "/ci/daemon/$DAEMON/assignment" "" "$BEARER" | tee "$TMP/h6-assignment.txt"
 ATTEMPT=$(grep -o '"attempt":"[^"]*"' "$TMP/h6-assignment.txt" | head -1 | cut -d'"' -f4 || true)

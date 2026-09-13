@@ -21,6 +21,7 @@
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
 ++  poll-window  ~s25
+++  redeliver-after  ~m2
 ++  default-deadline  ~h1
 ++  plan-deadline  ~m5
 ++  stale-after  ~m5
@@ -75,7 +76,21 @@
   ?>  ?=([%http-response @ ~] path)
   `this
 ::
-++  on-leave  on-leave:def
+::  eyre leaves /http-response/<id> when the client's connection closes:
+::  a long-poll whose daemon went away is forgotten at once, so a later
+::  assignment is not answered into a dead connection and lost until its
+::  deadline (a daemon stopped and restarted within the poll window).
+::
+++  on-leave
+  |=  =path
+  ^-  (quip card _this)
+  ?.  ?=([%http-response @ ~] path)  (on-leave:def path)
+  =/  gone=@ta  i.t.path
+  =.  polls
+    %-  malt
+    %+  skip  ~(tap by polls)
+    |=([* p=poll] =(eyre-id.p gone))
+  `this
 ::
 ::  every route %urgit reads answers a loobean; none ever answers [~ ~],
 ::  because an empty answer kills the reading event before any trap runs.
@@ -95,6 +110,7 @@
     =/  ref=@t  (decode-segment:hc i.t.t.t.path)
     ``noun+!>((~(has in ci-protected) [repo ref]))
   ::
+      [%x %polls ~]        ``noun+!>(polls)
       [%x %candidates ~]   ``noun+!>(candidates)
       [%x %daemons ~]      ``noun+!>(daemons)
       [%x %assignments ~]  ``noun+!>(assignments)
@@ -434,7 +450,14 @@
     =/  delivered=out  (deliver daemon.act)
     =.  state  state.delivered
     =.  polls  polls.delivered
-    (emit [timer.made cards.delivered])
+    ::  a re-run of a closed candidate needs its objects reachable again:
+    ::  the scratch ref released at the terminal status is set once more
+    ::  through the existing %set-ref path, before the assignment goes out
+    ::
+    =/  restore=card
+      %+  urgit-git-poke  /scratch/(scot %uv candidate.act)
+      [%set-ref repo.u.found (scratch-ref candidate.act) u.candidate.u.found]
+    (emit [restore timer.made cards.delivered])
   ::
       %landed
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
@@ -473,7 +496,7 @@
   =/  assignment-id=assignment-id:ci  (sham [%ci-assignment attempt-id])
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
-        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  now.bowl  ~
+        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~
     ==
   =/  =assignment:ci
     :*  assignment-id  candidate  daemon  attempt-id
@@ -503,7 +526,7 @@
     (sham [%ci-skip candidate workflow.job id.job now.bowl (lent attempts.found)])
   =/  =attempt:ci
     :*  attempt-id  candidate  0v0  0v0
-        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  now.bowl  `now.bowl
+        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -924,6 +947,7 @@
       ['events' (numb:enjs:format events.attempt)]
       ['job-result' ?~(job-result.attempt ~ s+u.job-result.attempt)]
       ['reason' ?~(reason.attempt ~ s+u.reason.attempt)]
+      ['projection-name' ?~(projection-name.attempt ~ s+u.projection-name.attempt)]
       ['candidate' s+(scot %uv candidate.attempt)]
       ['candidate-status' s+candidate-status]
   ==
@@ -945,7 +969,13 @@
   ?:  ?=([%apps %urgit %api %ci %attempt @ ~] site)
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
-    (handle-attempt-read eyre-id req i.t.t.t.t.t.site)
+    ::  the id is the last segment here, so the request-line parser has
+    ::  split its last dotted group off as an extension: rejoin it
+    ::
+    =/  segment=@t
+      ?~  ext.line  i.t.t.t.t.t.site
+      (rap 3 ~[i.t.t.t.t.t.site '.' u.ext.line])
+    (handle-attempt-read eyre-id req segment)
   ?:  ?=([%apps %urgit %api %ci %attempt @ %event ~] site)
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -1026,16 +1056,52 @@
 ::  running attempt answers at once, else the request is held for the
 ::  poll window and closes 204, unless an assignment arrives first.
 ::
+::  an assignment answered into a poll whose daemon had already gone
+::  (eyre reports a closed connection seconds later) would otherwise wait
+::  out its whole deadline: a delivered assignment whose attempt shows no
+::  activity two minutes on is offered again to its daemon's next poll.
+::  the daemon ignores an attempt it is already running.
+::
+++  stale-delivery
+  |=  =assignment:ci
+  ^-  ?
+  ?~  delivered.assignment  %.n
+  ?.  (gte now.bowl (add u.delivered.assignment redeliver-after))  %.n
+  =/  running=(unit attempt:ci)  (~(get by attempts) attempt.assignment)
+  ?~  running  %.n
+  ?&  =(%running status.u.running)
+      =(0 events.u.running)
+      ?~  found=(~(get by candidates) candidate.assignment)  %.n
+      ?:(?=(%plan kind.assignment) ?=(~ plan.u.found) %.y)
+  ==
+::
 ++  handle-assignment-poll
   |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
   ^-  out
   =/  daemon-id=(unit @uv)  (slaw %uv segment)
   =/  found=(unit daemon:ci)  ?~(daemon-id ~ (~(get by daemons) u.daemon-id))
+  ::  a bearer for a daemon the ship does not know (its enrollment was
+  ::  wiped with state-0) is a credential that authenticates nothing: 401
+  ::
   ?~  found
+    ?^  (presented-bearer-hash req)
+      (emit (give-error eyre-id 401 'daemon authentication required'))
     (emit (give-error eyre-id 404 'no such daemon'))
   ?.  (daemon-authorized req u.found)
     (emit (give-error eyre-id 401 'daemon authentication required'))
   =.  daemons  (touch-daemon id.u.found)
+  ::  the capacity a daemon reports as it waits (spec: "reports capacity,
+  ::  and waits"): a restart with a new config takes effect at its next
+  ::  poll, without a second enrollment
+  ::
+  =.  daemons
+    =/  header=(unit @t)  (get-header:http 'x-ci-capacity' header-list.request.req)
+    =/  reported=(unit @ud)  ?~(header ~ (slaw %ud u.header))
+    ?~  reported  daemons
+    ?:  =(0 u.reported)  daemons
+    =/  runner=daemon:ci  (~(got by daemons) id.u.found)
+    ?:  =(capacity.runner u.reported)  daemons
+    (~(put by daemons) id.u.found runner(capacity u.reported))
   =/  scheduled=out  schedule
   =.  state  state.scheduled
   =.  polls  polls.scheduled
@@ -1043,7 +1109,7 @@
     %+  skim  ~(val by assignments)
     |=  =assignment:ci
     ?.  =(daemon.assignment id.u.found)  %.n
-    ?^  delivered.assignment  %.n
+    ?^  delivered.assignment  (stale-delivery assignment)
     =/  running=(unit attempt:ci)  (~(get by attempts) attempt.assignment)
     ?&(?=(^ running) =(%running status.u.running))
   ?^  pending
@@ -1109,11 +1175,21 @@
   ::
   ?:  ?&(?=(%job kind.u.found) ?=(^ job.u.found) !=(u.job.u.found job-id.event))
     (emit (give-error eyre-id 409 'event job does not match the assignment'))
+  ::  the name act ran the job under, as act's own line says it:
+  ::  `job` is `<workflow name>/<job id>` (CI-PROJECT-1.1)
+  ::
+  =/  seen-under=(unit @t)
+    ?^  projection-name.u.found  projection-name.u.found
+    =/  full=@ud  (met 3 job.event)
+    =/  tail=@ud  +((met 3 job-id.event))
+    ?.  (gth full tail)  ~
+    `(end [3 (sub full tail)] job.event)
   =/  next=attempt:ci
     %=  u.found
-      events      +(events.u.found)
-      outputs     (record-output:ci-event outputs.u.found event)
-      job-result  ?^(job-result.event job-result.event job-result.u.found)
+      events           +(events.u.found)
+      outputs          (record-output:ci-event outputs.u.found event)
+      job-result       ?^(job-result.event job-result.event job-result.u.found)
+      projection-name  seen-under
     ==
   =.  attempts  (~(put by attempts) id.next next)
   =.  daemons  (touch-daemon daemon.next)
@@ -1272,6 +1348,7 @@
       %-  pairs:enjs:format
       :~  ['id' s+id.job]
           ['workflow' s+workflow.job]
+          ['name' s+name.job]
           ['stage' (numb:enjs:format stage.job)]
           ['needs' [%a (turn needs.job |=(need=@t s+need))]]
       ==

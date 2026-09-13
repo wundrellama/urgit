@@ -1,13 +1,14 @@
 #!/bin/bash
-# Harness environment for the P0 close-out ship (~sev). Source this from every
-# script. Nothing secret lives here: boot.sh writes the ship's pane id to
-# $TMP/ship-pane.id and its +code to $TMP/code.txt, and this file reads them
-# back ($TMP is git-ignored). Both are empty until boot.sh has run.
+# Harness environment for the P1 chair `opus` ship (~ryp, launch footer of
+# BRIEF-CI-P1.md). Source this from every script. Nothing secret lives here:
+# boot.sh writes the ship's pane id to $TMP/ship-pane.id and its +code to
+# $TMP/code.txt, and this file reads them back ($TMP is git-ignored). Both
+# are empty until boot.sh has run. ROOT is this worktree, found from here.
 set -euo pipefail
-export ROOT=/var/home/michael/workspace/urbit/urgit-ci-p0
-export SHIP=sev
-export PORT=8345
-export PIER=/var/home/michael/piers/urgit-ci-p0-sev
+export ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export SHIP=ryp
+export PORT=8346
+export PIER=/var/home/michael/piers/urgit-ci-p1-ryp
 export URBIT=/var/home/michael/workspace/urbit/bin/urbit
 export PILL=/var/home/michael/workspace/urbit/pills/brass-408k-1.pill
 export CLICK=/var/home/michael/workspace/urbit/bin/click

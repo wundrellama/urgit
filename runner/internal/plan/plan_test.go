@@ -93,11 +93,12 @@ func TestProjectERPit(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, job := range jobs {
-			projected, err := Project(data, job)
+			projected, err := Project(data, job, "0v1.att", file)
 			if err != nil {
 				t.Fatalf("%s %s: %v", file, job, err)
 			}
 			var doc struct {
+				Name string                    `yaml:"name"`
 				Jobs map[string]map[string]any `yaml:"jobs"`
 				On   any                       `yaml:"on"`
 				Env  any                       `yaml:"env"`
@@ -149,14 +150,33 @@ func TestProjectERPit(t *testing.T) {
 			if got != want {
 				t.Errorf("%s %s: projected job subtree differs from the original minus needs/if\n--- want\n%s\n--- got\n%s", file, job, want, got)
 			}
-			// everything outside the jobs block is the original text
-			originalHead := data[:strings.Index(string(data), "\njobs:\n")+1]
-			if !strings.HasPrefix(string(projected), string(originalHead)) {
-				t.Errorf("%s %s: the text before jobs: changed", file, job)
+			// CI-PROJECT-1.1: the name is prefixed with the attempt id; every
+			// other top-level line before jobs: is the original text
+			var originalDoc struct {
+				Name string `yaml:"name"`
+			}
+			_ = yaml.Unmarshal(data, &originalDoc)
+			if doc.Name != "0v1.att/"+originalDoc.Name {
+				t.Errorf("%s %s: projected name %q, want %q", file, job, doc.Name, "0v1.att/"+originalDoc.Name)
+			}
+			originalHead := string(data[:strings.Index(string(data), "\njobs:\n")+1])
+			projectedHead := string(projected[:strings.Index(string(projected), "\njobs:\n")+1])
+			wantHead := strings.Replace(originalHead, "name: "+originalDoc.Name+"\n", "name: 0v1.att/"+originalDoc.Name+"\n", 1)
+			if projectedHead != wantHead {
+				t.Errorf("%s %s: the text before jobs: changed beyond the name line\n--- want\n%s\n--- got\n%s", file, job, wantHead, projectedHead)
 			}
 		}
 	}
-	if _, err := Project([]byte("on: [push]\njobs:\n  a:\n    runs-on: x\n    steps: []\n"), "zz"); err == nil {
+	if _, err := Project([]byte("on: [push]\njobs:\n  a:\n    runs-on: x\n    steps: []\n"), "zz", "0v1", "w.yml"); err == nil {
 		t.Fatal("projecting a job that does not exist must fail")
+	}
+	// a workflow with no name: act would use the file name, so the
+	// projection inserts one from it
+	unnamed, err := Project([]byte("on: [push]\njobs:\n  a:\n    runs-on: x\n    steps: []\n"), "a", "0v1", "w.yml")
+	if err != nil || !strings.HasPrefix(string(unnamed), "name: 0v1/w.yml\non: [push]\n") {
+		t.Fatalf("unnamed workflow projection: %q %v", unnamed, err)
+	}
+	if ProjectionName("0v9", "suite") != "0v9/suite" {
+		t.Fatal("ProjectionName")
 	}
 }

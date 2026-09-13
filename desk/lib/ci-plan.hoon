@@ -27,6 +27,7 @@
 +$  wire-job
   $:  id=@t
       workflow=@t
+      name=@t
       stage=@ud
       needs=(list @t)
       cond=(unit cond:ci)
@@ -122,7 +123,8 @@
   ?~  events  [%| (rap 3 ~[name ': events is not a list'])]
   =/  cond=(each (unit cond:ci) @t)  (parse-cond fields name)
   ?:  ?=(%| -.cond)  cond
-  [%& u.id u.workflow u.stage u.needs p.cond matrix u.events]
+  =/  workflow-name=@t  (fall (string-field fields 'name') '')
+  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events]
 ::
 ::  the compiled condition: absent or null means run; otherwise exactly
 ::  `{"v":1,"kind":"output-eq",job,output,literal}` or
@@ -242,7 +244,7 @@
     |=  =wire-job
     ^-  (unit job:ci)
     ?.  (lien events.wire-job |=(event=@t =('push' event)))  ~
-    `[id.wire-job workflow.wire-job stage.wire-job needs.wire-job cond.wire-job]
+    `[id.wire-job workflow.wire-job name.wire-job stage.wire-job needs.wire-job cond.wire-job]
   ?~  planned
     [%| 'no push-triggered jobs under .github/workflows']
   [%& planned]

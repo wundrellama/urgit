@@ -36,7 +36,12 @@ func main() {
 	if err := d.Reconcile(ctx); err != nil {
 		logger.Printf("urgit-runner: reconcile: %v", err)
 		logger.Printf("enrollment lost; re-enroll with a fresh token")
+		logger.Printf("urgit-runner: exit status %d", daemon.ExitEnrollmentLost)
 		os.Exit(daemon.ExitEnrollmentLost)
 	}
-	os.Exit(d.Run(ctx))
+	status := d.Run(ctx)
+	if status != 0 {
+		logger.Printf("urgit-runner: exit status %d", status)
+	}
+	os.Exit(status)
 }
