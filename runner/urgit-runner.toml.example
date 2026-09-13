@@ -1,0 +1,38 @@
+# urgit-runner configuration (BRIEF-CI-P1 D7). Copy to
+# /etc/urgit-runner.toml, mode 0600: the enrollment token is a credential
+# until the first start consumes it.
+
+# the ship's HTTP origin; the daemon reaches /apps/urgit/api/ci and /git
+ship_url = "http://127.0.0.1:8080"
+
+# minted on the ship with `:urgit-ci|mint-enroll-token`, pasted once; the
+# daemon enrolls with it on the first start, writes daemon_id and bearer
+# to state_file, and never writes the token anywhere
+enroll_token = "0v..."
+
+# the one sandbox backend this release ships: container isolation on a
+# dedicated rootless Docker daemon (microvm backend pending)
+sandbox = "docker-rootless"
+
+# the rootless daemon's socket; never the host's rootful socket
+docker_host = "unix:///run/user/1000/docker.sock"
+
+# a statically linked act 0.2.89 (copied into every sandbox), and the
+# runner image act maps ubuntu-latest to
+act_binary = "/usr/local/bin/act"
+act_image = "catthehacker/ubuntu:act-latest"
+
+# concurrent attempts this daemon offers the ship
+capacity = 1
+
+# checkouts, projections and act streams; one directory per attempt
+work_dir = "/var/lib/urgit-runner/work"
+
+# daemon_id and bearer after enrollment, written mode 0600
+state_file = "/var/lib/urgit-runner/state.json"
+
+# microvm backend (not available in this release; parsed, never used)
+# image_path = "/var/lib/urgit-runner/guest.img"
+# cpus = 2
+# memory_mib = 4096
+# disk_mib = 20480

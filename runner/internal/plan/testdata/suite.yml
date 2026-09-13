@@ -1,0 +1,445 @@
+name: suite
+
+# ERPit CI — the public form of the loop DEVLOOP.md describes.
+#
+#   plan       — decides whether this change can touch the ship suite
+#   structural — the pre-flight text pins bin/test.sh runs, no ship (~1 min)
+#   suite      — a fresh fake ~zod, the %erpit desk, and the full on-ship
+#                -test /=erpit=/tests battery through conn.c (~15 min)
+#
+# ONE FILE, deliberately. The vere repo splits shared.yml + thin
+# workflow_call wrappers because it has five trigger variants feeding one
+# body; here there is a single body and a single runner platform, so the
+# split would be ceremony. For the same reason there is no matrix (and so
+# no fail-fast: false to inherit): Linux x86_64 is the only platform the
+# harness is verified on — DEVLOOP.md's commands were verified there, and
+# the macOS toolchain needs shims CI must never depend on.
+#
+# What this does NOT cover, and why (see DEVLOOP.md "Continuous
+# integration"): the multi-pier suites — duo-test, ui-test, replay-test,
+# erasure-test, vouch-integration-test. They fresh-boot second piers or
+# drive a browser; duo-test could join later on one runner (two piers,
+# distinct fake names) but v1 buys the single-pier battery first.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      run_suite:
+        description: 'run the on-ship suite job (uncheck for a structural-only run)'
+        type: boolean
+        default: true
+        required: false
+
+# The suite job costs 13 minutes of runner time, so a new push to a
+# branch cancels the run its predecessor left in flight. Master is
+# exempt: a run on the trunk records what that commit proved, and a
+# later push must not erase it.
+# On master, the sha joins the group name so no pending queue forms:
+# a concurrency group holds at most one PENDING run and cancels the
+# rest REGARDLESS of cancel-in-progress (measured 2026-08-13 — four
+# rapid master merges lost their verdicts while pending). Branches
+# keep one group so superseded pushes cancel, which is what we want.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.ref == 'refs/heads/master' && github.sha || 'head' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+env:
+  # ---- pins. Every one names why it is pinned. ----
+  #
+  # PILL: the operator-designated universal source. Downloading a pill
+  # (never committing one) keeps a 200 MB binary out of the history; the
+  # URL is versioned by the vere line, so the artifact is reproducible for
+  # as long as bootstrap.urbit.org serves that name. The kelvin this pill
+  # seeds is CHECKED, not assumed — see the canary step in the suite job.
+  PILL_URL: https://bootstrap.urbit.org/urbit-v4.6.pill
+  # VERE: the runtime matching the pill line, from the same host as the
+  # pill — one provenance for both artifacts, no GitHub-releases
+  # dependency. PINNED to v4.6 rather than resolving <pace>/last (which is
+  # what the vere repo's own CI does): a runtime that moves under us would
+  # change what a green check means, and DEVLOOP.md's verification is
+  # against 4.6.
+  VERE_URL: https://bootstrap.urbit.org/vere/live/v4.6/vere-v4.6-linux-x86_64
+  # TOOLS: click + click-format, the conn.c thin clients bin/sync.sh and
+  # bin/test.sh shell out to. PINNED TO A COMMIT SHA, never master: an
+  # unpinned tool is a silent third party to every verdict this CI emits.
+  # c9c91ce = urbit/tools master as of 2025-06-20; pkg/click/click itself
+  # last changed 2023-10-14, so the pin costs nothing and buys everything.
+  TOOLS_SHA: c9c91ce142cfe85edbed320138f21c7213aceaab
+  # Bump this key whenever a pin above changes — it is what makes the
+  # cache follow the pins rather than outlive them.
+  ARTIFACT_CACHE_KEY: urbit-v4.6-pill-vere-tools-c9c91ce-1
+
+jobs:
+  plan:
+    name: what to run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      suite: ${{ steps.decide.outputs.suite }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Path filtering, the vere repo's feature.yml pattern, done as an
+      # explicit gate rather than on.pull_request.paths so the DECISION IS
+      # PRINTED. A skipped suite must never be mistaken for a green one.
+      # The gate FAILS OPEN by construction: every path that cannot read a
+      # diff runs the suite. A docs-only PR still gets the structural job,
+      # which is the one that pins doc and skill text.
+      - id: decide
+        name: decide whether the suite job runs
+        run: |
+          set -uo pipefail
+          run_suite=true
+          reason="event ${{ github.event_name }} — always runs the suite"
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+            if files="$(git diff --name-only "$base" "$GITHUB_SHA" 2>/dev/null)" \
+               && [ -n "$files" ]; then
+              if printf '%s\n' "$files" \
+                 | grep -qE '^(desk/|bin/|\.github/workflows/)'; then
+                run_suite=true
+                reason="the PR touches desk/, bin/, or the workflow"
+              else
+                run_suite=false
+                reason="no change under desk/, bin/, or .github/workflows/ — nothing the on-ship suite could observe"
+              fi
+            else
+              run_suite=true
+              reason="FAIL-OPEN: could not read the PR diff against $base"
+            fi
+          elif [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            run_suite='${{ inputs.run_suite }}'
+            reason="workflow_dispatch input run_suite=$run_suite"
+          fi
+          echo "suite=$run_suite" >> "$GITHUB_OUTPUT"
+          echo "suite job: $run_suite — $reason"
+          {
+            echo "### plan"
+            echo
+            echo "- structural job: **runs** (always)"
+            echo "- suite job: **$run_suite** — $reason"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  structural:
+    name: structural
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The list is READ OUT OF bin/test.sh, not restated here: test.sh's
+      # pre-flight block is the authority on which pins gate the suite, and
+      # a hardcoded copy would drift silently the first time a script is
+      # added or retired. Two teeth guard the reading itself:
+      #   - an EMPTY list is a hard failure (a grep that stops matching
+      #     would otherwise "pass" having checked nothing — the fail-open
+      #     bug class this repo keeps finding in its own greps)
+      #   - any bin/*-structural-test.sh test.sh does NOT name is run
+      #     anyway and reported as unwired, so a new pin cannot sit dark
+      - name: run the structural pins
+        run: |
+          set -uo pipefail
+          mapfile -t wired < <(
+            grep -oE '\$REPO/bin/[a-z0-9-]+-structural-test\.sh' bin/test.sh \
+              | sed 's|.*/||' | awk '!seen[$0]++'
+          )
+          if [ "${#wired[@]}" -eq 0 ]; then
+            echo "structural: FAIL — read no pre-flight scripts out of bin/test.sh." >&2
+            echo "  Either the pre-flight block moved or its shape changed; this job" >&2
+            echo "  would otherwise report green having run nothing." >&2
+            exit 1
+          fi
+          unwired=()
+          for p in bin/*-structural-test.sh; do
+            f="${p##*/}"
+            printf '%s\n' "${wired[@]}" | grep -qxF "$f" || unwired+=("$f")
+          done
+          echo "wired into bin/test.sh: ${#wired[@]}"
+          [ "${#unwired[@]}" -gt 0 ] && echo "present but NOT wired into bin/test.sh: ${unwired[*]}"
+
+          all=("${wired[@]}")
+          [ "${#unwired[@]}" -gt 0 ] && all+=("${unwired[@]}")
+
+          failed=()
+          rows=()
+          for f in "${all[@]}"; do
+            note=""
+            printf '%s\n' "${wired[@]}" | grep -qxF "$f" || note="not wired into bin/test.sh"
+            echo "::group::$f ${note}"
+            if bash "bin/$f"; then
+              echo "PASS $f"
+              rows+=("| \`$f\` | PASS | $note |")
+            else
+              echo "FAIL $f"
+              failed+=("$f")
+              rows+=("| \`$f\` | **FAIL** | $note |")
+            fi
+            echo "::endgroup::"
+          done
+
+          {
+            echo "### structural pins"
+            echo
+            echo "| script | result | note |"
+            echo "| --- | --- | --- |"
+            printf '%s\n' "${rows[@]}"
+            echo
+            echo "${#wired[@]} wired into \`bin/test.sh\`, ${#unwired[@]} present but unwired."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "structural: FAIL — ${failed[*]}" >&2
+            exit 1
+          fi
+          echo "structural: PASS (${#wired[@]} wired scripts)"
+
+  suite:
+    name: suite (fake ~zod)
+    needs: plan
+    if: needs.plan.outputs.suite == 'true'
+    runs-on: ubuntu-latest
+    # A first boot parses a 200 MB brass pill and takes minutes; the
+    # battery itself runs ~3 minutes locally. 45 leaves headroom for a slow
+    # runner while still bounding a wedged boot to something a human can
+    # wait out. The dojo poll below times out well before this.
+    timeout-minutes: 45
+    env:
+      TMUX_SESSION: cizod
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pier lives OUTSIDE the checkout, per DEVLOOP.md — and because
+      # a pier inside the repo would put a second copy of desk/ under the
+      # tree the structural greps walk. This is a step and not a job-level
+      # env entry because the runner context does not exist yet at job
+      # level (a workflow that names it there is rejected before any job
+      # starts, with no log to read).
+      - name: name the pier
+        run: echo "PIER=$RUNNER_TEMP/zod" >> "$GITHUB_ENV"
+
+      # netcat-openbsd for click's `nc -U -W 1` (the runner's nc supports
+      # -U and -W natively; the macOS shim the local toolchain needs is
+      # NOT ported here on purpose). tmux because DEVLOOP.md drives the
+      # dojo through it. rsync because bin/sync.sh does.
+      - name: install the harness dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tmux netcat-openbsd rsync
+          tmux -V
+          # click and bin/test.sh both speak conn.c as `nc -U -W 1`. A
+          # netcat without those flags fails deep inside the harness with
+          # an unreadable error; say so here instead.
+          if ! nc -h 2>&1 | grep -q -- '-W'; then
+            echo "deps: this nc has no -W (recv limit) — conn.c calls would hang or die" >&2
+            nc -h 2>&1 | head -20 >&2
+            exit 1
+          fi
+          nc -h 2>&1 | head -3 || true
+
+      - name: cache the pill and the runtime
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/urbit-ci/urbit-v4.6.pill
+            ~/.cache/urbit-ci/vere-v4.6-linux-x86_64
+          key: ${{ runner.os }}-${{ env.ARTIFACT_CACHE_KEY }}
+
+      - name: fetch the pill and the runtime
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.cache/urbit-ci
+          if [ ! -s ~/.cache/urbit-ci/urbit-v4.6.pill ]; then
+            echo "downloading the pill from $PILL_URL"
+            curl -fL --retry 3 --retry-delay 5 -o ~/.cache/urbit-ci/urbit-v4.6.pill "$PILL_URL"
+          else
+            echo "pill restored from cache"
+          fi
+          if [ ! -s ~/.cache/urbit-ci/vere-v4.6-linux-x86_64 ]; then
+            echo "downloading vere from $VERE_URL"
+            curl -fL --retry 3 --retry-delay 5 -o ~/.cache/urbit-ci/vere-v4.6-linux-x86_64 "$VERE_URL"
+          else
+            echo "vere restored from cache"
+          fi
+          ls -l ~/.cache/urbit-ci/
+          sha256sum ~/.cache/urbit-ci/* || true
+
+      # click and click-format BOTH: click shells out to click-format, and
+      # both call `urbit eval` for newt encoding, so the runtime has to be
+      # named `urbit` on PATH (DEVLOOP.md one-time setup).
+      - name: put urbit, click, and click-format on PATH
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/urbit-bin"
+          cp ~/.cache/urbit-ci/vere-v4.6-linux-x86_64 "$HOME/urbit-bin/urbit"
+          chmod +x "$HOME/urbit-bin/urbit"
+          base="https://raw.githubusercontent.com/urbit/tools/$TOOLS_SHA/pkg/click"
+          curl -fsSL --retry 3 -o "$HOME/urbit-bin/click"        "$base/click"
+          curl -fsSL --retry 3 -o "$HOME/urbit-bin/click-format" "$base/click-format"
+          chmod +x "$HOME/urbit-bin/click" "$HOME/urbit-bin/click-format"
+          echo "$HOME/urbit-bin" >> "$GITHUB_PATH"
+
+      - name: report the toolchain
+        run: |
+          set -euo pipefail
+          which urbit click click-format
+          urbit --version || true
+          echo "desk pins: $(cat desk/sys.kelvin)"
+
+      # DEVLOOP.md "First boot": urbit -F zod -B <pill> -c <pier>, under
+      # tmux, polled for the dojo prompt. The binary is passed ABSOLUTELY —
+      # tmux runs its own default shell, which does not carry this job's
+      # PATH additions (hit for real locally, DEVLOOP.md M11 gotchas).
+      - name: boot a fresh fake ~zod
+        run: |
+          set -euo pipefail
+          URBIT_BIN="$(command -v urbit)"
+          PILL=~/.cache/urbit-ci/urbit-v4.6.pill
+          echo "booting $URBIT_BIN -F zod -B $PILL -c $PIER"
+          # Bare, never piped: vere's terminal wants the pty tmux gives it,
+          # and a pipe on stdout would take the dojo away. The pane log
+          # comes from pipe-pane instead (DEVLOOP.md's own pattern; note
+          # -o toggles, so this plain form is the one that opens it).
+          tmux new-session -d -s "$TMUX_SESSION" \
+            "$URBIT_BIN -F zod -B $PILL -c $PIER"
+          tmux pipe-pane -t "$TMUX_SESSION" "cat >> $RUNNER_TEMP/boot.log"
+          booted=0
+          for i in $(seq 1 240); do
+            if tmux capture-pane -t "$TMUX_SESSION" -p 2>/dev/null | grep -q '~zod:dojo>'; then
+              booted=1
+              echo "dojo prompt after ~$((i * 5))s"
+              break
+            fi
+            if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+              echo "boot: the tmux session died before the dojo came up" >&2
+              tail -50 "$RUNNER_TEMP/boot.log" || true
+              exit 1
+            fi
+            sleep 5
+            if [ $((i % 12)) -eq 0 ]; then
+              echo "--- still booting ($((i * 5))s) ---"
+              tmux capture-pane -t "$TMUX_SESSION" -p | grep -v '^\s*$' | tail -3 || true
+            fi
+          done
+          if [ "$booted" != 1 ]; then
+            echo "boot: no ~zod:dojo> prompt within 20 minutes" >&2
+            tmux capture-pane -t "$TMUX_SESSION" -p -S -200 || true
+            exit 1
+          fi
+          [ -S "$PIER/.urb/conn.sock" ] || { echo "boot: no conn.sock under $PIER" >&2; exit 1; }
+          echo "conn.sock is live"
+
+      # DEVLOOP.md "Create the desk on-ship". These two are generators, the
+      # one thing DEVLOOP.md sanctions send-keys for; everything scripted
+      # after this point rides conn.c.
+      - name: create and mount the %erpit desk
+        run: |
+          set -euo pipefail
+          tmux send-keys -t "$TMUX_SESSION" -- '|new-desk %erpit' Enter
+          sleep 10
+          tmux send-keys -t "$TMUX_SESSION" -- '|mount %erpit' Enter
+          mounted=0
+          for i in $(seq 1 60); do
+            if [ -d "$PIER/erpit" ]; then
+              mounted=1
+              echo "the desk mounted after ~$((i * 2))s"
+              break
+            fi
+            sleep 2
+          done
+          tmux capture-pane -t "$TMUX_SESSION" -p | grep -v '^\s*$' | tail -8 || true
+          if [ "$mounted" != 1 ]; then
+            echo "desk: $PIER/erpit never appeared — |new-desk or |mount failed" >&2
+            exit 1
+          fi
+
+      # THE KELVIN CANARY. The desk pins a kelvin; the pill seeds one. When
+      # they disagree, clay queues every commit silently (wait-for-kelvin)
+      # and the whole battery starves on a skeleton desk — the m12 t0c
+      # lesson bin/sync.sh's guard exists to make loud. This step only
+      # REPORTS both numbers, early and unmissably, so a log reader sees
+      # the cause before bin/sync.sh's guard states it as a verdict.
+      - name: kelvin canary — what the pill seeded vs what the desk pins
+        run: |
+          set -uo pipefail
+          cat > "$RUNNER_TEMP/kelvin.hoon" <<'HOON'
+          =/  m  (strand ,vase)
+          (pure:m !>(zuse))
+          HOON
+          raw="$(timeout 60 click -k -i "$RUNNER_TEMP/kelvin.hoon" "$PIER" 2>&1 | tail -1)"
+          have="$(printf '%s' "$raw" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | grep -oE '[0-9]+' | tail -1)"
+          want="$(grep -o '[0-9]\+' desk/sys.kelvin)"
+          echo "pier zuse kelvin: ${have:-<unreadable>}   (raw: $raw)"
+          echo "desk/sys.kelvin:  $want"
+          if [ "$have" = "$want" ]; then
+            verdict="match — the pill seeds the kelvin this desk pins"
+          else
+            verdict="**MISMATCH** — bin/sync.sh's kelvin guard will refuse the commit below, loudly and by design"
+          fi
+          echo "$verdict"
+          {
+            echo "### kelvin canary"
+            echo
+            echo "- pill (\`$PILL_URL\`) seeds zuse **${have:-unreadable}**"
+            echo "- \`desk/sys.kelvin\` pins zuse **$want**"
+            echo "- $verdict"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # bin/test.sh: the pre-flight pins, bin/sync.sh (kelvin guard, rsync,
+      # |commit through conn.c, the refused-commit tooth), then
+      # -test /=erpit=/tests over %fyrd, then the silent-pass tooth that
+      # demands the ship ran as many arms as desk/tests defines.
+      - name: run the on-ship suite
+        run: |
+          set -uo pipefail
+          ./bin/test.sh "$PIER" 2>&1 | tee "$RUNNER_TEMP/suite.log"
+          status="${PIPESTATUS[0]}"
+          arms="$(sed -nE 's/^tests: PASS \(([0-9]+) arms\)$/\1/p' "$RUNNER_TEMP/suite.log" | tail -1)"
+          if [ "$status" != 0 ] || [ -z "$arms" ]; then
+            {
+              echo "### suite"
+              echo
+              echo "**FAILED** (bin/test.sh exit $status). Last lines:"
+              echo
+              echo '```'
+              tail -20 "$RUNNER_TEMP/suite.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "suite: bin/test.sh did not report 'tests: PASS (<n> arms)'" >&2
+            exit 1
+          fi
+          {
+            echo "### suite"
+            echo
+            echo "\`tests: PASS\` — **$arms arms** green on a fresh fake ~zod."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "suite: PASS ($arms arms)"
+
+      - name: dojo pane on failure
+        if: failure()
+        run: |
+          tmux capture-pane -t "$TMUX_SESSION" -p -S -400 2>/dev/null || echo "no tmux pane to capture"
+
+      # Ctrl-D is the dojo's clean shutdown; the kill-session is the
+      # backstop. No pier caching in v1 — a cached pier would carry state
+      # across runs and a stale desk is exactly what this repo's silent-pass
+      # traps are made of. Correctness first; caching the BOOTED pier is the
+      # obvious future optimization once the fresh-boot path is trusted.
+      - name: stop the ship
+        if: always()
+        run: |
+          set -uo pipefail
+          tmux send-keys -t "$TMUX_SESSION" C-d 2>/dev/null || true
+          for _ in $(seq 1 30); do
+            tmux has-session -t "$TMUX_SESSION" 2>/dev/null || break
+            sleep 2
+          done
+          tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+          echo "ship stopped"

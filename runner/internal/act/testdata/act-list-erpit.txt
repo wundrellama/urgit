@@ -1,0 +1,11 @@
+Stage  Job ID      Job name           Workflow name  Workflow file  Events                             
+0      plan        what to run        suite          suite.yml      push,workflow_dispatch,pull_request
+0      structural  structural         suite          suite.yml      pull_request,push,workflow_dispatch
+1      suite       suite (fake ~zod)  suite          suite.yml      pull_request,push,workflow_dispatch
+
+Stage  Job ID   Job name                          Workflow name  Workflow file  Events                             
+0      pins     pins agree with suite.yml         fixtures       fixtures.yml   pull_request,workflow_dispatch,push
+0      plan     what to run                       fixtures       fixtures.yml   workflow_dispatch,push,pull_request
+1      replay   replay fixture (fake ~zod)        fixtures       fixtures.yml   workflow_dispatch,push,pull_request
+1      erasure  erasure fixture (fake ~wes)       fixtures       fixtures.yml   push,pull_request,workflow_dispatch
+1      duo      duo fixture (fake ~zod and ~nec)  fixtures       fixtures.yml   push,pull_request,workflow_dispatch

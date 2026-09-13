@@ -90,9 +90,15 @@ pub fn build(b: *std.Build) void {
     _ = optimize;
 
     const desk = b.option([]const u8, "desk", "After building, replace the desk at this path with install prefix contents");
+    const runner = b.option(bool, "runner", "Also build the runner daemon (runner/) with Go when Go is present") orelse false;
 
     const build_step = DeskStep.create(b, "build desk", .build, desk);
     b.default_step.dependOn(&build_step.step);
+
+    if (runner) {
+        const runner_step = RunnerStep.create(b);
+        b.default_step.dependOn(&runner_step.step);
+    }
 
     const named_build = b.step("build", "Build install prefix from /desk and dependencies");
     named_build.dependOn(&build_step.step);
@@ -105,6 +111,61 @@ pub fn build(b: *std.Build) void {
     const named_clear = b.step("clear", "Remove install prefix and cached dependencies");
     named_clear.dependOn(&clear_step.step);
 }
+
+// The optional Go step (R6.2-A): `zig build -Drunner` builds the runner
+// daemon as one static binary at runner/urgit-runner when `go` is on the
+// PATH, and says so when it is not.
+const RunnerStep = struct {
+    step: std.Build.Step,
+
+    fn create(b: *std.Build) *RunnerStep {
+        const self = b.allocator.create(RunnerStep) catch @panic("OOM");
+        self.* = .{
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = "build runner daemon",
+                .owner = b,
+                .makeFn = make,
+            }),
+        };
+        return self;
+    }
+
+    fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
+        _ = options;
+        const allocator = step.owner.allocator;
+        const probe = std.process.Child.run(.{ .allocator = allocator, .argv = &.{ "go", "version" }, .max_output_bytes = 16 * 1024 }) catch |err| {
+            if (err == error.FileNotFound) {
+                std.debug.print("Go is not on the PATH; skipping the runner daemon (install Go 1.22+ and rerun `zig build -Drunner`)\n", .{});
+                return;
+            }
+            return step.fail("failed to run go version: {s}", .{@errorName(err)});
+        };
+        if (probe.term != .Exited or probe.term.Exited != 0) {
+            std.debug.print("Go is not usable; skipping the runner daemon\n", .{});
+            return;
+        }
+        std.debug.print("Building runner daemon with {s}", .{probe.stdout});
+        const result = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "go", "build", "-o", "urgit-runner", "./cmd/urgit-runner" },
+            .cwd = "runner",
+            .env_map = &(try goEnv(allocator)),
+            .max_output_bytes = 1024 * 1024,
+        }) catch |err| return step.fail("failed to run go build: {s}", .{@errorName(err)});
+        if (result.term != .Exited or result.term.Exited != 0) {
+            std.debug.print("{s}{s}", .{ result.stdout, result.stderr });
+            return step.fail("runner daemon build failed", .{});
+        }
+        std.debug.print("Built runner/urgit-runner (static, CGO_ENABLED=0)\n", .{});
+    }
+
+    fn goEnv(allocator: std.mem.Allocator) !std.process.EnvMap {
+        var env = try std.process.getEnvMap(allocator);
+        try env.put("CGO_ENABLED", "0");
+        return env;
+    }
+};
 
 fn buildDesk(step: *std.Build.Step, allocator: std.mem.Allocator, install_path: []const u8, copy_target: ?[]const u8) !void {
     try requireGitVersion(step);

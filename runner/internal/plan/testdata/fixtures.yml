@@ -1,0 +1,544 @@
+name: fixtures
+
+# ERPit CI tier 3 — the FIXTURE suites, the ones that fresh-boot a pier
+# and measure a property the unit battery cannot reach.
+#
+#   replay  — bin/replay-test.sh: the reseeded canonical log replays to
+#             the cent from an empty state, every signature re-verifies,
+#             the hash chain and the indexes hold, the lived-in v13->v14
+#             migration invariants hold, party names ride ONLY the
+#             directory, and the frozen trial balance is Dr = Cr =
+#             $2,875.00.
+#   erasure — bin/erasure-test.sh: 8 run-unique sentinels go through
+#             every inbound path that can carry party identity, a control
+#             sweep proves the instrument sees ink, the app's own forget
+#             verbs run, the offline roll/chop/pack cadence runs, and
+#             bin/erasure-sweep.py then measures ZERO sentinel bytes
+#             pier-wide at every bit alignment.
+#   duo     — bin/duo-test.sh: TWO fake ships on ONE runner, ~nec's
+#             %erpit-client posting a signed journal entry to ~zod's
+#             %erpit-host over real Ames through the whole gate line,
+#             then the DS legs and the version-skew refusal. This is the
+#             job that pays the refactor's owed STEP 6 leg
+#             (QUESTIONS-SIGILANTE §R-FINAL, owed item 2): every one of
+#             ted/duo-probe's eleven probes answers against INSTALLED
+#             agents, which no unit arm can do.
+#
+# A SECOND FILE, not more jobs in suite.yml. The two workflows answer
+# different questions on different schedules: suite.yml runs on every
+# pull request and gates the merge, this one costs about an hour of
+# runner time and runs when a fixture can say something new. Separate
+# files keep those trigger policies readable and separately editable,
+# and they keep suite.yml — under review as pull request #6 — unedited.
+# The cost of the split is the pin block below, which is a copy. The
+# `pins` job makes that copy honest: it fails when the copy and
+# suite.yml disagree.
+#
+# TRIGGER POLICY (see the `plan` job, which prints its decision):
+#   - push to master   — always. This is the gate that cannot be skipped.
+#   - workflow_dispatch — always available, one checkbox per job.
+#   - pull request      — only with the `ci:fixtures` label, or when the
+#     diff touches the fixture harness itself.
+# The repository is private, so a runner minute costs money and two
+# ~30-minute jobs on every code pull request would cost about an hour
+# per push. The trade this makes: a pull request that changes desk/ and
+# carries no label proves itself against the unit suite, and the
+# fixtures speak on master right after the merge. To buy the earlier
+# answer instead, add the label, or add `desk/` to PR_PATHS below.
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    # `labeled` so that adding ci:fixtures to an open pull request starts
+    # the run, instead of needing a new push.
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      run_replay:
+        description: 'run the replay fixture'
+        type: boolean
+        default: true
+        required: false
+      run_erasure:
+        description: 'run the erasure fixture'
+        type: boolean
+        default: true
+        required: false
+      run_duo:
+        description: 'run the duo fixture (two piers on one runner)'
+        type: boolean
+        default: true
+        required: false
+
+# A new push to a branch cancels the run its predecessor left in flight.
+# Master is exempt: a run on the trunk records what that commit proved.
+#
+# MASTER GETS ONE GROUP PER COMMIT, and that is not decoration.
+# `cancel-in-progress: false` only stops a new run from cancelling the
+# RUNNING one. A concurrency group also holds at most one PENDING run,
+# and that rule ignores the flag. Measured on suite.yml during the
+# rapid merge sequence of 2026-08-13: master pushes 31662758294,
+# 31662767920, 31662964290, and 31662991284 all ended `cancelled` with
+# ZERO jobs — cancelled while pending, never started, while the running
+# run survived and the last one passed. So the exemption held for the
+# running run and still lost the verdict for four trunk commits. Naming
+# the sha in the group on master removes the pending queue entirely, and
+# every trunk commit keeps its own record. suite.yml carries the plain
+# group and the same defect. This branch does not edit it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.ref == 'refs/heads/master' && github.sha || 'head' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+env:
+  # ---- pins. COPIES. suite.yml is the authority; the `pins` job below
+  # fails this workflow when a copy drifts from it. ----
+  PILL_URL: https://bootstrap.urbit.org/urbit-v4.6.pill
+  VERE_URL: https://bootstrap.urbit.org/vere/live/v4.6/vere-v4.6-linux-x86_64
+  TOOLS_SHA: c9c91ce142cfe85edbed320138f21c7213aceaab
+  ARTIFACT_CACHE_KEY: urbit-v4.6-pill-vere-tools-c9c91ce-1
+  # The pull-request paths that start a fixture run with no label: the
+  # fixture harness itself. A change to a fixture script or to this
+  # workflow has to prove itself in the pull request that makes it,
+  # because master is where it would otherwise fail first.
+  PR_PATHS: '^(bin/(replay|erasure|duo)-test\.sh|bin/erasure-sweep\.py|bin/sync\.sh|\.github/(workflows/fixtures\.yml|actions/))'
+
+jobs:
+  pins:
+    name: pins agree with suite.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # suite.yml owns the pins. This job READS them out of suite.yml
+      # rather than restating them, so the copy in this file cannot drift
+      # in silence. It fails closed: a key that reads empty on either
+      # side is a failure, never a pass, because a grep that stops
+      # matching would otherwise agree with everything.
+      - name: compare the pin block against suite.yml
+        run: |
+          set -uo pipefail
+          bad=0
+          rows=()
+          for k in PILL_URL VERE_URL TOOLS_SHA ARTIFACT_CACHE_KEY; do
+            want="$(sed -nE "s/^  $k: (.*)$/\1/p" .github/workflows/suite.yml | head -1)"
+            have="$(sed -nE "s/^  $k: (.*)$/\1/p" .github/workflows/fixtures.yml | head -1)"
+            if [ -z "$want" ] || [ -z "$have" ]; then
+              echo "pins: FAIL — $k read empty (suite='$want' fixtures='$have')" >&2
+              rows+=("| \`$k\` | **UNREADABLE** |")
+              bad=1
+            elif [ "$want" != "$have" ]; then
+              echo "pins: FAIL — $k differs" >&2
+              echo "  suite.yml:    $want" >&2
+              echo "  fixtures.yml: $have" >&2
+              rows+=("| \`$k\` | **DRIFTED** |")
+              bad=1
+            else
+              echo "pins: $k agrees ($want)"
+              rows+=("| \`$k\` | agrees |")
+            fi
+          done
+          {
+            echo "### pins"
+            echo
+            echo "| pin | suite.yml vs fixtures.yml |"
+            echo "| --- | --- |"
+            printf '%s\n' "${rows[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bad" = 0 ] || exit 1
+          echo "pins: PASS — every pin matches suite.yml"
+
+  plan:
+    name: what to run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      replay: ${{ steps.decide.outputs.replay }}
+      erasure: ${{ steps.decide.outputs.erasure }}
+      duo: ${{ steps.decide.outputs.duo }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The decision is PRINTED, the suite.yml pattern. A skipped fixture
+      # must never be mistaken for a green one. Label names arrive as a
+      # boolean through env, never interpolated into the script body.
+      - id: decide
+        name: decide which fixtures run
+        env:
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'ci:fixtures') }}
+        run: |
+          set -uo pipefail
+          replay=true
+          erasure=true
+          duo=true
+          reason="event ${{ github.event_name }} — every fixture runs"
+          case "${{ github.event_name }}" in
+            pull_request)
+              base='${{ github.event.pull_request.base.sha }}'
+              touched=no
+              if files="$(git diff --name-only "$base" "$GITHUB_SHA" 2>/dev/null)" \
+                 && [ -n "$files" ]; then
+                if printf '%s\n' "$files" | grep -qE "$PR_PATHS"; then
+                  touched=yes
+                fi
+              else
+                # FAIL-OPEN on an unreadable diff, as suite.yml does: a
+                # gate that cannot read the change must not claim the
+                # change is safe.
+                touched=yes
+              fi
+              if [ "$LABELED" = true ]; then
+                reason="the pull request carries the ci:fixtures label"
+              elif [ "$touched" = yes ]; then
+                reason="the pull request touches the fixture harness itself"
+              else
+                replay=false
+                erasure=false
+                duo=false
+                reason="no ci:fixtures label and no change under the fixture harness — the fixtures speak on master after the merge"
+              fi
+              ;;
+            workflow_dispatch)
+              replay='${{ inputs.run_replay }}'
+              erasure='${{ inputs.run_erasure }}'
+              duo='${{ inputs.run_duo }}'
+              reason="workflow_dispatch inputs"
+              ;;
+          esac
+          echo "replay=$replay" >> "$GITHUB_OUTPUT"
+          echo "erasure=$erasure" >> "$GITHUB_OUTPUT"
+          echo "duo=$duo" >> "$GITHUB_OUTPUT"
+          echo "replay: $replay, erasure: $erasure, duo: $duo — $reason"
+          {
+            echo "### plan"
+            echo
+            echo "- replay job: **$replay**"
+            echo "- erasure job: **$erasure**"
+            echo "- duo job: **$duo**"
+            echo "- reason: $reason"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  replay:
+    name: replay fixture (fake ~zod)
+    needs: [pins, plan]
+    if: needs.plan.outputs.replay == 'true'
+    runs-on: ubuntu-latest
+    # A first boot parses the pill, the desk install follows, and the
+    # walk seeds a whole book before the verdict reads a full-state
+    # replay. The local run takes minutes. 60 bounds a wedged boot to
+    # something a human can wait out, and every poll inside the job
+    # times out well before it.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # bin/replay-test.sh reads the pier from $1 or $ZOD and the pill
+      # from $PILL, and it checks that a process named urbit carries
+      # "fakezod" on its command line. So the pier BASENAME must stay
+      # fakezod. The pier lives outside the checkout, per DEVLOOP.md.
+      # These are steps and not job-level env because the runner context
+      # does not exist at job level.
+      - name: name the pier
+        run: |
+          echo "ZOD=$RUNNER_TEMP/fakezod" >> "$GITHUB_ENV"
+          echo "TMUX_SESSION=fakezod" >> "$GITHUB_ENV"
+
+      - id: toolchain
+        uses: ./.github/actions/urbit-toolchain
+        with:
+          pill-url: ${{ env.PILL_URL }}
+          vere-url: ${{ env.VERE_URL }}
+          tools-sha: ${{ env.TOOLS_SHA }}
+          cache-key: ${{ env.ARTIFACT_CACHE_KEY }}
+
+      - name: export the pill path
+        run: echo "PILL=${{ steps.toolchain.outputs.pill }}" >> "$GITHUB_ENV"
+
+      # bin/replay-test.sh does NOT boot on its happy path: it refuses
+      # to start without a live conn.sock, and it fresh-boots only when
+      # the pier already holds another book. So the job brings the pier
+      # up first. No kelvin canary here: this job boots the same pill
+      # under the same desk suite.yml already checks on every pull
+      # request, and bin/sync.sh's guard names both numbers if they part.
+      - uses: ./.github/actions/boot-fake-ship
+        with:
+          ship: zod
+          pier: ${{ runner.temp }}/fakezod
+          session: fakezod
+          pill: ${{ steps.toolchain.outputs.pill }}
+
+      - name: run the replay fixture
+        # `set +e`, because the runner's default shell is `bash -e` and
+        # `set -uo pipefail` does NOT cancel that. Under -e the step dies
+        # on the fixture's own exit status and never writes the summary
+        # that says why. This step reads the status itself instead.
+        run: |
+          set +e -uo pipefail
+          ( while sleep 60; do echo "--- replay fixture still running ---"; done ) &
+          tick=$!
+          trap 'kill "$tick" 2>/dev/null || true' EXIT
+          start="$(date +%s)"
+          ./bin/replay-test.sh "$ZOD" 2>&1 | tee "$RUNNER_TEMP/replay.log"
+          status="${PIPESTATUS[0]}"
+          kill "$tick" 2>/dev/null || true
+          took=$(( $(date +%s) - start ))
+          if [ "$status" != 0 ] || ! grep -q '^replay-test: PASS$' "$RUNNER_TEMP/replay.log"; then
+            {
+              echo "### replay fixture"
+              echo
+              echo "**FAILED** (exit $status, ${took}s). Last lines:"
+              echo
+              echo '```'
+              tail -20 "$RUNNER_TEMP/replay.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "replay: bin/replay-test.sh did not report PASS" >&2
+            exit 1
+          fi
+          {
+            echo "### replay fixture"
+            echo
+            echo "\`replay-test: PASS\` in **${took}s** on a fresh fake ~zod."
+            echo
+            echo '```'
+            grep '^replay-test: ' "$RUNNER_TEMP/replay.log" | tail -3
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "replay: PASS (${took}s)"
+
+      # THE WORKS-ONCE DISCIPLINE. bin/replay-test.sh is idempotent by
+      # design and its header says to run it twice back to back. The
+      # second run skips the walk and re-reads the verdict, so it costs
+      # about a minute and it is the only thing that proves the fixture
+      # is repeatable rather than lucky.
+      - name: run the replay fixture again (idempotent rerun)
+        run: |
+          set +e -uo pipefail
+          start="$(date +%s)"
+          ./bin/replay-test.sh "$ZOD" 2>&1 | tee "$RUNNER_TEMP/replay2.log"
+          status="${PIPESTATUS[0]}"
+          took=$(( $(date +%s) - start ))
+          if [ "$status" != 0 ] || ! grep -q '^replay-test: PASS$' "$RUNNER_TEMP/replay2.log"; then
+            echo "replay: the idempotent rerun failed (exit $status)" >&2
+            exit 1
+          fi
+          grep -q 'idempotent rerun' "$RUNNER_TEMP/replay2.log" \
+            || echo "NOTE: the rerun did not take the idempotent path — it reseeded instead."
+          {
+            echo "- idempotent rerun: **PASS** in ${took}s"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "replay rerun: PASS (${took}s)"
+
+      - name: dojo pane on failure
+        if: failure()
+        run: tmux capture-pane -t "$TMUX_SESSION" -p -S -400 2>/dev/null || echo "no tmux pane to capture"
+
+      - name: stop the ship
+        if: always()
+        run: |
+          set -uo pipefail
+          tmux send-keys -t "$TMUX_SESSION" C-d 2>/dev/null || true
+          for _ in $(seq 1 30); do
+            tmux has-session -t "$TMUX_SESSION" 2>/dev/null || break
+            sleep 2
+          done
+          tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+          echo "ship stopped"
+
+  erasure:
+    name: erasure fixture (fake ~wes)
+    needs: [pins, plan]
+    if: needs.plan.outputs.erasure == 'true'
+    runs-on: ubuntu-latest
+    # This fixture boots its pier, runs the walk, stops the pier, runs
+    # pack/roll, boots again for the mid-cadence audit, stops, rolls,
+    # chops, packs, boots a third time for the post-cadence audit, stops,
+    # and then sweeps every byte of the pier at eight bit alignments.
+    # Three boots and two full-pier scans, so 60 minutes.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # bin/erasure-test.sh OWNS its pier and boots it itself. The job
+      # only has to move that pier off $HOME/piers onto the runner's temp
+      # directory, which the script's documented $PIER override does.
+      - name: name the pier
+        run: echo "PIER=$RUNNER_TEMP/erasewes" >> "$GITHUB_ENV"
+
+      - id: toolchain
+        uses: ./.github/actions/urbit-toolchain
+        with:
+          pill-url: ${{ env.PILL_URL }}
+          vere-url: ${{ env.VERE_URL }}
+          tools-sha: ${{ env.TOOLS_SHA }}
+          cache-key: ${{ env.ARTIFACT_CACHE_KEY }}
+
+      - name: export the pill path
+        run: echo "PILL=${{ steps.toolchain.outputs.pill }}" >> "$GITHUB_ENV"
+
+      - name: run the erasure fixture
+        # `set +e`: see the replay job's note. The runner shell is
+        # `bash -e`, so the step has to read the fixture's status itself
+        # to report a failure instead of dying on it.
+        run: |
+          set +e -uo pipefail
+          ( while sleep 60; do echo "--- erasure fixture still running ---"; done ) &
+          tick=$!
+          trap 'kill "$tick" 2>/dev/null || true' EXIT
+          start="$(date +%s)"
+          ./bin/erasure-test.sh 2>&1 | tee "$RUNNER_TEMP/erasure.log"
+          status="${PIPESTATUS[0]}"
+          kill "$tick" 2>/dev/null || true
+          took=$(( $(date +%s) - start ))
+          if [ "$status" != 0 ] || ! grep -q '^erasure-test: PASS' "$RUNNER_TEMP/erasure.log"; then
+            {
+              echo "### erasure fixture"
+              echo
+              echo "**FAILED** (exit $status, ${took}s). Last lines:"
+              echo
+              echo '```'
+              tail -30 "$RUNNER_TEMP/erasure.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "erasure: bin/erasure-test.sh did not report PASS" >&2
+            exit 1
+          fi
+          {
+            echo "### erasure fixture"
+            echo
+            echo "\`erasure-test: PASS\` in **${took}s** on a dedicated fake ~wes."
+            echo
+            echo '```'
+            sed -n '/^erasure-test: VERDICT/,$p' "$RUNNER_TEMP/erasure.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "erasure: PASS (${took}s)"
+
+      - name: pane and log on failure
+        if: failure()
+        run: |
+          tmux capture-pane -t erasewes -p -S -400 2>/dev/null || echo "no tmux pane to capture"
+          echo "--- sweep output, if any ---"
+          tail -40 /tmp/erase-sweep-*.log 2>/dev/null || echo "no sweep log"
+
+      - name: stop the pier
+        if: always()
+        run: |
+          set -uo pipefail
+          tmux send-keys -t erasewes C-d 2>/dev/null || true
+          for _ in $(seq 1 30); do
+            tmux has-session -t erasewes 2>/dev/null || break
+            sleep 2
+          done
+          tmux kill-session -t erasewes 2>/dev/null || true
+          echo "pier stopped"
+
+  duo:
+    name: duo fixture (fake ~zod and ~nec)
+    needs: [pins, plan]
+    if: needs.plan.outputs.duo == 'true'
+    runs-on: ubuntu-latest
+    # TWO piers on ONE runner, and the second one boots from the pill
+    # inside the fixture. Two first boots, the desk on both, and then a
+    # long leg sequence that polls each step over real Ames between the
+    # two fake ships.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # bin/duo-test.sh reads both piers from the environment and boots
+      # ~nec itself when $NEC does not exist. It refuses to start without
+      # a live ~zod, and it checks that a process named urbit carries
+      # "fakezod" on its command line, so that pier basename must stay
+      # fakezod.
+      - name: name the piers
+        run: |
+          echo "ZOD=$RUNNER_TEMP/fakezod" >> "$GITHUB_ENV"
+          echo "NEC=$RUNNER_TEMP/fakenec" >> "$GITHUB_ENV"
+
+      - id: toolchain
+        uses: ./.github/actions/urbit-toolchain
+        with:
+          pill-url: ${{ env.PILL_URL }}
+          vere-url: ${{ env.VERE_URL }}
+          tools-sha: ${{ env.TOOLS_SHA }}
+          cache-key: ${{ env.ARTIFACT_CACHE_KEY }}
+
+      - name: export the pill path
+        run: echo "PILL=${{ steps.toolchain.outputs.pill }}" >> "$GITHUB_ENV"
+
+      # Only ~zod. bin/duo-test.sh boots ~nec, creates its desk, syncs
+      # it, and installs the agents on it, and the fixture has to own
+      # that half: the clean-pair rule it enforces on a refused seed
+      # fresh-boots BOTH ships through its own functions.
+      - uses: ./.github/actions/boot-fake-ship
+        with:
+          ship: zod
+          pier: ${{ runner.temp }}/fakezod
+          session: fakezod
+          pill: ${{ steps.toolchain.outputs.pill }}
+
+      - name: report the runner's headroom
+        run: |
+          free -m || true
+          df -h "$RUNNER_TEMP" || true
+
+      - name: run the duo fixture
+        # `set +e`: see the replay job's note.
+        run: |
+          set +e -uo pipefail
+          ( while sleep 60; do echo "--- duo fixture still running ---"; done ) &
+          tick=$!
+          trap 'kill "$tick" 2>/dev/null || true' EXIT
+          start="$(date +%s)"
+          ./bin/duo-test.sh 2>&1 | tee "$RUNNER_TEMP/duo.log"
+          status="${PIPESTATUS[0]}"
+          kill "$tick" 2>/dev/null || true
+          took=$(( $(date +%s) - start ))
+          if [ "$status" != 0 ] || ! grep -q '^duo-test: PASS' "$RUNNER_TEMP/duo.log"; then
+            {
+              echo "### duo fixture"
+              echo
+              echo "**FAILED** (exit $status, ${took}s). Last lines:"
+              echo
+              echo '```'
+              tail -30 "$RUNNER_TEMP/duo.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "duo: bin/duo-test.sh did not report PASS" >&2
+            exit 1
+          fi
+          legs="$(grep -c '^duo-test: .* ok$' "$RUNNER_TEMP/duo.log")"
+          {
+            echo "### duo fixture"
+            echo
+            echo "\`duo-test: PASS\` in **${took}s**, $legs polled legs green,"
+            echo "on two fake ships talking over real Ames on one runner."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "duo: PASS (${took}s, $legs legs)"
+
+      - name: panes on failure
+        if: failure()
+        run: |
+          for s in fakezod fakenec; do
+            echo "--- $s ---"
+            tmux capture-pane -t "$s" -p -S -300 2>/dev/null || echo "no $s pane"
+          done
+
+      - name: stop the ships
+        if: always()
+        run: |
+          set +e -uo pipefail
+          for s in fakezod fakenec; do
+            tmux send-keys -t "$s" C-d 2>/dev/null
+            for _ in $(seq 1 30); do
+              tmux has-session -t "$s" 2>/dev/null || break
+              sleep 2
+            done
+            tmux kill-session -t "$s" 2>/dev/null
+          done
+          echo "ships stopped"
