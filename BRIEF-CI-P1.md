@@ -219,7 +219,31 @@ four references are job-level and are stripped), so the mapping is carried
 and unit-tested but has no live consumer — say that in the record.** A
 relayed event whose `jobID` is not the assigned job is refused by the ship
 (`event job does not match the assignment`, P0) — that refusal is now the
-tripwire proving the projection held. R2.3′-A's execution sentence reads,
+tripwire proving the projection held.
+
+**CI-PROJECT-1.1 (ratified): the projection ALSO rewrites the workflow's
+top-level `name:` to `<attempt-id>/<original name>`.** act names each job's
+container and its work/env volumes from `sha256(workflow.Name + "/" +
+job.Name)` (`run_context.go:67–75`, `createContainerName` 837–843) and
+force-removes any existing container of that name on start
+(`docker_run.go:334–344`); two concurrent attempts on the same job on one
+Docker daemon therefore collide, the second kills the first, and the ship
+records a false failure (proven live: `exitcode 137`, a 12 s sleep cut at
+3 s). No act flag namespaces the name. Prefixing `name:` in the projection
+makes the hash per-attempt. Consequence stated plainly: inside the job
+`GITHUB_WORKFLOW` / `${{ github.workflow }}` read the prefixed form in P1.
+No ERPit step reads it (the only reference is the `concurrency:` group,
+which act ignores and the ship drops). The byte-identical rule now reads:
+job subtree byte-identical; every other top-level key byte-identical
+EXCEPT `name`, which is prefixed. The plan and the record carry both
+`workflow` (real, from the unprojected candidate) and `projection-name`
+(what act saw). Rejected: patching act (turns the pinned upstream binary
+into a fork — Forgejo's runner is exactly that patch); serializing per
+socket (kills capacity>1, which P13 exists to test). The row: P13's overlap
+half — two attempts on the same job, both `%passed`, both containers
+present at once (`docker ps` shows two), with the unprefixed projection as
+the mutant (RED = `exitcode 137` on the first).
+*Cite: CI-PROJECT-1.1; CI-PROJECT-1; D6.* R2.3′-A's execution sentence reads,
 amended: "`act -j <job> --json` per job **on a single-job projection** in a
 disposable sandbox."
 *Cite: CI-PROJECT-1; R2-A; R2.2-A; R2.3′-A (amended).*
@@ -449,8 +473,9 @@ S4. `runner/`: D7 + D10 + D8. `go build ./...` produces one static binary
     sandbox interface with a fake backend proving the daemon never reads the
     sandbox filesystem after `Run`; the projection on both ERPit workflows —
     for each of the eight jobs, the projected file has exactly one job, no
-    `needs`, no job-level `if`, and a job subtree byte-identical to the
-    original's otherwise (CI-PROJECT-1). `zig build` gains an optional `-Drunner`
+    `needs`, no job-level `if`, a job subtree byte-identical to the
+    original's, every other top-level key byte-identical, and `name:` equal
+    to `<attempt-id>/<original>` (CI-PROJECT-1, 1.1). `zig build` gains an optional `-Drunner`
     step that runs `go build` when Go is present and says so when it is not.
 S5. Harness (§5) and the live table. S6. `runner/README.md` (install on any
     Linux host; the four config keys the spec names; the sandbox disclosure;
@@ -482,7 +507,7 @@ relay, no dojo poke between push and verdict:
 | P10 | kill act mid-job (SIGKILL the act process inside the sandbox) → daemon POSTs `abandon` → attempt `%infrastructure-error` with reason within 5 s, no deadline wait; candidate `%unknown`; push refused |
 | P11 | kill the DAEMON mid-job → no abandon; attempt closes `%infrastructure-error` at the deadline (`~s20` via `%assign` override) |
 | P12 | `Destroy` made to fail (rename `docker` on PATH mid-teardown, or a fake backend) → slot quarantined, capacity decremented, logged; next assignment still runs on the remaining slot |
-| P13 | two daemons enrolled, one at capacity → the assignment goes to the other; `~m5` stale daemon never selected |
+| P13 | two daemons enrolled, one at capacity → the assignment goes to the other; `~m5` stale daemon never selected; **overlap (CI-PROJECT-1.1):** one daemon at capacity 2, two candidates on the same single-job workflow pushed within seconds → both attempts `%passed`, `docker ps` shows both job containers alive at once (mutant: projection leaves `name:` unprefixed → first attempt `exitcode 137` — RED) |
 | P14 | `|nuke %urgit-ci` then `|revive` mid-candidate: state-0 is wiped, so the daemon's bearer hash is gone; the daemon's next poll answers `401`, the daemon logs `enrollment lost; re-enroll with a fresh token` and exits non-zero. Record exactly what the operator sees on both sides. This is the P1 behaviour by construction (greenfield state-0, no migration); a survivable nuke is not a P1 goal |
 | P15 | **ERPit for real:** clone ERPit at its current master into a fixture repo on your ship, CI-protect `master`, push a commit → plan = `suite.yml` (`plan`, `structural`, `suite`) + `fixtures.yml` (`pins`, `plan`, `replay`, `erasure`, `duo`); `suite` and `replay`/`erasure`/`duo` gated on their `plan` outputs BY THE SHIP; every job runs under the daemon **once, in its own attempt, on its projection** (eight attempts, not eight-plus-reruns); **all eight green; candidate `%passed`.** This is the row the maintainer will reproduce. Budget ~25 min of act time; three fake ships boot inside the sandbox. |
 | P16 | `refs/ci/candidate/*` absent from the repository API's ref list; absent after the candidate closes |
@@ -491,7 +516,7 @@ relay, no dojo poke between push and verdict:
 | P20 | projection tripwire: on `fixture-chain.yml`, job `b`'s attempt stream contains NO line with `jobID:a`; `a` ran once, in its own attempt; the ship's `events` count for `b` matches `b`'s lines alone. **Mutant:** run act on the unprojected file → `a`'s `set-output`/`jobResult` arrive on `b`'s attempt → ship answers `409 event job does not match the assignment` → RED. Also: `go test` asserts the projected job subtree is byte-identical to the original minus `needs`/`if` |
 | P19 | bind a second fixture repo to a desk (`%bind-desk`, `sur/git.hoon:454`), then `%set-ci-protected` on it → refused `'CI protection is not available for desk-linked repositories in this release'`; then CI-protect a plain repo, bind it AFTER, push → staged, passes, `%land-candidate` refused with the same reason, candidate `%passed` unlanded (mutant: `linked` check → `%.n` — protection accepted and a Clay push parks in `pending-clay` — RED) |
 
-Negative rows (P1, P7–P12, P14, P17, P18, P19, P20) get the P0 mutant treatment: one-line
+Negative rows (P1, P7–P12, P13-overlap, P14, P17, P18, P19, P20) get the P0 mutant treatment: one-line
 sabotage per row in `mutants.sh`, RED then GREEN, both pasted. The P0 rule
 holds: **anything you type that a script did not is a Deviations entry and a
 script fix.**
