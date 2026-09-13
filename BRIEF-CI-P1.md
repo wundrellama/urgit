@@ -18,8 +18,8 @@ P1 replaces the human and the shell loop. After P1, an operator who has
 a CI-protected ref; watch the ship stage the candidate, read the workflow from
 the candidate commit, plan the jobs, assign each to an enrolled daemon; watch
 the daemon run each job under real `act` in an isolated sandbox and relay the
-stream; and see the push land or refuse on the recorded verdict — **with no
-dojo line typed between push and landing.** That is the product the upstream
+stream; and see the ship land the ref itself or refuse on the recorded verdict — **with
+no dojo line and no second push between the push and the landing.** That is the product the upstream
 maintainer installs. It is spec steps 2 + 3 + 4 delivered together
 (CI-SANDBOX-1-B; `REFERENCE-CI-RULINGS.md` in your worktree).
 
@@ -92,7 +92,7 @@ plan names exists at the candidate OID (D1) and to read `.github/workflows/*`
 names — for which `%urgit` gains a sibling `[%x %ci-tree @ @ @ ~]` →
 `(unit (list path))` listing entries under a directory at a commit (via
 `flatten-commit:git-tree`, keys filtered by prefix). Both peeks are
-`our`-only. **These two peeks are the ONLY `%urgit` change in P1** besides D9.
+`our`-only. **`%urgit`'s whole P1 touch is enumerated in §6** (these peeks, D9, D11, D14, D16).
 *Cite: spec §Packaging "`%urgit` scries `%urgit-ci` … `%urgit-ci` pokes `%urgit`" — reads flow the other way here, as peeks; R6.1-A.*
 
 **D3 — Job-level `needs` and `if` are evaluated by the SHIP, bounded, from
@@ -102,14 +102,23 @@ evaluate is a diagnosed refusal, never `false`, never `skip`, never green"
 (R2.2-A). P1 implements the subset ERPit uses, verified on its two workflows:
 `needs: <id>` and `needs: [<id>, …]`; `if: needs.<id>.outputs.<name> == '<lit>'`
 (single equality against a string literal); `if:` absent = run. `act --list`
-does not print `needs`/`if`, so the daemon's plan POST also carries, per job, the
-raw `needs` list and the raw `if` string read from the YAML (a 30-line YAML
-walk in Go; no expression evaluation on the daemon). The ship evaluates when
+does not print `needs`/`if`, so the daemon's plan POST also carries, per job,
+the `needs` list and a **compiled** condition. R2.2-A puts the compiler
+OUTSIDE the ship: "the external compiler supplies structured, versioned
+expressions; the ship does not parse raw GitHub expression syntax." So the
+daemon's YAML walk (Go) emits `cond` as one of exactly two shapes —
+`{"v":1,"kind":"output-eq","job":"plan","output":"suite","literal":"true"}`
+for the supported form, or `{"v":1,"kind":"unsupported","raw":"<the string>"}`
+for anything else — and never sends a raw string as the condition. The ship
+evaluates `output-eq` structurally and refuses `unsupported` with `raw`
+quoted. **No string parsing of expression syntax on the ship, ever.** A
+`cond` with `v != 1` or an unknown `kind` is `%plan-invalid` (`unknown
+condition version`). The ship evaluates when
 every job in `needs` has a terminal attempt: all `%passed` and the `if` holds →
 schedule; any `needs` job `%failed`/`%unknown` → the dependent is `%skipped`
 (recorded, not silent); `if` references an output that was never set →
-`%skipped` with reason `output not set`, never a crash; an `if` outside the
-subset → the JOB is `%plan-invalid` with the expression quoted, and the
+`%skipped` with reason `output not set`, never a crash; a `cond` of kind
+`unsupported` → the JOB is `%plan-invalid` with `raw` quoted, and the
 candidate `%failed`. **Matrix** (`strategy.matrix`) is absent from ERPit's
 workflows (the suite says so at `suite.yml:13`); a job carrying one is
 `%plan-invalid` with reason `matrix unsupported in P1`. **Workflow-level
@@ -137,7 +146,8 @@ crosses a workflow file. Candidate verdict: `%passed` when every planned job is
 `%passed` or `%skipped`-by-`if` (an `if` that is false is a skip that does not
 fail the candidate — that is GitHub's semantic and ERPit's `plan` gate depends
 on it); `%failed` on the first `%failed` job; `%unknown` on any
-`%infrastructure-error` with no other verdict. The existing `%assign` poke
+`%infrastructure-error` with no other verdict. On `%passed` the ship pokes
+`%land-candidate` (D14) at once; the push lands with no further client act. The existing `%assign` poke
 stays for the harness and for an operator re-run; it now takes
 `kind` and `job` so a single job can be re-driven.
 *Cite: spec §Execution ¶3 "`%urgit-ci` selects a daemon and sends the assignment"; R2-A.*
@@ -275,8 +285,8 @@ serve a private repo. `%urgit` gains a third `our`-only peek
 `[%x %ci-ref @ @ ~]` → `(unit oid:git)` (repo, ref) beside D2's pair.
 `%urgit-ci` scries it before adding to `ci-protected`; absent → refuse with
 `'ref has no tip; push a commit before CI-protecting it'`. Un-protect never
-checks. **D2 + D11 together are three `our`-only peeks on `%urgit`; with D9's
-filter and ref set/clear, that is the whole `%urgit` touch.**
+checks. **D2 + D11 together are the three `our`-only peeks on `%urgit`; §6 lists
+the rest of the touch (D9, D14, D16).**
 *Cite: CI-EMPTY-REF-1-A.*
 
 **D12 — State: `state-0` grows in place; no `state-1`.** AGENTS.md's state-0
@@ -285,7 +295,7 @@ Growth: `candidate` gains `plan=(unit (list job))` and `verdict-reason=(unit @t)
 `daemon` gains D6's three fields; `assignment` gains `kind=?(%plan %job)`,
 `workflow=(unit @t)`, `job=(unit @t)`; `attempt` gains `kind`, `workflow`, `job`,
 `reason=(unit @t)`; new `+$  job  [id=@t workflow=@t stage=@ud needs=(list @t)
-cond=(unit @t)]`; `attempt-status` gains `%skipped`; `action` gains
+cond=(unit cond)]` with `+$  cond  $%([%output-eq job=@t output=@t literal=@t] [%unsupported raw=@t])` (versioned at the wire, `v:1`, by the daemon; the ship's mold is the v1 shape); `attempt-status` gains `%skipped`; `action` gains
 `[%abandon …]`'s ship-side twin if you need one, and `%assign` takes `kind`/`job`.
 `on-load` still nukes-and-revives cleanly (`|nuke %urgit-ci` then
 `|revive` on the harness ship is the test). **`%urgit`'s state is untouched.**
@@ -293,12 +303,81 @@ cond=(unit @t)]`; `attempt-status` gains `%skipped`; `action` gains
 **D13 — Deadlines per kind.** Plan attempts default `~m5`; job attempts keep
 `~h1`. Both remain overridable through `%assign`.
 
+**D14 — Landing is `%urgit`'s act, automatic, atomic.** Spec §Protected refs:
+"A CI-protected branch advances in one of two ways. Either the new tip is a
+tested integration candidate, or an override role records an explicit
+override." P0 landed passed candidates with a SECOND client push
+(`.scratch/ci-p0/h8.sh:17`); that was a harness convenience, not the
+contract, and §1's "no dojo line between push and landing" cannot hold
+without a landing act. So `%urgit`'s `%ci-action` poke case (2248) gains a
+second variant beside `%materialize-candidate`:
+`[%land-candidate repo=@t ref=@t candidate=oid:git expected=oid:git]`.
+Inside that ONE Gall event `%urgit`: re-scries `%urgit-ci` eligibility for
+`[repo ref candidate]` (the D2 P0 peek, under the `%gu` guard); reads the
+ref's current tip and refuses unless it equals `expected`; then writes the
+ref through the SAME code the receive path uses after its policy checks
+(ref update, webhooks, linked-desk Clay publication) — call that code, do
+not copy it. The existing `%set-ref` (3955) is NOT the landing path: it
+checks object existence only and would split compare and write across two
+events. On success `%urgit` pokes `%urgit-ci` `[%landed candidate-id]`; on
+refusal `[%land-refused candidate-id reason=@t]`. `%urgit-ci` pokes
+`%land-candidate` the moment a candidate reaches `%passed`, with
+`expected = base` of the candidate. A stale `expected` (the ref moved since
+staging) leaves the candidate `%passed` and unlanded with `verdict-reason`
+`'destination moved; rebase and push again'` — a new negative row (P17).
+**This is the fourth `%urgit` touch** (three peeks, one filter, ref
+set/clear, and this arm) and the LAST; the arm is named `land-candidate`,
+sits beside `materialize-candidate` (7956), and is ≤60 lines because it
+calls the receive path's existing ref-write arm rather than reimplementing
+it. Identify that arm by reading `handle-receive-pack` from 8606 downward to
+the point where `refs` is written and Clay publication is decided; cite
+its name in your record.
+*Cite: spec §Protected refs ¶1–2; R4.1-A; R4.3-A (a direct push is never
+applied — landing is the ship's act, not the client's).*
+
+**D15 — CI-BASELINE-P1 (ratified exception): in P1 the candidate's own
+workflow files are the required evidence.** Spec §Protected refs ¶4 and
+R4.2-A say required checks come from an approved workflow revision recorded
+in branch policy, and a candidate that edits a workflow gets only a trial
+run. That mechanism (approved revision, trial/required distinction,
+promotion) is step 5 trust work and is NOT built in P1. P1 plans from the
+candidate OID (D1/D2) and its jobs' results ARE the candidate's verdict.
+What P1 must do so step 5 can close the gap: the stored `plan` records the
+OID the workflow files were read from (it is the candidate OID; store it
+explicitly as `plan-oid`), so a later baseline can pin an OID to policy and
+compare. The README's limitations list states this exception in one
+sentence. A chair that reads R4.2-A as binding in P1 is reading the
+superseding ruling wrong — the ruling is planted in
+`REFERENCE-CI-RULINGS.md` as CI-BASELINE-P1.
+*Cite: CI-BASELINE-P1; R4.2-A (deferred to step 5, not overturned).*
+
+**D16 — CI-TRUST-P1 (ratified definition): in P1 every staged candidate is
+`%trusted`, because `can-write` is the admission rule.** Spec §Trust ¶1 and
+R3.2-A require approval per untrusted revision. In P1 the only path to the
+CI gate is a Smart HTTP push that passed `can-write`
+(`desk/lib/git-access.hoon:74`: owner, a listed writer, or a `%write` group
+member); there are no pull requests, forks, or anonymous contributors in the
+write path, so an untrusted revision cannot reach `%stage-candidate`.
+`%trusted` in P0's `%assign` (`urgit-ci.hoon:318–323`) is therefore correct
+by construction, not by omission. So step 5 can classify later, the stage
+poke gains the pusher: `[%stage-candidate … actor=@p]` where `actor` is the
+authenticated session ship or, for a write-token push, the repository owner
+(a token is the owner's delegation; record `via=%token`). `candidate` gains
+`actor=@p` and `via=?(%session %token)`. Unauthenticated pushes never reach
+the gate today (`can-write` refuses first) — that is P18's negative row.
+The README's limitations list states that PR/fork trust classification and
+approval arrive with step 5.
+*Cite: CI-TRUST-P1; R3.2-A (its default holds — no untrusted revision runs;
+none can exist yet); CI-SANDBOX-1-B "no untrusted code runs in P1 without a
+human click" — satisfied because none is admitted.*
+
 ## §4 — Stages (each builds; each has its gate)
 
 S1. `sur/ci.hoon` D12 molds; `mar/ci-action.hoon` follows. `zig build`.
 S2. `%urgit`: the three `our`-only peeks (D2, D11) + the `refs/ci/` filter (D9)
-    + `materialize-candidate` sets/clears the ref (D9). **Nothing else in
-    `urgit.hoon` changes.** `+urgit!git-migration-vector` and
+    + `materialize-candidate` sets/clears the ref (D9) + the `land-candidate`
+    arm and `%land-candidate` poke case (D14) + `actor`/`via` on the stage
+    poke (D16). **Nothing else in `urgit.hoon` changes.** `+urgit!git-migration-vector` and
     `+urgit!git-access-vector` still pass.
 S3. `%urgit-ci`: D11 precondition; D5 auto-materialize; D4 auto-plan-assign on
     ready; the `/plan` and `/abandon` routes; D1 validation; D3 evaluator as a
@@ -336,8 +415,8 @@ relay, no dojo poke between push and verdict:
 | P2 | daemon starts with `enroll_token` in config → enrolls, writes state file 0600, banner shows `sandbox: docker-rootless (…pending)`; restart with state file → no re-enroll, polls |
 | P3 | push to CI-protected `master` → staged; **within 10 s, with no poke,** candidate materialized, `refs/ci/candidate/<id>` set, plan assignment delivered to the daemon |
 | P4 | daemon runs `act -l`, POSTs plan; ship stores `plan` = the jobs of `fixture-pass.yml` + a two-job `fixture-chain.yml` you add to `desk/tests/ci/` (`a` emits `go=true`; `b` `needs: a`, `if: needs.a.outputs.go == 'true'`) |
-| P5 | job `a` assigned, run, passed; job `b` assigned ONLY after `a` closes; `b` passed; candidate `%passed`; push lands |
-| P6 | `fixture-chain-off.yml` (`a` emits `go=false`) → `b` `%skipped` with reason; candidate `%passed`; push lands |
+| P5 | job `a` assigned, run, passed; job `b` assigned ONLY after `a` closes; `b` passed; candidate `%passed`; **the ship lands the ref itself** (D14) — `master` = candidate OID with no second push; the original push's `ng` was the last client act |
+| P6 | `fixture-chain-off.yml` (`a` emits `go=false`) → `b` `%skipped` with reason; candidate `%passed`; ship lands it |
 | P7 | `fixture-fail.yml` → job `%failed`, candidate `%failed`, push refused |
 | P8 | a workflow with `matrix:` → `%plan-invalid` reason `matrix unsupported in P1`; candidate `%failed` |
 | P9 | a workflow with `if: github.event_name == 'push'` → `%plan-invalid` with the expression quoted |
@@ -348,8 +427,10 @@ relay, no dojo poke between push and verdict:
 | P14 | `|nuke %urgit-ci` then `|revive` mid-candidate: state-0 is wiped, so the daemon's bearer hash is gone; the daemon's next poll answers `401`, the daemon logs `enrollment lost; re-enroll with a fresh token` and exits non-zero. Record exactly what the operator sees on both sides. This is the P1 behaviour by construction (greenfield state-0, no migration); a survivable nuke is not a P1 goal |
 | P15 | **ERPit for real:** clone ERPit at its current master into a fixture repo on your ship, CI-protect `master`, push a commit → plan = `suite.yml` (`plan`, `structural`, `suite`) + `fixtures.yml` (`pins`, `plan`, `replay`, `erasure`, `duo`); `suite` and `replay`/`erasure`/`duo` gated on their `plan` outputs; every job runs under the daemon; **all eight green; candidate `%passed`.** This is the row the maintainer will reproduce. Budget ~25 min of act time; three fake ships boot inside the sandbox. |
 | P16 | `refs/ci/candidate/*` absent from the repository API's ref list; absent after the candidate closes |
+| P17 | stale destination: stage candidate X on `master`, land an unrelated candidate Y first (or `%set-ref` master by hand as the operator override) → X passes CI, `%land-candidate` refused, X stays `%passed` with `verdict-reason` `'destination moved; rebase and push again'`; `master` = Y |
+| P18 | a push with no credentials and a push with a wrong write token → refused by `can-write` before the CI gate; no candidate staged; `%urgit-ci` state unchanged (mutant: skip `can-write` → a candidate IS staged from an anonymous push — RED) |
 
-Negative rows (P1, P7–P12, P14) get the P0 mutant treatment: one-line
+Negative rows (P1, P7–P12, P14, P17, P18) get the P0 mutant treatment: one-line
 sabotage per row in `mutants.sh`, RED then GREEN, both pasted. The P0 rule
 holds: **anything you type that a script did not is a Deviations entry and a
 script fix.**
@@ -360,8 +441,10 @@ Foreground: every existing `+urgit!*-vector` plus `ci-plan-vector`;
 ## §6 — Fence and boxes
 
 `%urgit` (`desk/app/urgit.hoon`): three `our`-only peeks (D2 ×2, D11), the
-`refs/ci/` filter, and `materialize-candidate` setting/clearing the ref (D9).
-**Nothing else.** `desk/sur/git.hoon`, `desk/mar/git-action.hoon`, `fe/`:
+`refs/ci/` filter, `materialize-candidate` setting/clearing the ref (D9), the
+`land-candidate` arm + `%land-candidate` case (D14), and the `actor`/`via`
+fields on the `%stage-candidate` poke it already sends (D16). **Nothing
+else.** `desk/sur/git.hoon`, `desk/mar/git-action.hoon`, `fe/`:
 untouched. No approvals, no credential store, no signing key, no store upload,
 no web UI, no `microvm` implementation, no `state-1`. No changes to ERPit.
 
