@@ -11,3 +11,8 @@ export DOCKER_SOCK="$DOCKER_STATE/docker.sock"
 export RUNNER_BIN="$ROOT/runner/urgit-runner"
 export RUNNER_HOME="$TMP/runner"
 export ACT_IMAGE=catthehacker/ubuntu:act-latest
+# git must never open a credential dialog from a row (this desktop sets
+# SSH_ASKPASS=ksshaskpass, which blocks on a 401): answer with nothing
+export GIT_ASKPASS=/bin/true
+export GIT_TERMINAL_PROMPT=0
+unset SSH_ASKPASS
