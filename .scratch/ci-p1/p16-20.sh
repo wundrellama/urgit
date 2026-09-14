@@ -83,7 +83,12 @@ fi
 
 if has p19; then
 row "P19: desk-linked repositories cannot be CI-protected; a repo bound after protection is refused at landing"
-"$dojo" '|new-desk %scratch' 120 3 | tail -1
+# the scratch desk survives across runs; kiln asks before overwriting one
+if [ "$(dojo_value '(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now))) %scratch)' | one '^%\.[yn]$')" = "%.y" ]; then
+  echo "-- desk %scratch already exists"
+else
+  "$dojo" '|new-desk %scratch' 120 3 | tail -1
+fi
 LINKED=ci-p1-linked
 "$api" POST /repositories "{\"name\":\"$LINKED\",\"publicRead\":true}" | cut -c1-30
 L="$TMP/clone-linked"; rm -rf "$L"; mkdir -p "$L"; cd "$L"; git init -q -b master .; git config user.name p19; git config user.email p19@example; git config http.cookieFile "$JAR"
