@@ -19,6 +19,9 @@
 #                           becomes ?. %.y (never refuses)
 source "$(dirname "$0")/env.sh"
 cd "$ROOT"
+# never mutate anything but a git work tree: reached through a symlinked
+# desk/ this once edited a tree that `git checkout --` could not restore
+git rev-parse --is-inside-work-tree >/dev/null || { echo "mutants.sh: $PWD is not a git work tree"; exit 1; }
 FILES=(desk/app/urgit-ci.hoon desk/lib/ci-event.hoon desk/app/urgit.hoon desk/lib/ci-storage.hoon)
 case "${1:-}" in
   apply)
