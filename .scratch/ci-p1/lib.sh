@@ -54,8 +54,9 @@ cand_attempts() { for a in $(cand_attempt_ids "$1"); do echo "$a $(att_kind "$a"
 # the attempt id of <cid> for job <job> with status not %skipped (newest first)
 att_of_job() { for a in $(cand_attempt_ids "$1"); do [ "$(att_job "$a")" = "$2" ] && [ "$(att_kind "$a")" = "%job" ] && { echo "$a"; return; }; done; }
 repo_master() { "$api" GET "/repository/$REPO" | sed 's/^[0-9]* //' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([r for r in d["refs"] if r["name"]=="refs/heads/master"][0]["oid"])'; }
-# the authenticated API's ref list (repository-json, unfiltered) and the
-# [%x %repository @ ~] peek's (public-repository-json, where D9 filters)
+# the authenticated API's ref list (repository-json) and the
+# [%x %repository @ ~] peek's (public-repository-json); D9's refs/ci/
+# filter sits in repository-json-up-to, which both go through
 repo_ref_names() { "$api" GET "/repository/$REPO" | sed 's/^[0-9]* //' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(sorted(r["name"] for r in d["refs"])))'; }
 peek_ref_names() {
   dojo_value "=/  j=json  .^(json %gx /=urgit=/repository/$REPO/json)  ?>  ?=([%o *] j)  =/  r=json  (need (~(get by p.j) 'refs'))  ?>  ?=([%a *] r)  \`(list @t)\`(turn p.r |=(x=json ?>(?=([%o *] x) =/(n=json (need (~(get by p.x) 'name')) ?>(?=([%s *] n) p.n)))))" \

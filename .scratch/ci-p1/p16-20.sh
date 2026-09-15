@@ -1,8 +1,9 @@
 #!/bin/bash
 # Rows P16-P20 on the ci-p1 repository with daemon a polling:
-#   P16 refs/ci/candidate/* absent from the repository API's ref list
-#       while a candidate is open (advertised to git for the clone) and
-#       gone after it closes.
+#   P16 refs/ci/candidate/* absent from the repository API's ref list on
+#       BOTH routes ([%x %repository @ ~] and the authenticated
+#       /apps/urgit/api/repository/<name>) while a candidate is open
+#       (advertised to git for the clone) and gone after it closes.
 #   P17 stale destination: X staged on master; the operator moves master
 #       to Y (%set-ref) while X runs; X passes; landing refused; X stays
 #       %passed unlanded with the reason; master = Y.
@@ -24,11 +25,15 @@ push_commit "sixteen: a candidate to watch"
 sleep 3
 check "scratch ref advertised to git while the candidate is open" "refs/ci/candidate/$CID" "$(ls_remote | grep -o "refs/ci/candidate/$CID" || true)"
 check_not_contains "[%x %repository @ ~] ref list hides refs/ci/ (D9)" "refs/ci/" "$(peek_ref_names)"
-echo "-- observation: the authenticated /api/repository/<name> list (repository-json, outside D9's filter): $(repo_ref_names)"
+auth_refs=$(repo_ref_names)
+echo "-- the authenticated /api/repository/<name> ref list while open: $auth_refs"
+check_not_contains "authenticated /api/repository/<name> ref list hides refs/ci/ too" "refs/ci/" "$auth_refs"
+check_contains "authenticated list still carries master" "refs/heads/master" "$auth_refs"
 check "candidate passed" '%passed' "$(wait_cand "$CID" '%passed' 300)"
 sleep 3
 check "scratch ref gone after the close" "" "$(ls_remote | grep -o "refs/ci/candidate/$CID" || true)"
 check_not_contains "[%x %repository @ ~] ref list still clean" "refs/ci/" "$(peek_ref_names)"
+check_not_contains "authenticated /api/repository/<name> ref list still clean" "refs/ci/" "$(repo_ref_names)"
 end_row P16
 fi
 

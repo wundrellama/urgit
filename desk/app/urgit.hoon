@@ -591,6 +591,17 @@
 ++  repository-json-up-to
   |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
+  ::  refs/ci/* are %urgit-ci's scratch refs (a candidate's objects kept
+  ::  reachable for the runner's clone); they are not part of the
+  ::  repository's shape on either route: the authenticated
+  ::  /apps/urgit/api/repository/<name> comes through here directly and
+  ::  the public one through public-repository-json-up-to
+  ::
+  =.  refs.repo
+    %-  malt
+    %+  skip  ~(tap by refs.repo)
+    |=  [ref=@t oid:git]
+    =('refs/ci/' (end [3 8] ref))
   =/  refs-json=(list json)
     %+  turn  ~(tap by refs.repo)
     |=  [ref=@t oid=oid:git]
@@ -703,15 +714,6 @@
 ++  public-repository-json-up-to
   |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
-  ::  refs/ci/* are %urgit-ci's scratch refs (a candidate's objects kept
-  ::  reachable for the runner's clone); they are not part of the
-  ::  repository's public shape
-  ::
-  =.  refs.repo
-    %-  malt
-    %+  skip  ~(tap by refs.repo)
-    |=  [ref=@t oid:git]
-    =('refs/ci/' (end [3 8] ref))
   =/  full=json  (repository-json-up-to name repo history-limit)
   ?>  ?=([%o *] full)
   =/  fields=(map @t json)  p.full
