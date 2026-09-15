@@ -1,11 +1,15 @@
 #!/bin/bash
-# usage: mutants.sh apply | revert | status
+# usage: mutants.sh apply | revert | status | tripwire <row>
 # One-line sabotage per negative row (P1, P7-P12, P14, P17-P20) that must
 # turn the row RED. `apply` edits the working tree (each old text must
 # occur exactly once, or nothing is written) and refuses on a dirty file;
 # `revert` is `git checkout --` of the files. Hoon mutants need
 # rebuild.sh; Go mutants need `go build` and a daemon restart
 # (negatives.sh does both). The mutations are never committed.
+# `tripwire <row>` prints the exact substring the sabotaged build must
+# produce in the row's log (the row's observation line carrying the
+# mutant's own answer, or the product's own message); negatives.sh red
+# counts a row RED only when it FAILS *and* carries its tripwire.
 #
 #   P1   app/urgit-ci.hoon   %set-ci-protected: the no-tip refusal accepts silently
 #   P7   app/urgit-ci.hoon   close-attempt: every job result is %passed (P0's H11)
@@ -98,5 +102,27 @@ PY
     git diff --stat -- "${FILES[@]}"
     git diff --quiet -- "${FILES[@]}" && echo "clean (real build)" || echo "MUTATED"
     ;;
-  *) echo "usage: mutants.sh apply|revert|status" >&2; exit 2 ;;
+  tripwire)
+    # what the sabotaged build itself produces, as the row logs it; a RED
+    # without it failed for the wrong reason. Alternatives one per line
+    # (P13-overlap: act's loser either finds the job container name in
+    # use at create time or is force-removed and dies 137).
+    case "${2:-}" in
+      P1)  echo "%set-ci-protected on a ref with no tip: accepted (>=)" ;;
+      P7)  echo "fail job %failed: FAIL (observed: %passed" ;;
+      P8)  echo "no job attempt ran: FAIL (observed: 0v" ;;
+      P9)  echo "candidate %failed: FAIL (observed: %passed" ;;
+      P10) echo "attempt %infrastructure-error: FAIL (observed: %passed" ;;
+      P11) echo "closed at the deadline: FAIL (observed: %passed" ;;
+      P12) echo "advertised capacity now 2" ;;
+      P13-overlap) printf '%s\n' "exitcode '137'" "is already in use by container" ;;
+      P14) echo "daemon exited non-zero: FAIL (observed: running pid" ;;
+      P17) echo "verdict-reason: FAIL (observed: 'candidate object is missing from the store'" ;;
+      P18) echo "no credentials -> 401: FAIL (observed: 200" ;;
+      P19) echo "linked repo not protected: FAIL (observed: %.y" ;;
+      P20) echo "event job does not match the assignment" ;;
+      *) echo "mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
+    esac
+    ;;
+  *) echo "usage: mutants.sh apply|revert|status|tripwire <row>" >&2; exit 2 ;;
 esac

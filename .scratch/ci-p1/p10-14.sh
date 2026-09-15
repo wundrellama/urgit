@@ -108,6 +108,7 @@ sleep 4
 log=$(runner_log a)
 Q=$(printf '%s' "$log" | grep -o 'QUARANTINED slot ci-[0-9a-v.]*' | head -1 | sed 's/QUARANTINED slot //')
 echo "-- quarantined sandbox: $Q"
+echo "-- the daemon's quarantine line: $(printf '%s' "$log" | grep -o 'QUARANTINED slot.*' | head -1 | cut -c1-300)"
 check_contains "slot quarantined and logged" "QUARANTINED slot $Q: teardown failed" "$log"
 check_contains "capacity decremented" "advertised capacity now 1" "$log"
 check "only one slot quarantined" "1" "$(printf '%s' "$log" | grep -c 'QUARANTINED slot')"
@@ -193,6 +194,12 @@ echo "-- act job containers alive now: $both"
 check "two job containers alive at once" "2" "$($DK ps --format '{{.Names}}' | grep -c -E '^act-')"
 check "attempt 1 passed" '%passed' "$(wait_att "$W1" '%passed|%failed|%infrastructure-error' 240)"
 check "attempt 2 passed" '%passed' "$(wait_att "$W2" '%passed|%failed|%infrastructure-error' 240)"
+# the collision an unprefixed projection name produces (CI-PROJECT-1.1):
+# act's loser either meets the job container name in use at create time
+# or is force-removed and dies 137; its act stream and the daemon log
+# carry the message. The real build shows none.
+evidence=$({ cat "$RUNNER_HOME/a/work/$W1.act.jsonl" "$RUNNER_HOME/a/work/$W2.act.jsonl" 2>/dev/null; grep -hF -e "$W1" -e "$W2" "$RUNNER_HOME/a/daemon.log"; } | grep -F -e "exitcode '137'" -e "is already in use by container" | head -1 | cut -c1-240)
+echo "-- act collision evidence in the two streams and the daemon log: ${evidence:-none}"
 check "projection names differ and carry the attempt ids" "yes" "$(p1=$(dojo_value "projection-name:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$W1/noun))" | tr -d '\n'); p2=$(dojo_value "projection-name:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$W2/noun))" | tr -d '\n'); echo "$p1 / $p2" >&2; case "$p1" in *"$W1/fixture-wait"*) case "$p2" in *"$W2/fixture-wait"*) echo yes;; *) echo "no: $p2";; esac;; *) echo "no: $p1";; esac)"
 check "the plan carries the real workflow name" "fixture-wait" "$(dojo_value "name:(head (need plan:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$C1/noun))))" | tr -d "\n'")"
 check "both candidates passed" "%passed %passed" "$(wait_cand "$C1" '%passed' 60) $(wait_cand "$C2" '%passed' 60)"

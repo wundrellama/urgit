@@ -122,6 +122,9 @@ check "no jobID a line in b's stream" "0" "$(grep -c '"jobID":"a"' "$B_STREAM" |
 check "a ran once, in its own attempt" "1" "$(cand_attempts "$CID" | grep -c ' %job a ')"
 b_lines=$(grep -c '"jobID":"b"' "$B_STREAM" || true)
 check "ship's event count for b equals b's own lines" "$b_lines" "$(att_events "$B_ATT")"
+# the ship's 409 on a's lines arriving on b's attempt is the projection
+# tripwire (CI-PROJECT-1): the daemon logs the ship's refusal body
+echo "-- first refusal the daemon logged for b: $(grep -F "[job $B_ATT] ship refused event" "$RUNNER_HOME/a/daemon.log" | head -1 | cut -c1-200)"
 check "no refusal in the daemon log for b" "0" "$(grep -c "\[job $B_ATT\] ship refused event" "$RUNNER_HOME/a/daemon.log" || true)"
 check "the projected file had one job and no needs/if" "yes" "$(grep -q "running: act push -W /work/projected/fixture-chain.yml -j b" "$RUNNER_HOME/a/daemon.log" && echo yes || echo no)"
 end_row P20
