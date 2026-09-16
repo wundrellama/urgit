@@ -28,7 +28,8 @@ owned by the invoking host user. The server's console port is not published.
 | Stage | Commit | Gate |
 |---|---|---|
 | S0 | `0ca9ff8` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
-| S1 | This stage commit | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
+| S1 | `9071dd0` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
+| S2 | Boxed before implementation | `QUESTIONS-CI-P2.md` §4: extending the stage action requires a fourth `%urgit` touch for the push caller; §5: no authoritative writer peek exists for private repositories. No S2 row is claimed. |
 
 ## Observations
 
@@ -86,6 +87,15 @@ The unchanged `+urgit!ci-storage-vector` prints `%.y` on `~lup`.
 
 ## Shutdown
 
-Pending while S1 is running. `p2-shutdown.sh` stops the recorded runners,
-then `store.sh stop`, then the P0 `/proc`-verified ship shutdown. The pier
-is retained.
+Completed with `.scratch/ci-p1/p2-shutdown.sh`; transcript:
+`.scratch/tmp/p2-shutdown.log`. Runner PID **2887520** was checked through
+`/proc`, stopped with TERM, posted abandon → **200**, and destroyed its
+remaining sandbox. RustFS `urgit-ci-store-lup` reports `running=false`;
+the harness Docker daemon has no running containers.
+
+Ship PIDs **2866364** and **2868976** were verified against the footer
+binary and pier before sending Ctrl+D to dojo pane `w1B:p2`. Both exited;
+the shell prompt returned and the pane was closed. A final `/proc` scan
+finds no matching ship or runner. The **484 MB** pier remains at
+`/var/home/michael/piers/urgit-ci-p2-lup`; store data are retained. The
+chair's rootless Docker daemon remains available, with no containers running.
