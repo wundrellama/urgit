@@ -330,14 +330,16 @@ values. Do not guess past any of them.
 
 ## Launch footer — opus
 
-- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `36fcda9`.
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `4872953` (re-freeze 1).
 - Ship `~dep`, HTTP port `8353`, pier `/var/home/michael/piers/urgit-ci-p2-dep` (must not exist
   before your first boot). Rootless Docker state dir `/run/user/1000/ci-p2-opus/`, data root
-  `<worktree>/.scratch/tmp/docker-data`. Boot inside a herdr pane you split from your own, after
+  `<worktree>/.scratch/tmp/docker-data`. **Store fixture (RustFS) port `8363`**, data
+  `<worktree>/.scratch/tmp/store-data`. Boot inside a herdr pane you split from your own, after
   the shell prompt: `/var/home/michael/workspace/urbit/bin/urbit -F dep -B
   /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port 8353 -c
   /var/home/michael/piers/urgit-ci-p2-dep`. Rewrite `SHIP/PORT/PIER` in `.scratch/ci-p0/env.sh`
-  and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` to these values as your first commit.
+  and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` to these values **inside S1, before your first
+  boot** — S0 stays spec-only (D7).
 - Do NOT boot `~zod ~nec ~bud ~wes ~bel ~bus ~syt ~dur ~wep ~ser ~ryx ~wyd ~tem ~mul ~dev ~sev
   ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chair's `~lup`.
 - ERPit workload: clone `/var/home/michael/workspace/urbit/erpit` (read-only source) into your
