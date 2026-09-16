@@ -71,9 +71,19 @@ a read across trust classes"). New route `POST attempt/<id>/upload` (daemon-auth
 body `{name, contentType, sha256, size}`) returns the `signed-request` from `sign-put`. The
 key is `object-key` with the attempt's own trust — the daemon cannot choose the class.
 `name` is restricted to `log.jsonl`, `summary.md`, and `artifact/<safe-name>`; anything
-else 400. Reads: `GET attempt/<id>/log` (session-authorized) answers a 302 to the
-`sign-get` URL, or 404 while `log=~`. **The signer is P0's; do not change `ci-storage`
-beyond adding the read-for-viewer wrapper.**
+else 400. Reads: `GET attempt/<id>/log` (session-authorized) answers a 302 to a
+**query-presigned** GET URL, or 404 while `log=~`. **Ruled (astra §2):** P0's `sign-get`
+produces a header-authorized request (`git-storage.hoon:139` builds a bare URL; the
+signature is in the `authorization` header at :162–170), which a browser following a
+`Location` cannot present — so a 302 to that URL 403s on a private bucket. P2 adds a
+second signing mode to `ci-storage`: `presign-get` producing the standard SigV4
+query-string form (`X-Amz-Algorithm`, `X-Amz-Credential`, `X-Amz-Date`, `X-Amz-Expires`,
+`X-Amz-SignedHeaders=host`, `X-Amz-Signature`; the canonical request uses
+`UNSIGNED-PAYLOAD`), expiry ≤ 15 min, trust-class-checked exactly as `sign-get` is.
+The PUT stays header-authorized (the daemon can send headers). §Storage's "short-lived
+download URL for each authorized viewer" is this URL. The existing `sign-get` /
+`sign-put` arms are not modified; `presign-get` is additive and tested against the
+fixture store (Q2 follows the 302 with a plain `curl -L` and gets the jsonl).
 
 **D3 — Trust is decided at staging from the actor, and it is a repository policy**
 (§Trust: "A revision from an untrusted source needs approval before it runs. Approval is
@@ -201,7 +211,7 @@ Extend `.scratch/ci-p1/` (P1's harness) — same env, boot, rootless, drivers. R
 | Row | Proves |
 |---|---|
 | Q1 | D7: spec commit lands first; `git log` shows it before any code |
-| Q2 | Log upload: ERPit `plan` attempt finishes → `attempt.log` = `[key size sha256]`; `GET attempt/<id>/log` 302s to a URL that returns the jsonl; sha256 matches |
+| Q2 | Log upload: ERPit `plan` attempt finishes → `attempt.log` = `[key size sha256]`; `GET attempt/<id>/log` 302s to a query-presigned URL; `curl -L` with no headers returns the jsonl from the private RustFS bucket; sha256 matches; the same URL after its expiry → 403 |
 | Q3 | Trust class in the key: a `%trusted` attempt's key has `/trusted/`; the `sign-get` scry with `%untrusted` for that attempt returns `~` |
 | Q4 | Upload name fence: `POST upload` with `name=../x` → 400 |
 | Q5a | **Web merge gate (P1 gap):** a writer opens a PR to a CI-protected `master` and clicks Merge → 202 + candidate id, `master` unmoved, candidate `%trusted`; it runs and lands; the pull reads `%merged` only after landing. Merge to an unprotected branch still writes directly |
@@ -228,14 +238,23 @@ shown RED against a one-line sabotage first, with the tripwire string named per 
 
 P1's `.scratch/ci-p1/` scripts are the base: `boot.sh`, `docker-rootless.sh`,
 `act-static.sh`, `runner.sh`, the drivers. Add `p2-*.sh` per row group, a `q-mutants.sh`
-for the new negatives, and `battery.sh` runs P0 → P1 → P2 in order. `%storage` on the
-fixture ship points at the harness MinIO (P0's `install-s3.sh`); Q2's read goes to that
-bucket. The fe tests run in `foreground.sh` alongside `go test`. Record:
+for the new negatives, and `battery.sh` runs P0 → P1 → P2 in order. **Ruled (astra §3):
+there is no object-store fixture anywhere in the tree** — P1's H15 proved a signing
+result against `127.0.0.1:1`, and the `install-s3.sh` the earlier draft cited installs
+the desk, not a store. Build one in S1: `.scratch/ci-p1/store.sh start|stop|status`
+running **RustFS** (Apache-2.0, SigV4, the store NativePlanet ships by default; MinIO's
+open-source repo is archived) as a rootless container on the harness Docker daemon —
+own port (footer), data dir under `.scratch/tmp/store-data`, one **private** bucket, a
+scoped access key; then the seven `%storage-action` pokes point the fixture ship at it
+(the P0 recipe in the rulings reference). Q2/Q3/Q18 read from that bucket with `curl`,
+never from the container's filesystem. `store.sh stop` is part of shutdown. If RustFS's
+SigV4 rejects a request the signer produces, that is a finding against the SIGNER (P0
+targeted AWS's documented canonical form) — box it with the store's error body. The fe tests run in `foreground.sh` alongside `go test`. Record:
 `.scratch/p2-live-table.md`, same columns as P1's, observed values from YOUR run, a
 Deviations section, shutdown by `/proc`-verified PID, pier retained.
 
-Commits: `ci-p2: S<n> — …`, one per stage: S0 spec (D7) · S1 sur + storage routes + upload
-(D1/D2, Q2–Q4) · S2 web-merge gate + trust + approval (D3/D3a, Q5a–Q8) · S3 credentials + grants (D4, Q9–Q11) ·
+Commits: `ci-p2: S<n> — …`, one per stage: S0 spec (D7, spec file only) · S1 footer env
+rewrite + store fixture + sur + storage routes + presign + upload (D1/D2, Q2–Q4) · S2 web-merge gate + trust + approval (D3/D3a, Q5a–Q8) · S3 credentials + grants (D4, Q9–Q11) ·
 S4 signing (D5, Q12–Q13) · S5 fe (D6, Q14–Q16) · S6 battery + record (Q17–Q18). Push
 nothing. Merge nothing.
 
