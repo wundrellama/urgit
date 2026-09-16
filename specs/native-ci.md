@@ -68,6 +68,8 @@ Each job runs in a fresh VM booted from an approved image with resource limits. 
 
 The daemon enforces deadlines set by `%urgit-ci`. After a restart it reconciles orphaned VMs against `%urgit-ci`'s assignment records. A stale attempt cannot overwrite a newer one.
 
+Assignment delivery is at-least-once, with the attempt id as the idempotency key. A delivered assignment with no activity is re-offered after two minutes: the attempt still has zero events and, for a plan assignment, no plan has been stored. The daemon ignores an offer for an attempt it is already running. A closed long-poll is forgotten when its connection closes. The daemon reports capacity on every poll through `x-ci-capacity`, and the ship records it; changing capacity does not require re-enrollment. Work created while every daemon is busy waits and is offered at the next scheduling opportunity. A merge conflict fails the candidate with a reason. Jobs whose workflow does not trigger on `push` are not planned, and a plan with no push-triggered job is refused.
+
 ## Trust and credentials
 
 A revision from an untrusted source needs approval before it runs. Approval is per revision. A repository may opt in to automatic restricted checks for untrusted revisions. A restricted check receives no credentials, cannot write to a trusted cache namespace, and cannot deploy or publish. Approval to test grants no other permission.
