@@ -34,13 +34,13 @@ case "${1:-status}" in
       echo '{}' > "$TMP/docker-config.json"
       XDG_RUNTIME_DIR="$DOCKER_STATE" \
       DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR="$DOCKER_STATE/rootlesskit" \
-        nohup dockerd-rootless.sh \
+        setsid nohup dockerd-rootless.sh \
           --config-file "$TMP/docker-config.json" \
           --data-root "$DOCKER_DATA" \
           --exec-root "$DOCKER_STATE/exec" \
           --pidfile "$PIDFILE" \
           --host "unix://$DOCKER_SOCK" \
-          > "$LOG" 2>&1 &
+          > "$LOG" 2>&1 < /dev/null &
       echo "started (log $LOG)"
       for _ in $(seq 1 60); do
         docker --host "unix://$DOCKER_SOCK" info >/dev/null 2>&1 && break; sleep 1

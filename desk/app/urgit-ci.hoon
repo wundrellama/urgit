@@ -139,6 +139,8 @@
     =/  name=@t  (decode-segment:hc i.t.t.t.t.path)
     =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))
     ?~  found  ``noun+!>(`(unit @t)`~)
+    ?:  &(=('log.jsonl' name) ?=(~ log.u.found))
+      ``noun+!>(`(unit @t)`~)
     =/  signed=(unit signed-request:git-storage)
       %:  sign-get:ci-storage
         (read-settings:ci-storage our.bowl now.bowl)
@@ -167,6 +169,12 @@
   ^-  (quip card _this)
   ?+    wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+  ::
+      [%log @ @ ~]
+    =/  id=(unit @uv)  (slaw %uv i.t.wire)
+    ?~  id  `this
+    =/  =out:hc  (handle-log-head:hc i.t.t.wire u.id sign-arvo)
+    [cards.out this(state state.out, polls polls.out)]
   ::
       ::  a long-poll that saw no assignment closes with 204
       ::
@@ -496,7 +504,7 @@
   =/  assignment-id=assignment-id:ci  (sham [%ci-assignment attempt-id])
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
-        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~
+        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~  ~
     ==
   =/  =assignment:ci
     :*  assignment-id  candidate  daemon  attempt-id
@@ -526,7 +534,7 @@
     (sham [%ci-skip candidate workflow.job id.job now.bowl (lent attempts.found)])
   =/  =attempt:ci
     :*  attempt-id  candidate  0v0  0v0
-        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl
+        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -833,7 +841,7 @@
   =/  value=(unit json)  (~(get by p.jon) key)
   ?~  value  `~
   ?.  ?=([%n *] u.value)  ~
-  =/  parsed=(unit @ud)  (slaw %ud p.u.value)
+  =/  parsed=(unit @ud)  (rush p.u.value dem)
   ?~  parsed  ~
   `parsed
 ::
@@ -950,6 +958,17 @@
       ['projection-name' ?~(projection-name.attempt ~ s+u.projection-name.attempt)]
       ['candidate' s+(scot %uv candidate.attempt)]
       ['candidate-status' s+candidate-status]
+      ['log' (log-json log.attempt)]
+  ==
+::
+++  log-json
+  |=  log=(unit object-ref:ci)
+  ^-  json
+  ?~  log  ~
+  %-  pairs:enjs:format
+  :~  ['key' s+key.u.log]
+      ['size' (numb:enjs:format size.u.log)]
+      ['sha256' s+sha256.u.log]
   ==
 ::
 ++  handle-http
@@ -958,6 +977,14 @@
   =/  line=request-line:server  (parse-request-line:server url.request.req)
   =/  site=(list @t)  site.line
   =/  method=@tas  method.request.req
+  ?:  ?=([%apps %urgit %api %ci %attempt @ %upload ~] site)
+    ?.  =(%'POST' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-upload eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %attempt @ %log ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-log-read eyre-id req i.t.t.t.t.t.site)
   ?:  ?=([%apps %urgit %api %ci %daemon %enroll ~] site)
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -993,6 +1020,144 @@
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-abandon eyre-id req i.t.t.t.t.t.site)
   (emit (give-error eyre-id 404 'ci route not found'))
+::
+++  upload-name
+  |=  name=@t
+  ^-  ?
+  ?:  |(=('log.jsonl' name) =('summary.md' name))  %.y
+  ?.  =('artifact/' (end [3 9] name))  %.n
+  =/  rest=tape  (trip (rsh [3 9] name))
+  ?~  rest  %.n
+  ?:  |(=("." rest) =(".." rest) (gth (lent rest) 128))  %.n
+  %+  levy  (trip (rsh [3 9] name))
+  |=  c=@tD
+  ?|  &((gte c 'a') (lte c 'z'))
+      &((gte c 'A') (lte c 'Z'))
+      &((gte c '0') (lte c '9'))
+      =(c '-')  =(c '_')  =(c '.')
+  ==
+::
+++  sha256-text
+  |=  text=@t
+  ^-  ?
+  ?.  =(64 (met 3 text))  %.n
+  %+  levy  (trip text)
+  |=  c=@tD
+  |(&((gte c '0') (lte c '9')) &((gte c 'a') (lte c 'f')))
+::
+++  handle-upload
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  =/  id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))
+  ?~  found  (emit (give-error eyre-id 404 'no such attempt'))
+  ?.  (attempt-authorized req u.found)
+    (emit (give-error eyre-id 401 'attempt authentication required'))
+  ?.  =(%running status.u.found)
+    (emit (give-error eyre-id 409 'attempt is closed'))
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon  (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  name=(unit @t)  (string-at 'name' u.jon)
+  ?.  ?&(?=(^ name) (upload-name u.name))
+    (emit (give-error eyre-id 400 'upload name is not allowed'))
+  =/  content-type=(unit @t)  (string-at 'contentType' u.jon)
+  =/  hash=(unit @t)  (string-at 'sha256' u.jon)
+  =/  size=(unit (unit @ud))  (number-at 'size' u.jon)
+  ?.  ?&(?=(^ content-type) ?=(^ hash) (sha256-text u.hash) ?=(^ size) ?=(^ u.size))
+    (emit (give-error eyre-id 400 'contentType, size and lowercase sha256 are required'))
+  =/  signed=(unit signed-request:git-storage)
+    %:  sign-put:ci-storage
+      (read-settings:ci-storage our.bowl now.bowl)
+      (candidate-repo candidate.u.found)
+      (scot %uv candidate.u.found)
+      (scot %uv id.u.found)
+      trust.u.found
+      u.name  u.content-type  u.hash  now.bowl
+    ==
+  ?~  signed  (emit (give-error eyre-id 503 storage-refusal))
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['url' s+url.u.signed]
+      :-  'headers'
+      %-  pairs:enjs:format
+      (turn headers.u.signed |=([k=@t v=@t] [k s+v]))
+  ==
+::
+++  handle-log-read
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  ?.  authenticated.req
+    (emit (give-error eyre-id 401 'ship session required'))
+  =/  id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))
+  ?~  found  (emit (give-error eyre-id 404 'no such attempt'))
+  ?~  log.u.found  (emit (give-error eyre-id 404 'log is unavailable'))
+  =/  settings=settings:ci-storage  (read-settings:ci-storage our.bowl now.bowl)
+  ?~  settings  (emit (give-error eyre-id 503 storage-refusal))
+  =/  signed=signed-request:git-storage
+    %:  sign-hash:git-storage
+      'HEAD'  ''  empty-payload-hash:ci-storage
+      credentials.u.settings  configuration.u.settings
+      key.u.log.u.found  now.bowl
+    ==
+  %-  emit
+  :~  [%pass /log/(scot %uv id.u.found)/[eyre-id] %arvo %i %request [%'HEAD' url.signed headers.signed ~] *outbound-config:iris]
+  ==
+::
+++  handle-log-head
+  |=  [eyre-id=@ta id=attempt-id:ci =sign-arvo]
+  ^-  out
+  =/  found=(unit attempt:ci)  (~(get by attempts) id)
+  ?~  found  (emit (give-error eyre-id 404 'no such attempt'))
+  ?~  log.u.found  (emit (give-error eyre-id 404 'log is unavailable'))
+  =/  exists=?
+    ?.  ?=([%iris %http-response *] sign-arvo)  %.n
+    =/  response=client-response:iris  client-response.sign-arvo
+    ?.  ?=(%finished -.response)  %.n
+    =/  status=@ud  status-code.response-header.response
+    ?.  &((gte status 200) (lth status 300))  %.n
+    =/  length=(unit @t)  (get-header:http 'content-length' headers.response-header.response)
+    ?~  length  %.n
+    =(`size.u.log.u.found (rush u.length dem))
+  ?.  exists
+    =.  attempts  (~(put by attempts) id u.found(log ~))
+    (emit (give-error eyre-id 404 'log is unavailable; attempt verdict is unchanged'))
+  =/  url=(unit @t)
+    %:  presign-get:ci-storage
+      (read-settings:ci-storage our.bowl now.bowl)
+      trust.u.found
+      (candidate-repo candidate.u.found)
+      (scot %uv candidate.u.found)
+      (scot %uv id)
+      trust.u.found  'log.jsonl'  now.bowl  60
+    ==
+  ?~  url  (emit (give-error eyre-id 503 storage-refusal))
+  %-  emit
+  %+  give-simple-payload:app:server  eyre-id
+  [[302 ~[['location' u.url] ['cache-control' 'no-store']]] ~]
+::
+::  Only metadata enters state; the key is derived from the attempt and
+::  its trust, never taken from the daemon's result body.
+::
+++  result-log
+  |=  [=attempt:ci jon=json]
+  ^-  (each (unit object-ref:ci) @t)
+  ?.  ?=([%o *] jon)  [%| 'result must be an object']
+  =/  raw=(unit json)  (~(get by p.jon) 'log')
+  ?~  raw  [%& ~]
+  ?:  =(~ u.raw)  [%& ~]
+  =/  size=(unit (unit @ud))  (number-at 'size' u.raw)
+  =/  hash=(unit @t)  (string-at 'sha256' u.raw)
+  ?.  ?&(?=(^ size) ?=(^ u.size) ?=(^ hash) (sha256-text u.hash))
+    [%| 'log requires size and lowercase sha256']
+  =/  key=@t
+    %:  object-key:ci-storage
+      (candidate-repo candidate.attempt)
+      (scot %uv candidate.attempt)  (scot %uv id.attempt)
+      trust.attempt  'log.jsonl'
+    ==
+  [%& `[key u.u.size u.hash]]
 ::
 ::  enrollment: the token is the credential.  its hash must match a
 ::  minted, not yet enrolled daemon record.  the bearer is derived from
@@ -1208,13 +1373,22 @@
     (emit (give-error eyre-id 404 'no such attempt'))
   ?.  (attempt-authorized req u.found)
     (emit (give-error eyre-id 401 'attempt authentication required'))
-  ?.  =(%running status.u.found)
-    (emit (give-error eyre-id 409 'attempt is closed'))
   =/  jon=(unit json)  (body-json req)
   ?~  jon
     (emit (give-error eyre-id 400 'valid JSON body required'))
   =/  claimed=(unit @t)  (string-at 'job-result' u.jon)
   =/  infrastructure=(unit @t)  (string-at 'infrastructure-error' u.jon)
+  =/  log=(each (unit object-ref:ci) @t)  (result-log u.found u.jon)
+  ?:  ?=(%| -.log)  (emit (give-error eyre-id 400 p.log))
+  ?.  =(%running status.u.found)
+    ?:  ?&  ?=(^ claimed)
+            ?=(^ result.u.found)
+            ?=([%job-result *] u.result.u.found)
+            =(u.claimed result.u.result.u.found)
+            =(p.log log.u.found)
+        ==
+      (emit (give-json eyre-id 200 (attempt-json u.found)))
+    (emit (give-error eyre-id 409 'attempt is closed'))
   ?^  claimed
     =/  result=(unit result:ci)
       ?+  u.claimed  ~
@@ -1229,12 +1403,14 @@
       (emit (give-error eyre-id 409 'no jobResult event was relayed for this attempt'))
     ?.  =(u.job-result.u.found u.result)
       (emit (give-error eyre-id 409 'job-result does not match the relayed jobResult event'))
+    =.  found  `u.found(log p.log)
     =.  state  (close-attempt u.found [%job-result u.result])
     =/  closed=out  (after-close candidate.u.found)
     =.  state  state.closed
     =.  polls  polls.closed
     (emit (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
   ?^  infrastructure
+    =.  found  `u.found(log p.log)
     =.  state  (close-attempt u.found [%infrastructure-error u.infrastructure])
     =/  closed=out  (after-close candidate.u.found)
     =.  state  state.closed

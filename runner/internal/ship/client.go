@@ -164,8 +164,8 @@ func (c *Client) Event(ctx context.Context, attempt string, line []byte) (Respon
 }
 
 // Result claims the jobResult the stream carried.
-func (c *Client) Result(ctx context.Context, attempt, jobResult string) (Response, error) {
-	body, _ := json.Marshal(map[string]string{"job-result": jobResult})
+func (c *Client) Result(ctx context.Context, attempt, jobResult string, object *Object) (Response, error) {
+	body, _ := json.Marshal(map[string]any{"job-result": jobResult, "log": object})
 	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/result", body)
 }
 

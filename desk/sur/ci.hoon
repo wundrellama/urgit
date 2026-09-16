@@ -118,6 +118,8 @@
       [%infrastructure-error message=@t]
   ==
 ::
++$  object-ref  [key=@t size=@ud sha256=@t]
+::
 ::  one execution of a candidate on one daemon.  the event stream is not
 ::  stored; only the count, the recorded outputs, the relayed jobResult
 ::  and the claimed result enter state.
@@ -140,6 +142,7 @@
       projection-name=(unit @t)
       started=@da
       finished=(unit @da)
+      log=(unit object-ref)
   ==
 ::
 +$  state-0

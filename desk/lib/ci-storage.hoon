@@ -79,6 +79,65 @@
     now
   ==
 ::
+::  A browser can present a query signature when following a Location.
+::  AWS's query-string SigV4 form signs host and UNSIGNED-PAYLOAD:
+::  docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-query-string-auth.html
+::  Keep the P0 header-authorized arms above unchanged.
+::
+++  query-encode
+  |=  value=@t
+  ^-  @t
+  =/  encoded=tape  (trip (uri-encode:git-storage value))
+  %-  crip
+  %-  zing
+  %+  turn  encoded
+  |=  char=@tD
+  ?:  =(char '/')  "%2F"
+  ~[char]
+::
+++  presign-get
+  |=  $:  =settings
+          requester=trust:ci
+          repo=@t
+          run=@t
+          attempt=@t
+          =trust:ci
+          name=@t
+          now=@da
+          expires=@ud
+      ==
+  ^-  (unit @t)
+  ?~  settings  ~
+  ?.  =(requester trust)  ~
+  ?.  &((gte expires 1) (lte expires 900))  ~
+  =/  creds=credentials:git-storage  credentials.u.settings
+  =/  config=configuration:git-storage  configuration.u.settings
+  =/  host=@t  (endpoint-host:git-storage endpoint.creds)
+  =/  uri=@t
+    %-  uri-encode:git-storage
+    (rap 3 ~['/' current-bucket.config '/' (object-key repo run attempt trust name)])
+  =/  timestamp=@t  (amz-date:git-storage now)
+  =/  date=@t  (date-stamp:git-storage now)
+  =/  scope=@t  (rap 3 ~[date '/' region.config '/s3/aws4_request'])
+  =/  query=@t
+    %+  rap  3
+    :~  'X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential='
+        (query-encode (rap 3 ~[access-key-id.creds '/' scope]))
+        '&X-Amz-Date='  timestamp
+        '&X-Amz-Expires='  (scot %ud expires)
+        '&X-Amz-SignedHeaders=host'
+    ==
+  =/  canonical=@t
+    (rap 3 ~['GET\0a' uri '\0a' query '\0ahost:' host '\0a\0ahost\0aUNSIGNED-PAYLOAD'])
+  =/  to-sign=@t
+    %+  rap  3
+    :~  'AWS4-HMAC-SHA256\0a'  timestamp  '\0a'  scope  '\0a'
+        (hex-32:git-storage (shay [(met 3 canonical) canonical]))
+    ==
+  =/  key=@  (signing-key:git-storage secret-access-key.creds date region.config)
+  =/  sig=@t  (hex-32:git-storage (hmac-text:git-storage [32 key] to-sign))
+  `(rap 3 ~[(endpoint-scheme:git-storage endpoint.creds) host uri '?' query '&X-Amz-Signature=' sig])
+::
 ::  the ship's %storage settings, read the way %urgit reads them for LFS:
 ::  ~ unless the agent is running and endpoint, both keys, bucket and
 ::  region are all set with the %credentials service.  the liveness read

@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -62,11 +64,13 @@ func (f *fakeBox) Orphans(context.Context) ([]string, error) { return nil, nil }
 func (f *fakeBox) Name() string                              { return "fake" }
 
 type fakeShip struct {
-	mu       sync.Mutex
-	events   []string
-	results  []string
-	abandons []string
-	plans    []string
+	mu        sync.Mutex
+	events    []string
+	results   []string
+	abandons  []string
+	plans     []string
+	uploaded  []byte
+	failStore bool
 }
 
 func (s *fakeShip) handler(t *testing.T) http.Handler {
@@ -74,11 +78,25 @@ func (s *fakeShip) handler(t *testing.T) http.Handler {
 		body, _ := io.ReadAll(r.Body)
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if r.URL.Path == "/objects/log.jsonl" {
+			if r.Header.Get("x-ci-bearer") != "" {
+				t.Error("daemon bearer leaked to the object store")
+			}
+			if s.failStore {
+				w.WriteHeader(503)
+				return
+			}
+			s.uploaded = body
+			w.WriteHeader(200)
+			return
+		}
 		if r.Header.Get("x-ci-bearer") != "0v1.bearer" {
 			w.WriteHeader(401)
 			return
 		}
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/upload"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"url": "http://" + r.Host + "/objects/log.jsonl", "headers": map[string]string{"content-type": "application/x-ndjson"}})
 		case strings.HasSuffix(r.URL.Path, "/event"):
 			var ev map[string]any
 			_ = json.Unmarshal(body, &ev)
@@ -179,9 +197,34 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 	if len(sh.events) != 2 || len(sh.results) != 1 || !strings.Contains(sh.results[0], `"success"`) || len(sh.abandons) != 0 {
 		t.Fatalf("ship saw events=%d results=%v abandons=%v", len(sh.events), sh.results, sh.abandons)
 	}
+	if string(sh.uploaded) != box.stream {
+		t.Fatalf("uploaded log differs from the completed act stream: %q", sh.uploaded)
+	}
+	var result struct {
+		Log *ship.Object `json:"log"`
+	}
+	if err := json.Unmarshal([]byte(sh.results[0]), &result); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte(box.stream))
+	if result.Log == nil || result.Log.Size != int64(len(box.stream)) || result.Log.SHA256 != hex.EncodeToString(hash[:]) {
+		t.Fatalf("result did not name the completed upload: %s", sh.results[0])
+	}
 	// the projection the daemon wrote had one job, no needs, no if
 	// (it was removed with the work dir; the ship's 409 tripwire covers
 	// the live case; the plan package's test covers the bytes)
+}
+
+func TestLogOutagePreservesResult(t *testing.T) {
+	sh := &fakeShip{failStore: true}
+	srv := httptest.NewServer(sh.handler(t))
+	defer srv.Close()
+	box := &fakeBox{stream: `{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"}
+	d := newTestDaemon(t, box, srv, 1)
+	d.handle(context.Background(), jobAssignment)
+	if len(sh.results) != 1 || !strings.Contains(sh.results[0], `"job-result":"success"`) || !strings.Contains(sh.results[0], `"log":null`) {
+		t.Fatalf("a failed upload changed the result or named a missing object: %v", sh.results)
+	}
 }
 
 // act exiting without a jobResult is an abandon, never a result; a

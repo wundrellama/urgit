@@ -3,6 +3,9 @@
 # Clears the dojo input line, sends one line, waits until the prompt is idle
 # again (last pane line is a bare prompt), then prints the pane tail.
 source "$(dirname "$0")/env.sh"
+# Concurrent row readers share one dojo; keep each send/read pair together.
+exec {dojo_lock}> "$TMP/dojo.lock"
+flock "$dojo_lock"
 line="$1"; timeout="${2:-120}"; lines="${3:-15}"
 [ -n "$PANE" ] || { echo "dojo.sh: no ship pane recorded; run boot.sh first" >&2; exit 1; }
 herdr pane send-keys "$PANE" 'ctrl+a' 'ctrl+k' >/dev/null

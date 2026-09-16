@@ -521,15 +521,21 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, "act start: "+err.Error(), logf)
 		return
 	}
-	streamLog, _ := os.Create(filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl"))
-	tee := io.TeeReader(stream, streamLog)
+	logPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
+	streamLog, logErr := os.Create(logPath)
+	var tee io.Reader = stream
+	if logErr == nil {
+		tee = io.TeeReader(stream, streamLog)
+	} else {
+		logf("log file unavailable: %v", logErr)
+	}
 	summary, relayErr := relay.Relay(ctx, tee, func(ctx context.Context, line []byte) (int, []byte, error) {
 		resp, err := d.client.Event(ctx, a.Attempt, line)
 		return resp.Status, resp.Body, err
 	}, func(msg string) { logf("%s", msg) })
 	_ = stream.Close()
 	if streamLog != nil {
-		_ = streamLog.Close()
+		logErr = streamLog.Close()
 	}
 	code := <-done
 	logf("act exited %d; relayed %d line(s) (%d accepted, %d refused, %d dropped); jobResult %q",
@@ -542,10 +548,30 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, fmt.Sprintf("act exited %d without a jobResult", code), logf)
 		return
 	}
-	resp, err := d.client.Result(ctx, a.Attempt, summary.JobResult)
-	if err != nil {
-		logf("result POST failed: %v", err)
-		return
+	// A log outage never changes act's verdict. Only completed uploads
+	// are named in the result, and no log bytes enter Gall state.
+	var object *ship.Object
+	if logErr == nil {
+		object, err = d.client.Upload(ctx, a.Attempt, "log.jsonl", "application/x-ndjson", logPath)
+		if err != nil {
+			logf("log upload unavailable: %v", err)
+		} else {
+			logf("log uploaded: %d bytes sha256 %s", object.Size, object.SHA256)
+		}
 	}
-	logf("result %s POST -> %s", summary.JobResult, resp.Error())
+	// The ship accepts an identical repeat after a lost response. Retry
+	// transport/server failures until the assignment's existing deadline.
+	for {
+		resp, err := d.client.Result(ctx, a.Attempt, summary.JobResult, object)
+		if err == nil && resp.Status < 500 {
+			logf("result %s POST -> %s", summary.JobResult, resp.Error())
+			return
+		}
+		logf("result POST unavailable; retrying: response %d, error %v", resp.Status, err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
 }
