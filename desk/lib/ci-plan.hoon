@@ -33,6 +33,7 @@
       cond=(unit cond:ci)
       matrix=?
       events=(list @t)
+      environment=(unit @t)
   ==
 +$  wire-plan  [oid=@t workflows=(list @t) jobs=(list wire-job)]
 ::
@@ -124,7 +125,15 @@
   =/  cond=(each (unit cond:ci) @t)  (parse-cond fields name)
   ?:  ?=(%| -.cond)  cond
   =/  workflow-name=@t  (fall (string-field fields 'name') '')
-  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events]
+  ::  the job's `environment:` name, for %env-scoped credentials (D4);
+  ::  absent or empty means the job names none
+  ::
+  =/  environment=(unit @t)
+    =/  value=(unit @t)  (string-field fields 'environment')
+    ?~  value  ~
+    ?:  =('' u.value)  ~
+    value
+  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events environment]
 ::
 ::  the compiled condition: absent or null means run; otherwise exactly
 ::  `{"v":1,"kind":"output-eq",job,output,literal}` or
@@ -244,7 +253,7 @@
     |=  =wire-job
     ^-  (unit job:ci)
     ?.  (lien events.wire-job |=(event=@t =('push' event)))  ~
-    `[id.wire-job workflow.wire-job name.wire-job stage.wire-job needs.wire-job cond.wire-job]
+    `[id.wire-job workflow.wire-job name.wire-job stage.wire-job needs.wire-job cond.wire-job environment.wire-job]
   ?~  planned
     [%| 'no push-triggered jobs under .github/workflows']
   [%& planned]

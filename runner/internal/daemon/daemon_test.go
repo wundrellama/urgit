@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -9,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -67,6 +70,9 @@ type fakeShip struct {
 	results  []string
 	abandons []string
 	plans    []string
+	uploads  []string // upload request bodies
+	puts     []string // "<key> <bytes> <x-amz-content-sha256>" the store saw
+	storeURL string   // where the signed PUT points (a fake store); "" refuses uploads
 }
 
 func (s *fakeShip) handler(t *testing.T) http.Handler {
@@ -98,6 +104,23 @@ func (s *fakeShip) handler(t *testing.T) http.Handler {
 		case strings.HasSuffix(r.URL.Path, "/plan"):
 			s.plans = append(s.plans, string(body))
 			w.WriteHeader(200)
+		case strings.HasSuffix(r.URL.Path, "/upload"):
+			s.uploads = append(s.uploads, string(body))
+			if s.storeURL == "" {
+				w.WriteHeader(503)
+				_, _ = w.Write([]byte(`{"error":"ship object storage is not configured; CI cannot be enabled"}`))
+				return
+			}
+			var req struct {
+				Name   string `json:"name"`
+				SHA256 string `json:"sha256"`
+			}
+			_ = json.Unmarshal(body, &req)
+			key := "ci/r/0v1.cand/0v1.att/trusted/" + req.Name
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"url": s.storeURL + "/bucket/" + key, "method": "PUT", "key": key,
+				"headers": map[string]string{"x-amz-content-sha256": req.SHA256, "authorization": "AWS4-HMAC-SHA256 test"},
+			})
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(404)
@@ -124,6 +147,22 @@ jobs:
       - name: gated step
         run: echo "b ran because a said go"
 `
+
+// a store that only records what it is sent, and refuses a PUT without
+// the ship's authorization header
+func (s *fakeShip) store(t *testing.T) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if r.Method != http.MethodPut || r.Header.Get("authorization") == "" {
+			w.WriteHeader(403)
+			return
+		}
+		s.puts = append(s.puts, strings.TrimPrefix(r.URL.Path, "/bucket/")+" "+string(body)+" "+r.Header.Get("x-amz-content-sha256"))
+		w.WriteHeader(200)
+	})
+}
 
 func newTestDaemon(t *testing.T, box *fakeBox, srv *httptest.Server, capacity int) *Daemon {
 	t.Helper()
@@ -182,6 +221,49 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 	// the projection the daemon wrote had one job, no needs, no if
 	// (it was removed with the work dir; the ship's 409 tripwire covers
 	// the live case; the plan package's test covers the bytes)
+}
+
+// the finished stream is uploaded before the result names it (D1/D2):
+// the daemon asks the ship for the PUT, sends the bytes with the ship's
+// headers, and the result carries the size and sha-256 of exactly the
+// saved stream; the key is the ship's, in the attempt's trust class
+func TestJobUploadsLogBeforeResult(t *testing.T) {
+	sh := &fakeShip{}
+	store := httptest.NewServer(sh.store(t))
+	defer store.Close()
+	sh.storeURL = store.URL
+	srv := httptest.NewServer(sh.handler(t))
+	defer srv.Close()
+	stream := `{"job":"fixture-chain/b","jobID":"b","time":"t","msg":"step"}` + "\n" +
+		`{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"
+	box := &fakeBox{stream: stream}
+	d := newTestDaemon(t, box, srv, 1)
+	d.handle(context.Background(), jobAssignment)
+	if len(sh.uploads) != 1 || !strings.Contains(sh.uploads[0], `"name":"log.jsonl"`) {
+		t.Fatalf("uploads=%v", sh.uploads)
+	}
+	sum := sha256.Sum256([]byte(stream))
+	want := "ci/r/0v1.cand/0v1.att/trusted/log.jsonl " + stream + " " + hex.EncodeToString(sum[:])
+	if len(sh.puts) != 1 || sh.puts[0] != want {
+		t.Fatalf("store saw %q, want %q", sh.puts, want)
+	}
+	if len(sh.results) != 1 || !strings.Contains(sh.results[0], `"log":{"size":`+strconv.Itoa(len(stream))+`,"sha256":"`+hex.EncodeToString(sum[:])+`"}`) {
+		t.Fatalf("result must name the uploaded log: %v", sh.results)
+	}
+}
+
+// a store the ship cannot sign for (503) leaves the result without a log;
+// the verdict is still claimed
+func TestJobResultWithoutStore(t *testing.T) {
+	sh := &fakeShip{}
+	srv := httptest.NewServer(sh.handler(t))
+	defer srv.Close()
+	box := &fakeBox{stream: `{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"}
+	d := newTestDaemon(t, box, srv, 1)
+	d.handle(context.Background(), jobAssignment)
+	if len(sh.puts) != 0 || len(sh.results) != 1 || strings.Contains(sh.results[0], `"log"`) {
+		t.Fatalf("puts=%v results=%v", sh.puts, sh.results)
+	}
 }
 
 // act exiting without a jobResult is an abandon, never a result; a

@@ -28,9 +28,19 @@ echo "== |commit %urgit (marker $marker)"
 "$dojo" '|commit %urgit' 300 3 | tail -2
 after_marker() { herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
 # a commit of an unchanged desk prints nothing (no reload, no file lines)
-# and does not re-boot the nuked agent; the revive below covers both cases
-sleep 3
-if after_marker | grep -q 'crud: %into event failed'; then echo "nuke-revive.sh: the commit event failed" >&2; after_marker | grep -v '^/sys' | tail -40 >&2; exit 1; fi
+# and does not re-boot the nuked agent; the revive below covers both cases.
+# the build runs after the prompt returns: wait for its verdict (a failed
+# commit prints `crud: %into event failed` and Clay rolls back; a good one
+# re-boots the nuked agent) for up to two minutes before reading it
+for _ in $(seq 1 60); do
+  if after_marker | grep -q 'crud: %into event failed'; then
+    echo "nuke-revive.sh: the commit event failed (the desk was rolled back)" >&2
+    after_marker | grep -vE '^/sys|^/app/urgit/hoon::|^/lib/|^/sur/' | grep -A30 'nest-fail\|mint-\|find\|bail' | head -40 >&2
+    exit 1
+  fi
+  after_marker | grep -qE "^gall: (reloading|booted|unnuking) %urgit-ci" && break
+  sleep 2
+done
 after_marker | grep -E "^gall: (reloading|booted|unnuking) %urgit|^[:+] /~$SHIP/urgit/" | head -5 || true
 echo "== |revive %urgit"
 "$dojo" '|revive %urgit' 120 4 | tail -3

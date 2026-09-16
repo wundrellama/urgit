@@ -79,6 +79,136 @@
     now
   ==
 ::
+::  a presigned download URL (D2, astra §2): the standard SigV4 query-string
+::  form a browser can follow from a 302 with no headers of its own.  the
+::  canonical request signs the host header alone with an UNSIGNED-PAYLOAD
+::  hash; the store checks X-Amz-Date + X-Amz-Expires against its clock.
+::  the expiry is bounded to fifteen minutes and the trust class is
+::  checked exactly as sign-get checks it.  the existing sign-get and
+::  sign-put arms are not touched; this is additive.
+::
+++  max-presign  ~m15
+::
+++  presign-get
+  |=  $:  =settings
+          requester=trust:ci
+          repo=@t
+          run=@t
+          attempt=@t
+          =trust:ci
+          name=@t
+          expires=@dr
+          now=@da
+      ==
+  ^-  (unit @t)
+  ?~  settings  ~
+  ?.  =(requester trust)  ~
+  ?:  |(=(0 expires) (gth expires max-presign))  ~
+  =/  seconds=@ud  (div expires ~s1)
+  =.  seconds  ?:(=(0 seconds) 1 seconds)
+  =/  credentials  credentials.u.settings
+  =/  configuration  configuration.u.settings
+  =/  host=@t  (endpoint-host:git-storage endpoint.credentials)
+  =/  path=@t
+    (rap 3 ~['/' current-bucket.configuration '/' (object-key repo run attempt trust name)])
+  =/  canonical-uri=@t  (uri-encode:git-storage path)
+  =/  timestamp=@t  (amz-date:git-storage now)
+  =/  date=@t  (date-stamp:git-storage now)
+  =/  scope=@t  (rap 3 ~[date '/' region.configuration '/s3/aws4_request'])
+  =/  credential=@t  (rap 3 ~[access-key-id.credentials '/' scope])
+  ::  the query in canonical order: parameter names sort this way, and
+  ::  every value is encoded with '/' reserved (the credential's scope)
+  ::
+  =/  canonical-query=@t
+    %+  rap  3
+    :~  'X-Amz-Algorithm=AWS4-HMAC-SHA256'
+        '&X-Amz-Credential='  (query-encode credential)
+        '&X-Amz-Date='  timestamp
+        '&X-Amz-Expires='  (crip (a-co:co seconds))
+        '&X-Amz-SignedHeaders=host'
+    ==
+  =/  canonical-request=@t
+    %+  rap  3
+    :~  'GET\0a'  canonical-uri  '\0a'  canonical-query  '\0a'
+        'host:'  host  '\0a\0a'
+        'host\0a'
+        'UNSIGNED-PAYLOAD'
+    ==
+  =/  string-to-sign=@t
+    %+  rap  3
+    :~  'AWS4-HMAC-SHA256\0a'  timestamp  '\0a'  scope  '\0a'
+        (hex-32:git-storage (shay [(met 3 canonical-request) canonical-request]))
+    ==
+  =/  key=@  (signing-key:git-storage secret-access-key.credentials date region.configuration)
+  =/  signature=@t  (hex-32:git-storage (hmac-text:git-storage [32 key] string-to-sign))
+  :-  ~
+  %+  rap  3
+  :~  (endpoint-scheme:git-storage endpoint.credentials)  host  canonical-uri
+      '?'  canonical-query  '&X-Amz-Signature='  signature
+  ==
+::
+::  RFC 3986 encoding for a query value: only the unreserved characters
+::  pass, so a '/' becomes %2F (uri-encode keeps '/' for object paths)
+::
+++  query-encode
+  |=  text=@t
+  ^-  @t
+  =/  input=tape  (trip text)
+  =/  output=tape  ~
+  |-
+  ?~  input  (crip output)
+  =/  char=@tD  i.input
+  =/  unreserved=?
+    ?|  &((gte char 'A') (lte char 'Z'))
+        &((gte char 'a') (lte char 'z'))
+        &((gte char '0') (lte char '9'))
+        =(char '-')  =(char '_')  =(char '.')  =(char '~')
+    ==
+  ?:  unreserved
+    $(input t.input, output (snoc output char))
+  =/  digit=$-(@ud @tD)
+    |=  value=@ud
+    ?:  (lth value 10)  (add '0' value)
+    (add 'A' (sub value 10))
+  $(input t.input, output (weld output ~['%' (digit (div char 16)) (digit (mod char 16))]))
+::
+::  the names an attempt may upload under (D2): the finished act stream,
+::  the step summary, or an artifact with a plain file name.  anything
+::  else is refused before signing.  a plain name is [A-Za-z0-9._-]+ with
+::  no leading dot, so no traversal, no separator and no hidden file.
+::
+++  upload-name-allowed
+  |=  name=@t
+  ^-  ?
+  ?:  =('log.jsonl' name)  %.y
+  ?:  =('summary.md' name)  %.y
+  =/  prefix=@t  'artifact/'
+  ?.  =(prefix (end [3 (met 3 prefix)] name))  %.n
+  =/  rest=tape  (slag (met 3 prefix) (trip name))
+  ?~  rest  %.n
+  ?:  =('.' i.rest)  %.n
+  ?:  (gth (lent rest) 128)  %.n
+  %+  levy  `tape`rest
+  |=  char=@tD
+  ?|  &((gte char 'A') (lte char 'Z'))
+      &((gte char 'a') (lte char 'z'))
+      &((gte char '0') (lte char '9'))
+      =(char '-')  =(char '_')  =(char '.')
+  ==
+::
+::  a sha-256 as the daemon reports it: 64 lowercase hex digits
+::
+++  sha256-text-valid
+  |=  text=@t
+  ^-  ?
+  =/  chars=tape  (trip text)
+  ?.  =(64 (lent chars))  %.n
+  %+  levy  chars
+  |=  char=@tD
+  ?|  &((gte char '0') (lte char '9'))
+      &((gte char 'a') (lte char 'f'))
+  ==
+::
 ::  the ship's %storage settings, read the way %urgit reads them for LFS:
 ::  ~ unless the agent is running and endpoint, both keys, bucket and
 ::  region are all set with the %credentials service.  the liveness read

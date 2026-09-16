@@ -56,6 +56,46 @@
 ?>  =(~ (sign-get:ci-storage ~ %trusted 'erpit' 'run1' 'att1' %trusted 'cache.tar' when))
 ?>  =(~ (sign-get:ci-storage ~ %untrusted 'erpit' 'run1' 'att1' %untrusted 'cache.tar' when))
 ?>  =(~ (sign-put:ci-storage ~ 'erpit' 'run1' 'att1' %trusted 'log.txt' 'text/plain' payload when))
+::  a presigned download URL (D2): the standard query form, in the
+::  attempt's own trust class only, expiring within fifteen minutes; the
+::  credential's scope is encoded with '/' reserved
+::
+=/  presigned=(unit @t)
+  (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m5 when)
+?>  ?=(^ presigned)
+=/  link=tape  (trip u.presigned)
+=/  starts
+  |=  [prefix=tape text=tape]
+  =(prefix (scag (lent prefix) text))
+?>  (starts "https://objects.example/git-data/ci/erpit/run1/att1/trusted/log.jsonl?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=EXAMPLEKEY%2F20260816%2Flocal-1%2Fs3%2Faws4_request&X-Amz-Date=20260816T123456Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=" link)
+?>  =(64 (lent (slag (need (find "Signature=" link)) (slag 10 link))))
+?>  =(~ (find "authorization" link))
+?>  =(~ (presign-get:ci-storage configured %untrusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m5 when))
+?>  =(~ (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %untrusted 'log.jsonl' ~m5 when))
+?>  =(~ (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m16 when))
+?>  =(~ (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~s0 when))
+?>  =(~ (presign-get:ci-storage ~ %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m5 when))
+::  the same signing inputs sign the same URL; a different expiry signs a
+::  different one
+::
+?>  =(presigned (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m5 when))
+?>  !=(presigned (presign-get:ci-storage configured %trusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m4 when))
+::  the upload name fence (D2): the log, the summary, a plain artifact
+::  name; nothing that traverses, hides or leaves the attempt's prefix
+::
+?>  (upload-name-allowed:ci-storage 'log.jsonl')
+?>  (upload-name-allowed:ci-storage 'summary.md')
+?>  (upload-name-allowed:ci-storage 'artifact/build.tar.gz')
+?>  !(upload-name-allowed:ci-storage '../x')
+?>  !(upload-name-allowed:ci-storage 'artifact/../x')
+?>  !(upload-name-allowed:ci-storage 'artifact/a/b')
+?>  !(upload-name-allowed:ci-storage 'artifact/.hidden')
+?>  !(upload-name-allowed:ci-storage 'artifact/')
+?>  !(upload-name-allowed:ci-storage 'log.jsonl.bak')
+?>  !(upload-name-allowed:ci-storage '')
+?>  (sha256-text-valid:ci-storage payload)
+?>  !(sha256-text-valid:ci-storage 'abc')
+?>  !(sha256-text-valid:ci-storage (crip (weld (scag 63 (trip payload)) "G")))
 ::  a defaulted trust class is untrusted
 ::
 ?>  =(%untrusted *trust:ci)

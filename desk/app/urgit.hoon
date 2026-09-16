@@ -8720,11 +8720,14 @@
       ::  ship's own session, or the owner by delegation through the
       ::  write token, since write-authorized admits nothing else
       ::
+      ::  both are writers (write-authorized admitted the push), so the
+      ::  candidate is trusted (D3); a push stages no pull request
+      ::
       =/  actor=[@p via:ci]
         ?:(authenticated.req [our.bowl %session] [owner.u.found %token])
       :*  %pass  /ci/stage/(scot %uv id)
           %agent  [our.bowl %urgit-ci]  %poke  %ci-action
-          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate actor])
+          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate -.actor +.actor %trusted ~])
       ==
     %+  give-simple-payload:app:server  eyre-id
     (receive-payload 'ok' (receive-results commands.u.parsed %.n message.u.gate))

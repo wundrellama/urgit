@@ -26,9 +26,10 @@ type Cond struct {
 
 // JobInfo is what the walk learns about one job that act -l omits.
 type JobInfo struct {
-	Needs  []string
-	Cond   *Cond
-	Matrix bool
+	Needs       []string
+	Cond        *Cond
+	Matrix      bool
+	Environment string // the job's `environment:` name, "" when none
 }
 
 var outputEq = regexp.MustCompile(`^needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\s*==\s*'([^']*)'$`)
@@ -85,6 +86,18 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 			if strategy := mappingValue(job, "strategy"); strategy != nil && strategy.Kind == yaml.MappingNode {
 				if mappingValue(strategy, "matrix") != nil {
 					info.Matrix = true
+				}
+			}
+			// `environment: staging` or `environment: {name: staging, url: …}`;
+			// the ship releases %env-scoped credentials by this name (D4)
+			if env := mappingValue(job, "environment"); env != nil {
+				switch env.Kind {
+				case yaml.ScalarNode:
+					info.Environment = env.Value
+				case yaml.MappingNode:
+					if name := mappingValue(env, "name"); name != nil && name.Kind == yaml.ScalarNode {
+						info.Environment = name.Value
+					}
 				}
 			}
 		}

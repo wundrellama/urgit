@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -163,10 +164,79 @@ func (c *Client) Event(ctx context.Context, attempt string, line []byte) (Respon
 	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/event", line)
 }
 
-// Result claims the jobResult the stream carried.
-func (c *Client) Result(ctx context.Context, attempt, jobResult string) (Response, error) {
-	body, _ := json.Marshal(map[string]string{"job-result": jobResult})
+// ObjectRef names an uploaded object by size and sha-256; the ship
+// derives the key from the attempt, never from the daemon.
+type ObjectRef struct {
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+// Result claims the jobResult the stream carried, naming the uploaded
+// log when there is one (D1).
+func (c *Client) Result(ctx context.Context, attempt, jobResult string, logRef *ObjectRef) (Response, error) {
+	body, _ := json.Marshal(struct {
+		JobResult string     `json:"job-result"`
+		Log       *ObjectRef `json:"log,omitempty"`
+	}{jobResult, logRef})
 	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/result", body)
+}
+
+// Upload is the signed PUT the ship hands back for one of an attempt's
+// objects (D2): the URL and the headers that authorize it.
+type Upload struct {
+	URL     string            `json:"url"`
+	Method  string            `json:"method"`
+	Key     string            `json:"key"`
+	Headers map[string]string `json:"headers"`
+}
+
+// RequestUpload asks the ship for a signed PUT of one object under the
+// attempt's own trust class. The ship refuses names outside its fence.
+func (c *Client) RequestUpload(ctx context.Context, attempt, name, contentType, sha256hex string, size int64) (*Upload, error) {
+	body, _ := json.Marshal(map[string]any{"name": name, "contentType": contentType, "sha256": sha256hex, "size": size})
+	resp, err := c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/upload", body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != http.StatusOK {
+		return nil, fmt.Errorf("upload: %s", resp.Error())
+	}
+	var up Upload
+	if err := json.Unmarshal(resp.Body, &up); err != nil {
+		return nil, fmt.Errorf("upload: %w", err)
+	}
+	if up.URL == "" {
+		return nil, errors.New("upload: ship answered without a url")
+	}
+	return &up, nil
+}
+
+// Put sends the file to the store with the ship's headers, exactly as
+// signed; the store's answer is the daemon's only evidence of success.
+func (c *Client) Put(ctx context.Context, up *Upload, path string, size int64) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, up.URL, f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = size
+	for k, v := range up.Headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("store answered %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
 }
 
 // Abandon tells the ship no result is coming and why (D8).

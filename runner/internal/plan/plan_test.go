@@ -180,3 +180,16 @@ func TestProjectERPit(t *testing.T) {
 		t.Fatal("ProjectionName")
 	}
 }
+
+// a job's environment name is walked in both YAML shapes (D4: %env
+// credentials are released by it) and absent when the job names none
+func TestWalkEnvironment(t *testing.T) {
+	doc := []byte("name: envs\non: [push]\njobs:\n  plain:\n    runs-on: ubuntu-latest\n    steps: []\n  short:\n    runs-on: ubuntu-latest\n    environment: staging\n    steps: []\n  long:\n    runs-on: ubuntu-latest\n    environment:\n      name: production\n      url: https://example\n    steps: []\n")
+	walked, err := Walk(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if walked["plain"].Environment != "" || walked["short"].Environment != "staging" || walked["long"].Environment != "production" {
+		t.Fatalf("%+v", walked)
+	}
+}

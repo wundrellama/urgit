@@ -12,6 +12,15 @@
 ::    records the verdict, and asks %urgit to land a passed candidate.
 ::    the daemon never decides; the operator's %assign remains for re-runs.
 ::
+::    P2 adds trust, storage and the web surface: a candidate's trust class
+::    is decided at staging from its actor and an untrusted one waits for
+::    approval or runs restricted; the daemon uploads each finished act
+::    stream to the ship's object store under a ship-signed PUT and the
+::    ship hands viewers a presigned GET; credentials are stored here and
+::    released per attempt as signed grants; assignments are signed with a
+::    ship-certified CI key; the session-authorized ci/* routes serve the
+::    repository page's CI tab.
+::
 ::    persisted state is state-0 and stays there in this phase.  the open
 ::    long-polls are transient and dropped on every load.
 ::
@@ -28,6 +37,8 @@
 ++  storage-refusal  'ship object storage is not configured; CI cannot be enabled'
 ++  no-tip-refusal  'ref has no tip; push a commit before CI-protecting it'
 ++  linked-refusal  'CI protection is not available for desk-linked repositories in this release'
+::  a viewer's download link lives five minutes (D2: at most fifteen)
+++  log-link-expiry  ~m5
 --
 =|  state-0:ci
 =*  state  -
@@ -151,6 +162,22 @@
         now.bowl
       ==
     ``noun+!>(`(unit @t)`?~(signed ~ `url.u.signed))
+  ::
+      ::  a presigned download URL for an attempt's object, expiring after
+      ::  the given seconds (bounded to fifteen minutes): the same signer
+      ::  the GET attempt/<id>/log route answers with, with the expiry
+      ::  chosen so a row can watch a link expire
+      ::
+      [%x %presign-get @ @ @ @ ~]
+    =/  id=(unit @uv)  (slaw %uv i.t.t.path)
+    =/  =trust:ci
+      ?:(=(%trusted i.t.t.t.path) %trusted %untrusted)
+    =/  name=@t  (decode-segment:hc i.t.t.t.t.path)
+    =/  seconds=(unit @ud)  (slaw %ud i.t.t.t.t.t.path)
+    =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))
+    ?~  found  ``noun+!>(`(unit @t)`~)
+    ?~  seconds  ``noun+!>(`(unit @t)`~)
+    ``noun+!>((presign-log:hc u.found trust name (mul u.seconds ~s1)))
   ==
 ::
 ++  on-agent
@@ -363,7 +390,8 @@
       (emit ~)
     =/  next=candidate:ci
       :*  id  repo.act  ref.act  head.act  base.act
-          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  now.bowl  now.bowl
+          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  trust.act  pull.act
+          now.bowl  now.bowl
       ==
     =.  candidates  (~(put by candidates) id next)
     %-  emit
@@ -379,6 +407,34 @@
     :_  ~
     %+  urgit-poke  /materialize/(scot %uv candidate.act)
     [%materialize-candidate repo.u.found ref.u.found head.u.found base.u.found]
+  ::
+      ::  the repository's policy for untrusted revisions (D3): %approval
+      ::  holds them until a writer approves; %restricted plans and runs
+      ::  them at once with no credentials and no landing
+      ::
+      %set-untrusted-policy
+    =.  policies  (~(put by policies) repo.act policy.act)
+    (emit ~)
+  ::
+      %approve-candidate
+    ~|  'approval arrives with the trust stage'
+    !!
+  ::
+      %rerun-candidate
+    ~|  'rerun arrives with the trust stage'
+    !!
+  ::
+      %set-credential
+    ~|  'credentials arrive with the credential stage'
+    !!
+  ::
+      %delete-credential
+    ~|  'credentials arrive with the credential stage'
+    !!
+  ::
+      %rotate-ci-key
+    ~|  'the signing key arrives with the signing stage'
+    !!
   ::
       %materialize-candidate
     ~|  '%materialize-candidate is a poke on %urgit, not %urgit-ci'
@@ -494,13 +550,16 @@
   =/  attempt-id=attempt-id:ci
     (sham [%ci-attempt candidate daemon kind workflow job now.bowl (lent attempts.found)])
   =/  assignment-id=assignment-id:ci  (sham [%ci-assignment attempt-id])
+  ::  an attempt carries its candidate's trust class (D3): every key it
+  ::  writes and every grant it may receive follow from it
+  ::
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
-        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~
+        trust.found  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  ~  now.bowl  ~
     ==
   =/  =assignment:ci
     :*  assignment-id  candidate  daemon  attempt-id
-        %trusted  kind  workflow  job  deadline  now.bowl  ~
+        trust.found  kind  workflow  job  deadline  now.bowl  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  assignments  (~(put by assignments) assignment-id assignment)
@@ -526,7 +585,7 @@
     (sham [%ci-skip candidate workflow.job id.job now.bowl (lent attempts.found)])
   =/  =attempt:ci
     :*  attempt-id  candidate  0v0  0v0
-        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl
+        trust.found  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  ~  now.bowl  `now.bowl
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -746,7 +805,7 @@
   ?~  candidate.candidate  ~
   :_  ~
   %+  urgit-poke  /land/(scot %uv id.candidate)
-  [%land-candidate id.candidate repo.candidate ref.candidate u.candidate.candidate base.candidate]
+  [%land-candidate id.candidate repo.candidate ref.candidate u.candidate.candidate base.candidate pull.candidate]
 ::
 ::  after an attempt closes: its candidate is settled whatever its status
 ::  (a re-run changes a verdict), then the scheduler runs for everything
@@ -833,7 +892,9 @@
   =/  value=(unit json)  (~(get by p.jon) key)
   ?~  value  `~
   ?.  ?=([%n *] u.value)  ~
-  =/  parsed=(unit @ud)  (slaw %ud p.u.value)
+  ::  a JSON number has no thousands dots: dim, not %ud (dem:ag wants them)
+  ::
+  =/  parsed=(unit @ud)  (rush p.u.value dim:ag)
   ?~  parsed  ~
   `parsed
 ::
@@ -948,8 +1009,52 @@
       ['job-result' ?~(job-result.attempt ~ s+u.job-result.attempt)]
       ['reason' ?~(reason.attempt ~ s+u.reason.attempt)]
       ['projection-name' ?~(projection-name.attempt ~ s+u.projection-name.attempt)]
+      ['trust' s+trust.attempt]
+      ['log' (object-ref-json log.attempt)]
       ['candidate' s+(scot %uv candidate.attempt)]
       ['candidate-status' s+candidate-status]
+  ==
+::
+++  object-ref-json
+  |=  ref=(unit object-ref:ci)
+  ^-  json
+  ?~  ref  ~
+  %-  pairs:enjs:format
+  :~  ['key' s+key.u.ref]
+      ['size' (numb:enjs:format size.u.ref)]
+      ['sha256' s+sha256.u.ref]
+  ==
+::
+::  the object key an attempt's upload lands under: the attempt's own
+::  trust class, never the daemon's choice (D2)
+::
+++  attempt-object-key
+  |=  [=attempt:ci name=@t]
+  ^-  @t
+  %:  object-key:ci-storage
+    (candidate-repo candidate.attempt)
+    (scot %uv candidate.attempt)
+    (scot %uv id.attempt)
+    trust.attempt
+    name
+  ==
+::
+::  a presigned download link for one of an attempt's objects, in the
+::  attempt's own trust class only (D2)
+::
+++  presign-log
+  |=  [=attempt:ci =trust:ci name=@t expires=@dr]
+  ^-  (unit @t)
+  %:  presign-get:ci-storage
+    (read-settings:ci-storage our.bowl now.bowl)
+    trust.attempt
+    (candidate-repo candidate.attempt)
+    (scot %uv candidate.attempt)
+    (scot %uv id.attempt)
+    trust
+    name
+    expires
+    now.bowl
   ==
 ::
 ++  handle-http
@@ -992,6 +1097,14 @@
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-abandon eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %attempt @ %upload ~] site)
+    ?.  =(%'POST' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-upload eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %attempt @ %log ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-log-read eyre-id req i.t.t.t.t.t.site)
   (emit (give-error eyre-id 404 'ci route not found'))
 ::
 ::  enrollment: the token is the credential.  its hash must match a
@@ -1229,7 +1342,12 @@
       (emit (give-error eyre-id 409 'no jobResult event was relayed for this attempt'))
     ?.  =(u.job-result.u.found u.result)
       (emit (give-error eyre-id 409 'job-result does not match the relayed jobResult event'))
-    =.  state  (close-attempt u.found [%job-result u.result])
+    =/  named=(each (unit object-ref:ci) @t)  (result-log u.found u.jon)
+    ?:  ?=(%| -.named)
+      (emit (give-error eyre-id 422 p.named))
+    =/  with-log=attempt:ci  u.found(log p.named)
+    =.  attempts  (~(put by attempts) id.with-log with-log)
+    =.  state  (close-attempt with-log [%job-result u.result])
     =/  closed=out  (after-close candidate.u.found)
     =.  state  state.closed
     =.  polls  polls.closed
@@ -1241,6 +1359,111 @@
     =.  polls  polls.closed
     (emit (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
   (emit (give-error eyre-id 422 'job-result or infrastructure-error is required'))
+::
+::  the log a result names (D1): `log: {size, sha256}` records the handle
+::  of the finished act stream the daemon uploaded under log.jsonl before
+::  it posted the result.  the key is the attempt's own, never the body's;
+::  a result that names no log leaves the attempt without one, and the
+::  verdict stands either way.
+::
+++  result-log
+  |=  [=attempt:ci jon=json]
+  ^-  (each (unit object-ref:ci) @t)
+  ?.  ?=([%o *] jon)  [%& ~]
+  =/  log=(unit json)  (~(get by p.jon) 'log')
+  ?~  log  [%& ~]
+  ?~  u.log  [%& ~]
+  ?.  ?=([%o *] u.log)  [%| 'log must be an object with size and sha256']
+  =/  size=(unit (unit @ud))  (number-at 'size' u.log)
+  =/  sha=(unit @t)  (string-at 'sha256' u.log)
+  ?.  ?&(?=(^ size) ?=(^ u.size))  [%| 'log.size must be a natural number']
+  ?~  sha  [%| 'log.sha256 is required']
+  ?.  (sha256-text-valid:ci-storage u.sha)  [%| 'log.sha256 must be 64 hex digits']
+  [%& `[(attempt-object-key attempt 'log.jsonl') u.u.size u.sha]]
+::
+::  the daemon asks for an upload (D2): a header-authorized SigV4 PUT into
+::  the attempt's own trust namespace, for one of the names the fence
+::  allows, with the payload hash the daemon computed.  the ship never
+::  sees the bytes.  an attempt that is no longer running has nothing to
+::  upload; a store that is not configured cannot be uploaded to.
+::
+++  handle-upload
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  =/  attempt-id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit attempt:ci)  ?~(attempt-id ~ (~(get by attempts) u.attempt-id))
+  ?~  found
+    (emit (give-error eyre-id 404 'no such attempt'))
+  ?.  (attempt-authorized req u.found)
+    (emit (give-error eyre-id 401 'attempt authentication required'))
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon
+    (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  name=(unit @t)  (string-at 'name' u.jon)
+  ?~  name
+    (emit (give-error eyre-id 400 'name is required'))
+  ?.  (upload-name-allowed:ci-storage u.name)
+    (emit (give-error eyre-id 400 'name must be log.jsonl, summary.md or artifact/<file>'))
+  =/  content-type=@t  (fall (string-at 'contentType' u.jon) 'application/octet-stream')
+  =/  sha=(unit @t)  (string-at 'sha256' u.jon)
+  ?~  sha
+    (emit (give-error eyre-id 400 'sha256 is required'))
+  ?.  (sha256-text-valid:ci-storage u.sha)
+    (emit (give-error eyre-id 400 'sha256 must be 64 hex digits'))
+  =/  size=(unit (unit @ud))  (number-at 'size' u.jon)
+  ?.  ?&(?=(^ size) ?=(^ u.size))
+    (emit (give-error eyre-id 400 'size must be a natural number'))
+  ?.  =(%running status.u.found)
+    (emit (give-error eyre-id 409 'attempt is closed'))
+  =/  signed=(unit signed-request:git-storage)
+    %:  sign-put:ci-storage
+      (read-settings:ci-storage our.bowl now.bowl)
+      (candidate-repo candidate.u.found)
+      (scot %uv candidate.u.found)
+      (scot %uv id.u.found)
+      trust.u.found
+      u.name
+      content-type
+      u.sha
+      now.bowl
+    ==
+  ?~  signed
+    (emit (give-error eyre-id 503 storage-refusal))
+  =.  daemons  (touch-daemon daemon.u.found)
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['url' s+url.u.signed]
+      ['method' s+'PUT']
+      ['key' s+(attempt-object-key u.found u.name)]
+      ['trust' s+trust.u.found]
+      :-  'headers'
+      %-  pairs:enjs:format
+      (turn headers.u.signed |=([k=@t v=@t] [k s+v]))
+  ==
+::
+::  a viewer reads an attempt's log (D2): a 302 to a presigned GET the
+::  browser follows with no headers of its own, in the attempt's own
+::  trust class; 404 while no result has named a log.  the ship session
+::  is the authorization; a daemon bearer is not a viewer.
+::
+++  handle-log-read
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  ?.  authenticated.req
+    (emit (give-error eyre-id 401 'session required'))
+  =/  attempt-id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit attempt:ci)  ?~(attempt-id ~ (~(get by attempts) u.attempt-id))
+  ?~  found
+    (emit (give-error eyre-id 404 'no such attempt'))
+  ?~  log.u.found
+    (emit (give-error eyre-id 404 'attempt has no log'))
+  =/  url=(unit @t)  (presign-log u.found trust.u.found 'log.jsonl' log-link-expiry)
+  ?~  url
+    (emit (give-error eyre-id 503 storage-refusal))
+  %-  emit
+  %+  give-simple-payload:app:server  eyre-id
+  [[302 ~[['location' u.url] ['cache-control' 'no-store']]] ~]
 ::
 ::  the daemon could not finish: act exited without a jobResult, the
 ::  sandbox failed, or teardown failed (D8).  the attempt closes as an

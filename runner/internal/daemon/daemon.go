@@ -6,6 +6,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -363,14 +365,15 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		return
 	}
 	type wireJob struct {
-		ID       string     `json:"id"`
-		Workflow string     `json:"workflow"`
-		Name     string     `json:"name"`
-		Stage    int        `json:"stage"`
-		Needs    []string   `json:"needs"`
-		Cond     *plan.Cond `json:"cond"`
-		Matrix   bool       `json:"matrix"`
-		Events   []string   `json:"events"`
+		ID          string     `json:"id"`
+		Workflow    string     `json:"workflow"`
+		Name        string     `json:"name"`
+		Stage       int        `json:"stage"`
+		Needs       []string   `json:"needs"`
+		Cond        *plan.Cond `json:"cond"`
+		Matrix      bool       `json:"matrix"`
+		Events      []string   `json:"events"`
+		Environment string     `json:"environment,omitempty"`
 	}
 	body := struct {
 		OID       string    `json:"oid"`
@@ -409,7 +412,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			}
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
-				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events,
+				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
 			})
 		}
 		logf("act -l %s: %d job(s)", file, len(listed))
@@ -521,7 +524,8 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, "act start: "+err.Error(), logf)
 		return
 	}
-	streamLog, _ := os.Create(filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl"))
+	streamPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
+	streamLog, _ := os.Create(streamPath)
 	tee := io.TeeReader(stream, streamLog)
 	summary, relayErr := relay.Relay(ctx, tee, func(ctx context.Context, line []byte) (int, []byte, error) {
 		resp, err := d.client.Event(ctx, a.Attempt, line)
@@ -542,10 +546,51 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, fmt.Sprintf("act exited %d without a jobResult", code), logf)
 		return
 	}
-	resp, err := d.client.Result(ctx, a.Attempt, summary.JobResult)
+	// the finished stream goes to the store before the result names it
+	// (D1): the ship signs the PUT, the daemon sends the bytes, and the
+	// result carries the size and hash. an upload that fails leaves the
+	// result without a log; the verdict is the stream's, not the store's.
+	logRef := d.uploadLog(ctx, a, streamPath, logf)
+	resp, err := d.client.Result(ctx, a.Attempt, summary.JobResult, logRef)
 	if err != nil {
 		logf("result POST failed: %v", err)
 		return
 	}
 	logf("result %s POST -> %s", summary.JobResult, resp.Error())
+}
+
+// uploadLog puts the saved act stream in the store under the attempt's
+// log.jsonl and returns its handle, or nil with the reason logged.
+func (d *Daemon) uploadLog(ctx context.Context, a *ship.Assignment, path string, logf func(string, ...any)) *ship.ObjectRef {
+	size, sum, err := fileDigest(path)
+	if err != nil {
+		logf("log upload skipped: %v", err)
+		return nil
+	}
+	up, err := d.client.RequestUpload(ctx, a.Attempt, "log.jsonl", "application/x-ndjson", sum, size)
+	if err != nil {
+		logf("log upload refused: %v", err)
+		return nil
+	}
+	if err := d.client.Put(ctx, up, path, size); err != nil {
+		logf("log upload to %s failed: %v", up.Key, err)
+		return nil
+	}
+	logf("log uploaded: %s (%d bytes, sha256 %s)", up.Key, size, sum)
+	return &ship.ObjectRef{Size: size, SHA256: sum}
+}
+
+// fileDigest is the size and lowercase hex sha-256 of a file.
+func fileDigest(path string) (int64, string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return 0, "", err
+	}
+	return n, hex.EncodeToString(h.Sum(nil)), nil
 }
