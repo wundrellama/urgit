@@ -51,6 +51,7 @@ type Assignment struct {
 	Head            string                       `json:"head"`
 	Base            string                       `json:"base"`
 	Trust           string                       `json:"trust"`
+	ScratchRef      string                       `json:"scratch-ref"`
 	Kind            string                       `json:"kind"`
 	Workflow        string                       `json:"workflow"`
 	Job             string                       `json:"job"`

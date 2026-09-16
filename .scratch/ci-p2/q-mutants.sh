@@ -37,6 +37,18 @@ edits = [
  ("Q4", "desk/lib/ci-storage.hoon",
   "  ?:  =('log.jsonl' name)  %.y\n  ?:  =('summary.md' name)  %.y\n",
   "  ?:  =('log.jsonl' name)  %.y\n  ?:  %.y  %.y\n"),
+ ("Q5a", "desk/app/urgit.hoon",
+  "    ?:  p.ci-protected\n      =/  =trust:ci\n",
+  "    ?:  %.n\n      =/  =trust:ci\n"),
+ ("Q5", "desk/app/urgit-ci.hoon",
+  "          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  trust.act  pull.act\n",
+  "          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  %trusted  pull.act\n"),
+ ("Q6", "desk/app/urgit-ci.hoon",
+  "  ?&  =(%passed status.c)\n      =(%trusted trust.c)\n      ?=(^ candidate.c)\n",
+  "  ?&  =(%passed status.c)\n      %.y\n      ?=(^ candidate.c)\n"),
+ ("Q8", "desk/app/urgit-ci.hoon",
+  "    ?.  =(actor.act our.bowl)\n      ~|  'only a writer can approve a candidate'\n",
+  "    ?.  %.y\n      ~|  'only a writer can approve a candidate'\n"),
 ]
 texts = {}
 for row, path, old, new in edits:
@@ -61,6 +73,10 @@ PY
   tripwire)
     case "${2:-}" in
       Q4)  echo "upload name=../x -> 400: FAIL (observed: 200" ;;
+      Q5a) echo "merge of a PR to the CI-protected branch -> 202: FAIL (observed: 200" ;;
+      Q5)  echo "candidate is %untrusted: FAIL (observed: %trusted" ;;
+      Q6)  echo "master unmoved (restricted check cannot land): FAIL (observed:" ;;
+      Q8)  echo "approval by ~sampel-palnet refused: FAIL (observed: accepted (>=)" ;;
       *) echo "q-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

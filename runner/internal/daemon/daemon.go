@@ -232,8 +232,8 @@ func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
 	logf := func(format string, args ...any) {
 		d.log.Printf("[%s %s] "+format, append([]any{a.Kind, a.Attempt}, args...)...)
 	}
-	logf("assignment %s: candidate %s repo %s ref %s oid %s deadline %ds workflow %q job %q",
-		a.ID, a.Candidate, a.Repo, a.Ref, a.OID, a.DeadlineSeconds, a.Workflow, a.Job)
+	logf("assignment %s: candidate %s repo %s ref %s oid %s trust %s deadline %ds workflow %q job %q",
+		a.ID, a.Candidate, a.Repo, a.Ref, a.OID, a.Trust, a.DeadlineSeconds, a.Workflow, a.Job)
 	deadline := time.Duration(a.DeadlineSeconds) * time.Second
 	if deadline <= 0 {
 		deadline = time.Hour
@@ -333,9 +333,15 @@ func (d *Daemon) gitCheckout(ctx context.Context, a *ship.Assignment, dir string
 	if branch == "" || branch == a.Ref {
 		branch = "ci-candidate"
 	}
+	// the ship names the scratch ref (every candidate of one head and
+	// base shares it); an older ship names it after the candidate
+	scratch := a.ScratchRef
+	if scratch == "" {
+		scratch = "refs/ci/candidate/" + a.Candidate
+	}
 	steps := [][]string{
 		{"git", "clone", "--quiet", "--no-checkout", url, dir},
-		{"git", "-C", dir, "fetch", "--quiet", "origin", "refs/ci/candidate/" + a.Candidate},
+		{"git", "-C", dir, "fetch", "--quiet", "origin", scratch},
 		{"git", "-C", dir, "checkout", "--quiet", "-B", branch, a.OID},
 	}
 	for _, argv := range steps {

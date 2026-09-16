@@ -46,3 +46,13 @@ daemon_stream() { echo "$RUNNER_HOME/${2:-a}/work/$1.act.jsonl"; }
 sha_of() { sha256sum "$1" | cut -d' ' -f1; }
 # wait_log <aid> <seconds>: until the attempt has a log handle
 wait_log() { local l; for _ in $(seq 1 "$2"); do l=$(att_log "$1"); case "$l" in "[~ "*) echo "$l"; return 0;; esac; sleep 1; done; echo "$l"; return 1; }
+# cand_object_hex <cid>: the materialized object's 40-hex oid (the dojo
+# prints @ux with dots and without leading zeros)
+cand_object_hex() {
+  local o; o=$(cand_object "$1" | sed 's/^\[~ //; s/\]$//; s/^0x//; s/\.//g')
+  [ -n "$o" ] && printf '%040s' "$o" | tr ' ' 0
+}
+cand_head_hex() {
+  local o; o=$(dojo_value "head:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | one '^0x[0-9a-f.]+$' | sed 's/^0x//; s/\.//g')
+  [ -n "$o" ] && printf '%040s' "$o" | tr ' ' 0
+}

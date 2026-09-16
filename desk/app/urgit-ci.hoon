@@ -122,6 +122,11 @@
     ``noun+!>((~(has in ci-protected) [repo ref]))
   ::
       [%x %polls ~]        ``noun+!>(polls)
+      [%x %policies ~]     ``noun+!>(policies)
+  ::
+      [%x %policy @ ~]
+    =/  repo=@t  (decode-segment:hc i.t.t.path)
+    ``noun+!>(`untrusted-policy:ci`(~(gut by policies) repo %approval))
       [%x %candidates ~]   ``noun+!>(candidates)
       [%x %daemons ~]      ``noun+!>(daemons)
       [%x %assignments ~]  ``noun+!>(assignments)
@@ -244,10 +249,21 @@
   ^-  card
   [%pass /eyre/connect %arvo %e %connect [~ /apps/urgit/api/ci] %urgit-ci]
 ::
+::  a trusted candidate's id is the one %urgit prints in the push answer
+::  and names the scratch ref by; an untrusted twin of the same head and
+::  base has its own id, so approval can re-stage the head as trusted
+::  beside it (D3); a rerun is a fresh id for the same head and base
+::
 ++  candidate-id
+  |=  [repo=@t ref=@t head=oid:git base=oid:git =trust:ci]
+  ^-  candidate-id:ci
+  ?:  =(%trusted trust)  (sham [repo ref head base])
+  (sham [repo ref head base %untrusted])
+::
+++  rerun-id
   |=  [repo=@t ref=@t head=oid:git base=oid:git]
   ^-  candidate-id:ci
-  (sham [repo ref head base])
+  (sham [repo ref head base %rerun now.bowl])
 ::
 ++  candidate-repo
   |=  id=candidate-id:ci
@@ -255,10 +271,46 @@
   =/  found=(unit candidate:ci)  (~(get by candidates) id)
   ?~(found '' repo.u.found)
 ::
+::  %urgit names the scratch ref by the head and base alone, so every
+::  candidate of one head and base shares it: the twin's materialization
+::  re-sets what the first one's close released
+::
 ++  scratch-ref
-  |=  id=candidate-id:ci
+  |=  =candidate:ci
   ^-  @t
-  (rap 3 ~['refs/ci/candidate/' (scot %uv id)])
+  (rap 3 ~['refs/ci/candidate/' (scot %uv (sham [repo ref head base]:candidate))])
+::
+::  every candidate staged for this head and base that %urgit has not
+::  materialized yet: %candidate-ready and %candidate-conflict name the
+::  head and base, not an id
+::
+++  staged-for
+  |=  [repo=@t ref=@t head=oid:git base=oid:git]
+  ^-  (list candidate:ci)
+  %+  skim  ~(val by candidates)
+  |=  c=candidate:ci
+  ?&  =(repo repo.c)  =(ref ref.c)  =(head head.c)  =(base base.c)
+      ?=(~ candidate.c)
+  ==
+::
+::  the repository's policy for untrusted revisions: approval unless set
+::
+++  restricted
+  |=  repo=@t
+  ^-  ?
+  =(%restricted (~(gut by policies) repo %approval))
+::
+::  what may land (D3): a passed, materialized, TRUSTED candidate.  the
+::  eligibility scry and the settle's landing request both read this one
+::  arm, so a restricted check can never advance a ref from either side.
+::
+++  landable
+  |=  c=candidate:ci
+  ^-  ?
+  ?&  =(%passed status.c)
+      =(%trusted trust.c)
+      ?=(^ candidate.c)
+  ==
 ::
 ::  scry segments carry repository names and refs as (scot %t ...) so a
 ::  ref with slashes fits one path segment; a raw segment is taken as-is
@@ -289,7 +341,7 @@
   |=  [* c=candidate:ci]
   ?&  =(repo repo.c)
       =(ref ref.c)
-      =(%passed status.c)
+      (landable c)
       ?=(^ candidate.c)
       =(u.oid u.candidate.c)
   ==
@@ -383,11 +435,16 @@
       ::  against the same base is the same candidate and keeps its record
       ::
       %stage-candidate
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
+    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act trust.act)
     =/  existing=(unit candidate:ci)  (~(get by candidates) id)
     ?^  existing
       =.  candidates  (~(put by candidates) id u.existing(updated now.bowl))
       (emit ~)
+    ::  the trust class is %urgit's finding about the actor (D3); an
+    ::  untrusted candidate is materialized like any other but is planned
+    ::  only once its repository runs restricted checks or a writer
+    ::  approves it
+    ::
     =/  next=candidate:ci
       :*  id  repo.act  ref.act  head.act  base.act
           ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  trust.act  pull.act
@@ -414,15 +471,74 @@
       ::
       %set-untrusted-policy
     =.  policies  (~(put by policies) repo.act policy.act)
-    (emit ~)
+    ::  a repository opening restricted checks has untrusted candidates
+    ::  waiting: they are schedulable now
+    ::
+    schedule
   ::
+      ::  a writer approves an untrusted candidate (D3): the same head and
+      ::  base are staged again as a trusted candidate with its own id,
+      ::  and the untrusted one is superseded.  only this ship's owner can
+      ::  reach this poke, and the owner writes every repository it holds,
+      ::  so a writer is this ship: any other actor is refused.
+      ::
       %approve-candidate
-    ~|  'approval arrives with the trust stage'
-    !!
+    =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
+    ?~  found  ~|('no such candidate' !!)
+    ?.  =(actor.act our.bowl)
+      ~|  'only a writer can approve a candidate'
+      !!
+    ?.  =(%untrusted trust.u.found)
+      ~|  'candidate is already trusted'
+      !!
+    ?:  =(%skipped status.u.found)
+      ~|  'candidate was already superseded'
+      !!
+    =/  old=candidate:ci  u.found
+    =.  candidates
+      %+  ~(put by candidates)  id.old
+      %=  old
+        status          %skipped
+        verdict-reason  `'superseded by approval'
+        updated         now.bowl
+      ==
+    =/  release=card
+      (urgit-git-poke /release/(scot %uv id.old) [%delete-ref repo.old (scratch-ref old)])
+    =/  twin-id=candidate-id:ci  (candidate-id repo.old ref.old head.old base.old %trusted)
+    =/  twin=(unit candidate:ci)  (~(get by candidates) twin-id)
+    ?^  twin
+      =.  candidates  (~(put by candidates) twin-id u.twin(updated now.bowl))
+      (emit ~[release])
+    =/  next=candidate:ci
+      :*  twin-id  repo.old  ref.old  head.old  base.old
+          ~  %.n  %pending  ~  ~  ~  ~  actor.act  %session  %trusted  pull.old
+          now.bowl  now.bowl
+      ==
+    =.  candidates  (~(put by candidates) twin-id next)
+    %-  emit
+    :~  release
+        %+  urgit-poke  /materialize/(scot %uv twin-id)
+        [%materialize-candidate repo.old ref.old head.old base.old]
+    ==
   ::
+      ::  a rerun stages the same head and base as a new candidate of the
+      ::  same trust class; every job runs again from a fresh plan
+      ::
       %rerun-candidate
-    ~|  'rerun arrives with the trust stage'
-    !!
+    =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
+    ?~  found  ~|('no such candidate' !!)
+    =/  old=candidate:ci  u.found
+    =/  new-id=candidate-id:ci  (rerun-id repo.old ref.old head.old base.old)
+    =/  next=candidate:ci
+      :*  new-id  repo.old  ref.old  head.old  base.old
+          ~  %.n  %pending  ~  ~  ~  ~  actor.old  via.old  trust.old  pull.old
+          now.bowl  now.bowl
+      ==
+    =.  candidates  (~(put by candidates) new-id next)
+    %-  emit
+    :_  ~
+    %+  urgit-poke  /materialize/(scot %uv new-id)
+    [%materialize-candidate repo.old ref.old head.old base.old]
   ::
       %set-credential
     ~|  'credentials arrive with the credential stage'
@@ -449,26 +565,25 @@
       ::  a ready candidate is planned at once (D4).
       ::
       %candidate-ready
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
-    =/  found=(unit candidate:ci)  (~(get by candidates) id)
-    ?~  found  (emit ~)
-    ?^  candidate.u.found  (emit ~)
-    =/  next=candidate:ci
-      u.found(candidate `candidate.act, conflict %.n, updated now.bowl)
-    =.  candidates  (~(put by candidates) id next)
+    =/  waiting=(list candidate:ci)  (staged-for repo.act ref.act head.act base.act)
+    ?~  waiting  (emit ~)
+    =.  candidates
+      %+  roll  `(list candidate:ci)`waiting
+      |=  [c=candidate:ci acc=_candidates]
+      (~(put by acc) id.c c(candidate `candidate.act, conflict %.n, updated now.bowl))
     schedule
   ::
       ::  a head that cannot be merged onto its base cannot be tested: the
       ::  candidate fails with the reason rather than waiting forever
       ::
       %candidate-conflict
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
-    =/  found=(unit candidate:ci)  (~(get by candidates) id)
-    ?~  found  (emit ~)
-    ?^  candidate.u.found  (emit ~)
+    =/  waiting=(list candidate:ci)  (staged-for repo.act ref.act head.act base.act)
+    ?~  waiting  (emit ~)
     =.  candidates
-      %+  ~(put by candidates)  id
-      %=  u.found
+      %+  roll  `(list candidate:ci)`waiting
+      |=  [c=candidate:ci acc=_candidates]
+      %+  ~(put by acc)  id.c
+      %=  c
         conflict        %.y
         status          %failed
         verdict-reason  `'candidate could not be materialized: the source conflicts with the destination'
@@ -512,7 +627,7 @@
     ::
     =/  restore=card
       %+  urgit-git-poke  /scratch/(scot %uv candidate.act)
-      [%set-ref repo.u.found (scratch-ref candidate.act) u.candidate.u.found]
+      [%set-ref repo.u.found (scratch-ref u.found) u.candidate.u.found]
     (emit [restore timer.made cards.delivered])
   ::
       %landed
@@ -654,10 +769,17 @@
 ::
 ++  schedule
   ^-  out
+  ::  an untrusted candidate is planned only where the repository runs
+  ::  restricted checks (D3); under the approval policy it waits
+  ::
   =/  pending=(list candidate:ci)
     %+  skim  ~(val by candidates)
     |=  =candidate:ci
-    ?&(=(%pending status.candidate) ?=(^ candidate.candidate) !conflict.candidate)
+    ?&  =(%pending status.candidate)
+        ?=(^ candidate.candidate)
+        !conflict.candidate
+        ?|(=(%trusted trust.candidate) (restricted repo.candidate))
+    ==
   =|  cards=(list card)
   =|  touched=(set daemon-id:ci)
   |-
@@ -757,6 +879,9 @@
   ^-  out
   =/  found=(unit candidate:ci)  (~(get by candidates) id)
   ?~  found  (emit ~)
+  ::  a superseded candidate keeps its verdict whatever its attempts do
+  ::
+  ?:  =(%skipped status.u.found)  (emit ~)
   =/  before=candidate-status:ci  status.u.found
   =.  state
     ?~  plan.u.found  state
@@ -785,18 +910,25 @@
       %running               [%pending ~]
       %infrastructure-error  [%unknown reason.u.newest]
     ==
+  ::  a restricted check that passes is a verdict, never a landing: the
+  ::  reason says so, and only approval runs the head as trusted (D3)
+  ::
+  =/  reason=(unit @t)
+    ?:  ?&(=(%passed status.verdict) =(%untrusted trust.candidate))
+      `'passed as a restricted check: an untrusted candidate cannot land; approve it to run trusted'
+    reason.verdict
   =/  next=candidate:ci
     %=  candidate
       status          status.verdict
-      verdict-reason  ?:(=(before status.verdict) verdict-reason.candidate reason.verdict)
+      verdict-reason  ?:(=(before status.verdict) verdict-reason.candidate reason)
       updated         now.bowl
     ==
   =.  candidates  (~(put by candidates) id next)
   ?:  =(before status.verdict)  (emit ~)
   ?:  =(%pending status.verdict)  (emit ~)
   =/  release=card
-    (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.next (scratch-ref id)])
-  ?.  =(%passed status.verdict)  (emit ~[release])
+    (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.next (scratch-ref next)])
+  ?.  (landable next)  (emit ~[release])
   (emit (snoc (land-cards next) release))
 ::
 ++  land-cards
@@ -985,6 +1117,7 @@
       ['head' s+(oid-text:git-codec head.candidate)]
       ['base' s+(oid-text:git-codec base.candidate)]
       ['trust' s+trust.assignment]
+      ['scratch-ref' s+(scratch-ref candidate)]
       ['kind' s+kind.assignment]
       ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
       ['job' ?~(job.assignment ~ s+u.job.assignment)]

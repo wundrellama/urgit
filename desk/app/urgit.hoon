@@ -2293,7 +2293,7 @@
       (materialize-candidate repo.act ref.act head.act base.act)
     ::
         %land-candidate
-      (land-candidate id.act repo.act ref.act candidate.act expected.act)
+      (land-candidate id.act repo.act ref.act candidate.act expected.act pull.act)
     ==
   ::
       %handle-http-request
@@ -7438,6 +7438,50 @@
     ?~  current
       :_  this
       (api-error eyre-id 409 'destination branch has no head')
+    ::  the CI gate (D3a): a CI-protected target is never written here.
+    ::  the pull's head is staged as a candidate against the current tip
+    ::  with the pull's author as the actor, trusted when that ship can
+    ::  write this repository, and the pull stays open until the
+    ::  candidate lands (land-candidate flips it).  %urgit-ci is read as
+    ::  ci-gate-error reads it: liveness first, then membership, both
+    ::  under mule; an unreadable answer refuses, protected or not, as
+    ::  the push path does.
+    ::
+    =/  ci-prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+    =/  ci-live=(each ? tang)
+      %-  mule  |.
+      .^(? %gu (weld ci-prefix /$))
+    ?.  ?&(?=(%& -.ci-live) p.ci-live)
+      :_  this
+      (api-error eyre-id 503 'ci: %urgit-ci is not running; protected-ref writes are refused until it is')
+    =/  ci-protected=(each ? tang)
+      %-  mule  |.
+      ;;(? .^(* %gx (weld ci-prefix /ci-protected/(scot %t name)/(scot %t target-ref.pull)/noun)))
+    ?.  ?=(%& -.ci-protected)
+      :_  this
+      (api-error eyre-id 503 'ci: protection could not be read; the merge is refused')
+    ?:  p.ci-protected
+      =/  =trust:ci
+        ?:((repository-writable u.found source-ship.pull) %trusted %untrusted)
+      ::  the id %urgit-ci will give the candidate (its rule: the trusted
+      ::  id is the head and base alone, the untrusted one adds the class)
+      ::
+      =/  id=@uv
+        ?:  =(%trusted trust)  (sham [name target-ref.pull head.pull u.current])
+        (sham [name target-ref.pull head.pull u.current %untrusted])
+      :_  this
+      :-  :*  %pass  /ci/stage/(scot %uv id)
+              %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+              !>(`action:ci`[%stage-candidate name target-ref.pull head.pull u.current source-ship.pull %session trust `number.pull])
+          ==
+      %^  api-json  eyre-id  202
+      %-  pairs:enjs:format
+      :~  ['ok' b+%.y]
+          ['staged' b+%.y]
+          ['candidate' s+(scot %uv id)]
+          ['trust' s+trust]
+          ['actor' s+(scot %p source-ship.pull)]
+      ==
     =/  incoming-reachable=(unit (set oid:git))
       (reachable:git-graph objects.u.found (silt ~[head.pull]))
     =/  current-reachable=(unit (set oid:git))
@@ -8049,7 +8093,7 @@
 ::  receive path writes the ref asynchronously, not in one event.
 ::
 ++  land-candidate
-  |=  [id=@uv repo-name=@t ref=@t candidate=oid:git expected=oid:git]
+  |=  [id=@uv repo-name=@t ref=@t candidate=oid:git expected=oid:git pull=(unit @ud)]
   ^-  (quip card _this)
   =/  refuse
     |=  reason=@t
@@ -8076,7 +8120,18 @@
   =/  commands=(list receive-command:git)  ~[[`expected `candidate ref]]
   =/  applied=(unit repository:git)  (apply-receive u.found commands ~)
   ?~  applied  (refuse 'candidate object is missing from the store')
-  =^  cards  this  (accept-receive ~ repo-name commands u.applied ~)
+  ::  a candidate the web merge staged for a pull request lands that
+  ::  pull (D3a): it reads merged only now, never at the click
+  ::
+  =/  landed=repository:git
+    ?~  pull  u.applied
+    %=  u.applied
+        native-pulls
+      %+  turn  native-pulls.u.applied
+      |=  p=native-pull:git
+      ?:  ?&(=(number.p u.pull) =(%open state.p))  p(state %merged)  p
+    ==
+  =^  cards  this  (accept-receive ~ repo-name commands landed ~)
   :_  this
   %+  snoc  cards
   [%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%landed id])]
