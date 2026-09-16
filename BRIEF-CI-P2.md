@@ -326,3 +326,22 @@ would do under each answer. Commit it and stop. A box is a successful outcome; t
 operator rules them. Expected boxes: the ed25519 arm names on the pinned pill; whether
 `%urgit`'s PR path stages at all today; act's `--secret` masking behavior on multi-line
 values. Do not guess past any of them.
+
+
+## Launch footer — astra
+
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-astra`, branch `ci/p2-astra`, base `master` at `36fcda9`.
+- Ship `~lup`, HTTP port `8352`, pier `/var/home/michael/piers/urgit-ci-p2-lup` (must not exist
+  before your first boot). Rootless Docker state dir `/run/user/1000/ci-p2-astra/`, data root
+  `<worktree>/.scratch/tmp/docker-data`. Boot inside a herdr pane you split from your own, after
+  the shell prompt: `/var/home/michael/workspace/urbit/bin/urbit -F lup -B
+  /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port 8352 -c
+  /var/home/michael/piers/urgit-ci-p2-lup`. Rewrite `SHIP/PORT/PIER` in `.scratch/ci-p0/env.sh`
+  and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` to these values as your first commit.
+- Do NOT boot `~zod ~nec ~bud ~wes ~bel ~bus ~syt ~dur ~wep ~ser ~ryx ~wyd ~tem ~mul ~dev ~sev
+  ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chair's `~dep`.
+- ERPit workload: clone `/var/home/michael/workspace/urbit/erpit` (read-only source) into your
+  fixture repo as P1's harness does; never push to it.
+- `act` 0.2.89 via `.scratch/ci-p1/act-static.sh`, `go` 1.27, `zig` 0.15.2 on PATH
+  (`/home/linuxbrew/.linuxbrew/bin`). Upstream urbit source for zuse/lull/ames/jael citations:
+  `/var/home/michael/workspace/urbit/urbit/pkg/arvo/sys/` (read-only).
