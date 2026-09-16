@@ -9,8 +9,12 @@ source "$TMP/oids.env"
 api="$HERE/api.sh"
 dojo="$HERE/dojo.sh"
 echo "== mint"
-"$dojo" ':urgit-ci|mint-enroll-token' 60 6 | tee "$TMP/h6-mint.txt" | tail -4
-TOKEN=$(grep -o 'ci-enroll-token 0v[0-9a-v.]*' "$TMP/h6-mint.txt" | tail -1 | sed 's/.* //')
+# the generator's ~& prints `[%ci-enroll-token 0v…]` before the echoed
+# command, pretty-printed over three lines when the pane is narrow: read
+# 30 lines and take the last token after a `ci-enroll-token` line
+"$dojo" ':urgit-ci|mint-enroll-token' 60 30 | tee "$TMP/h6-mint.txt" | tail -4
+TOKEN=$(awk '/ci-enroll-token/ { f = 1 } f && match($0, /0v[0-9a-v.]+/) { t = substr($0, RSTART, RLENGTH); f = 0 } END { printf "%s", t }' "$TMP/h6-mint.txt")
+[ -n "$TOKEN" ] || { echo "h6.sh: no token in the dojo's output" >&2; exit 1; }
 echo "TOKEN=$TOKEN"
 echo "== enroll (no session, token only)"
 ENROLL=$("$api" POST /ci/daemon/enroll "{\"token\":\"$TOKEN\"}" -)

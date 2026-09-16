@@ -39,12 +39,32 @@ if herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { f 
 fi
 ( cd "$ROOT/runner" && CGO_ENABLED=0 go build -o urgit-runner ./cmd/urgit-runner ) || exit 1
 echo "== build under test: $("$P1/mutants.sh" status | tail -1); rows must $want"
-# a fresh enrollment for this phase (the previous phase's P14 wiped the
-# ship's daemons; the CI-protected set went with it)
+# daemon a for this phase at capacity 1. It keeps its identity when the
+# ship still knows it: a re-enrollment leaves the old record as a ghost
+# that wins the oldest-enrolled tie for ~m5 and swallows the first plan
+# (the author's D6 deviation; met again when the red phase followed P20
+# within 20 s and P7's push went to the stopped daemon's record, whose
+# plan the P11 mutant then closed %success at its deadline). Only when
+# the state is gone (the previous phase's P14 wiped the ship's daemons)
+# does the restarted daemon exit `enrollment lost`, and then it enrolls
+# afresh with no ghost to meet.
 "$P1/runner.sh" stop a >/dev/null 2>&1
-rm -rf "$RUNNER_HOME/a"
-TOKEN=$("$P1/mint.sh")
-"$P1/runner.sh" start a 1 "$TOKEN" | head -1
+fresh=yes
+if [ -f "$RUNNER_HOME/a/state.json" ]; then
+  "$P1/runner.sh" config a 1 >/dev/null
+  "$P1/runner.sh" start a | head -1
+  sleep 3
+  if [ "$("$P1/runner.sh" status a | head -1)" = "not running" ]; then
+    echo "-- the ship no longer knows daemon a ($(grep -o 'enrollment lost.*' "$RUNNER_HOME/a/daemon.log" | tail -1)): enrolling afresh"
+  else
+    fresh=no; echo "-- daemon a kept its identity; capacity 1 reported on its poll"
+  fi
+fi
+if [ "$fresh" = yes ]; then
+  rm -rf "$RUNNER_HOME/a"
+  TOKEN=$("$P1/mint.sh") || exit 1
+  "$P1/runner.sh" start a 1 "$TOKEN" | head -1
+fi
 export REPO="ci-p1-$phase-$(date +%H%M%S)"   # unique per phase run: row P1 needs a repo with no tip
 "$P0/api.sh" POST /repositories "{\"name\":\"$REPO\",\"publicRead\":true}" | cut -c1-30
 CLONE="$TMP/clone-$REPO"; rm -rf "$CLONE"; mkdir -p "$CLONE"; cd "$CLONE"

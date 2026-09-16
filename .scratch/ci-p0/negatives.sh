@@ -15,6 +15,7 @@
 # Needs oids.env from the main run (DAEMON/BEARER from h6.sh, BEARER_B from
 # h9-13.sh, ATTEMPT from h6.sh) and the dojo prelude (`ci` bound by setup.sh).
 source "$(dirname "$0")/env.sh"
+source "$HERE/lib.sh"   # dojo_unit_cord; the helpers below override lib.sh's where names meet
 set +e
 source "$TMP/oids.env"
 api="$HERE/api.sh"; dojo="$HERE/dojo.sh"
@@ -54,13 +55,15 @@ has() { case " $rows " in *" $1 "*) return 0;; *) return 1;; esac; }
 
 # ---- ship helpers -----------------------------------------------------------
 one() { grep -oE "$1" | tail -1; }
-cand_status() { "$dojo" "status:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" 60 3 | one '^%[a-z-]+$'; }
-cand_object() { "$dojo" "candidate:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" 60 3 | one '^(~|\[~ 0x[0-9a-f.]+\])$'; }
-att_status()  { "$dojo" "status:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 3 | one '^%[a-z-]+$'; }
-att_events()  { "$dojo" "events:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 3 | one '^[0-9.]+$'; }
-att_trust()   { "$dojo" "trust:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 3 | one '^%[a-z-]+$'; }
-liveness()    { "$dojo" '.^(? %gu /=urgit-ci=/$)' 60 3 | one '^%\.[yn]$'; }
-sign_get()    { "$dojo" ".^((unit @t) %gx /=urgit-ci=/sign-get/$1/$2/(scot %t 'cache.tar')/noun)" 60 3 | one "^(~|\[~ '[^']*'\])$"; }
+cand_status() { "$dojo" "status:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" 60 8 | one '^%[a-z-]+$'; }
+cand_object() { "$dojo" "candidate:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" 60 8 | one '^(~|\[~ 0x[0-9a-f.]+\])$'; }
+att_status()  { "$dojo" "status:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 8 | one '^%[a-z-]+$'; }
+att_events()  { "$dojo" "events:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 8 | one '^[0-9.]+$'; }
+att_trust()   { "$dojo" "trust:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" 60 8 | one '^%[a-z-]+$'; }
+liveness()    { "$dojo" '.^(? %gu /=urgit-ci=/$)' 60 8 | one '^%\.[yn]$'; }
+# the unit cord read joined (lib.sh): a pane narrower than the URL makes
+# the dojo pretty-print it over four lines and wrap the cord itself
+sign_get()    { dojo_unit_cord ".^((unit @t) %gx /=urgit-ci=/sign-get/$1/$2/(scot %t 'cache.tar')/noun)" | one "^(~|\[~ '[^']*'\])$"; }
 wait_live() {  # <%.y|%.n>
   for _ in $(seq 1 30); do [ "$(liveness)" = "$1" ] && return 0; sleep 2; done
   echo "negatives.sh: %urgit-ci liveness never became $1" >&2; return 1

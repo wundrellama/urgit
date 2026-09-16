@@ -11,4 +11,10 @@ herdr pane run "$PANE" "$line" >/dev/null
 sleep 1
 herdr pane wait-output "$PANE" --lines 1 --regex "$DOJO_PROMPT_RE" --timeout $((timeout * 1000)) >/dev/null \
   || echo "dojo.sh: timed out waiting for the prompt after: $line" >&2
-herdr pane read "$PANE" --lines "$lines"
+# the unwrapped snapshot undoes the terminal's hard wraps (a 74-column
+# pane wraps most of the row scries' echoed commands and every wide
+# value); what remains is the dojo's own pretty-printing, which splits
+# a wide noun at its structure and never inside a cord. The unwrapped
+# snapshot ends without a newline; awk terminates every line, so a row's
+# next echo never glues onto the prompt (`~peg:dojo>P19: PASS`).
+herdr pane read "$PANE" --source recent-unwrapped --lines "$lines" | awk 1

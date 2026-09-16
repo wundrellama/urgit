@@ -1,7 +1,7 @@
 #!/bin/bash
 # usage: runner.sh start <name> [capacity] [token]  |  stop <name>  |  kill <name>
 #        runner.sh status <name>  |  log <name> [lines]  |  config <name> [capacity] [token]
-# The real daemon binary against ~ryp: one directory per daemon name under
+# The real daemon binary against the harness ship: one directory per daemon name under
 # $RUNNER_HOME with its TOML, state file, work dir and log. `start` with a
 # token enrolls; without one the state file must exist (the restart path).
 # `stop` sends TERM, `kill` sends KILL (P11), both by the recorded pid and

@@ -23,8 +23,11 @@ echo "line bytes: $(wc -c < "$TMP/h13-big.json")"
 att_state "$A2"
 
 echo "########## H12: an event for daemon A's attempt with daemon B's bearer -> 401"
-"$dojo" ':urgit-ci|mint-enroll-token' 60 6 > "$TMP/h12-mint.txt"
-TOKEN_B=$(grep -o 'ci-enroll-token 0v[0-9a-v.]*' "$TMP/h12-mint.txt" | tail -1 | sed 's/.* //' || true)
+# the generator's ~& prints `[%ci-enroll-token 0v…]` before the echoed
+# command, pretty-printed over three lines when the pane is narrow: read
+# 30 lines and take the last token after a `ci-enroll-token` line
+"$dojo" ':urgit-ci|mint-enroll-token' 60 30 > "$TMP/h12-mint.txt"
+TOKEN_B=$(awk '/ci-enroll-token/ { f = 1 } f && match($0, /0v[0-9a-v.]+/) { t = substr($0, RSTART, RLENGTH); f = 0 } END { printf "%s", t }' "$TMP/h12-mint.txt")
 ENROLL_B=$("$api" POST /ci/daemon/enroll "{\"token\":\"$TOKEN_B\"}" -)
 echo "$ENROLL_B"
 BEARER_B=$(echo "$ENROLL_B" | grep -o '"bearer":"[^"]*"' | cut -d'"' -f4 || true)

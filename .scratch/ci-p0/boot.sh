@@ -60,6 +60,6 @@ done
 echo "== %urgit-ci is live; state version (expect 0):"
 "$dojo" '.^(@ud %gx /=urgit-ci=/state/version/noun)' 60 3 | tail -2
 echo "== +code -> $TMP/code.txt"
-"$dojo" '+code' 60 4 | grep -oE '^[a-z]{6}(-[a-z]{6}){3}$' | tail -1 > "$TMP/code.txt"
+"$dojo" '+code' 60 10 | grep -oE '^[a-z]{6}(-[a-z]{6}){3}$' | tail -1 > "$TMP/code.txt"
 [ -s "$TMP/code.txt" ] || { echo "boot.sh: could not read +code from the dojo" >&2; exit 1; }
 echo "code recorded ($(wc -c < "$TMP/code.txt") bytes)"

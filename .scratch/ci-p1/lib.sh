@@ -6,12 +6,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 source "$P0/lib.sh"
 set +e   # rows check every outcome explicitly; a refused push or an empty grep is data
 # P0's dojo_value reads 8 pane lines; a candidate with nine attempts prints
-# its id list over more, so the P1 reader takes the last 60
+# its id list over more, so the P1 reader takes the last 60. A pane
+# narrower than the echoed command (106 columns here; `verdict-reason:…`
+# is 114) wraps the echo over rows: a row that keeps `> <line>` a prefix
+# of what was sent is the echo's tail, not the value, and is skipped.
+# A vane's slog (`gall: got old %wake for %urgit-ci`, fired by timers a
+# nuke orphaned, for an hour after every P14) can land between the
+# value and the prompt; no dojo value starts `<vane>: `, so those rows
+# are dropped too.
 dojo_value() {
-  "$dojo" "$1" "${2:-60}" 60 | awk -v p="~$SHIP:dojo>" '
-    index($0, "> ") == 1 { f = 1; buf = ""; next }
+  "$dojo" "$1" "${2:-60}" 60 | DOJO_ECHO="> $1" awk -v p="~$SHIP:dojo>" '
+    BEGIN { e = ENVIRON["DOJO_ECHO"] }
+    index($0, "> ") == 1 { f = 1; acc = $0; buf = ""; next }
     index($0, p) == 1    { f = 0; next }
-    f { buf = buf $0 "\n" }
+    /^(gall|behn|clay|ames|eyre|dill|kiln|iris|jael|khan|lick|arvo): / { next }
+    f && acc != "" && index(e, acc $0) == 1 { acc = acc $0; next }
+    f { acc = ""; buf = buf $0 "\n" }
     END { printf "%s", buf }'
 }
 api="$P0/api.sh"; dojo="$P0/dojo.sh"; poke="$P0/poke.sh"
@@ -34,7 +44,10 @@ end_row() { if [ "$ROW_FAIL" = 0 ]; then echo "$1: PASS"; NPASS=$((NPASS+1)); PA
 # ---- ship readers --------------------------------------------------------------
 one() { grep -oE "$1" | tail -1; }
 cand_status() { dojo_value "status:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | one '^%[a-z-]+$'; }
-cand_reason() { dojo_value "verdict-reason:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | tr -d '\n' | sed 's/^\[~ //; s/\]$//'; }
+# a (unit …) wider than the pane is pretty-printed `[ ~` / `  <value>` /
+# `]`: unit_join squeezes it back to `[~ <value>]` before the readers strip
+unit_join() { tr -d '\n' | sed 's/^\[ ~ */[~ /; s/ *\]$/]/'; }
+cand_reason() { dojo_value "verdict-reason:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | unit_join | sed 's/^\[~ //; s/\]$//'; }
 cand_object() { dojo_value "candidate:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | one '^(~|\[~ 0x[0-9a-f.]+\])$'; }
 cand_plan_jobs() {  # the plan's [workflow id] pairs, one per line, sorted
   dojo_value "\`(list @t)\`(turn (need plan:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))) |=(j=job:ci (rap 3 ~[workflow.j '/' id.j])))" 120 \
@@ -43,12 +56,12 @@ cand_plan_jobs() {  # the plan's [workflow id] pairs, one per line, sorted
 cand_attempt_ids() { dojo_value "attempts:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" 120 | tr -d '\n' | grep -oE '0v[0-9a-v.]+'; }
 att_status() { dojo_value "status:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | one '^%[a-z-]+$'; }
 att_kind()   { dojo_value "kind:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | one '^%[a-z-]+$'; }
-att_job()    { dojo_value "job:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | tr -d '\n' | sed "s/^\[~ '//; s/'\]$//"; }
+att_job()    { dojo_value "job:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | unit_join | sed "s/^\[~ '//; s/'\]$//"; }
 # the dojo prints a quote inside a cord as \' ; the reader unescapes it
-att_reason() { dojo_value "reason:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | tr -d '\n' | sed "s/^\[~ '//; s/'\]$//; s/\\\\'/'/g"; }
+att_reason() { dojo_value "reason:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | unit_join | sed "s/^\[~ '//; s/'\]$//; s/\\\\'/'/g"; }
 att_events() { dojo_value "events:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | one '^[0-9.]+$' | tr -d .; }
 att_started() { dojo_value "started:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | one '^~[0-9.a-z]+$'; }
-att_finished() { dojo_value "finished:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | tr -d '\n' | sed 's/^\[~ //; s/\]$//'; }
+att_finished() { dojo_value "finished:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | unit_join | sed 's/^\[~ //; s/\]$//'; }
 # attempts of a candidate as "kind job status" lines (skipped attempts included)
 cand_attempts() { for a in $(cand_attempt_ids "$1"); do echo "$a $(att_kind "$a") $(att_job "$a") $(att_status "$a")"; done; }
 # the attempt id of <cid> for job <job> with status not %skipped (newest first)
@@ -102,5 +115,7 @@ push_commit() {
 }
 # ---- daemon readers -----------------------------------------------------------------
 # the daemon's log is appended across restarts: a row reads the current
-# run only, from the last startup banner on
-runner_log() { awk '/^urgit-runner: daemon /{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$RUNNER_HOME/$1/daemon.log" 2>/dev/null; }
+# run only, from its first line on. The daemon logs `enrolling with the
+# ship` or `state file … present` from daemon.New BEFORE it prints the
+# banner, so a cut at the banner lost exactly the lines P2 asserts.
+runner_log() { awk '/ (enrolling with the ship at |state file .* present: daemon )/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$RUNNER_HOME/$1/daemon.log" 2>/dev/null; }

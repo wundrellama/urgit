@@ -129,7 +129,7 @@ fi
 
 if has p13; then
 row "P13: two daemons, one at capacity -> the assignment goes to the other; a daemon unseen for ~m5 is never selected"
-TOKEN_B=$("$P1/mint.sh"); rm -rf "$RUNNER_HOME/b"
+TOKEN_B=$("$P1/mint.sh") || exit 1; rm -rf "$RUNNER_HOME/b"
 "$P1/runner.sh" start b 1 "$TOKEN_B" >/dev/null; sleep 3
 DAEMON_B=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["daemon_id"])' "$RUNNER_HOME/b/state.json")
 echo "-- daemon b = $DAEMON_B"
@@ -195,11 +195,13 @@ check "two job containers alive at once" "2" "$($DK ps --format '{{.Names}}' | g
 check "attempt 1 passed" '%passed' "$(wait_att "$W1" '%passed|%failed|%infrastructure-error' 240)"
 check "attempt 2 passed" '%passed' "$(wait_att "$W2" '%passed|%failed|%infrastructure-error' 240)"
 # the collision an unprefixed projection name produces (CI-PROJECT-1.1):
-# act's loser either meets the job container name in use at create time
-# or is force-removed and dies 137; its act stream and the daemon log
-# carry the message. The real build shows none.
-evidence=$({ cat "$RUNNER_HOME/a/work/$W1.act.jsonl" "$RUNNER_HOME/a/work/$W2.act.jsonl" 2>/dev/null; grep -hF -e "$W1" -e "$W2" "$RUNNER_HOME/a/daemon.log"; } | grep -F -e "exitcode '137'" -e "is already in use by container" | head -1 | cut -c1-240)
-echo "-- act collision evidence in the two streams and the daemon log: ${evidence:-none}"
+# act's loser is force-removed mid-run (exitcode '137'), meets the job
+# container name in use at create time, or loses its container between
+# create and copy/exec (`No such container`, `is not running`); its act
+# stream and the daemon log carry the message. The real build shows none.
+evidence=$({ cat "$RUNNER_HOME/a/work/$W1.act.jsonl" "$RUNNER_HOME/a/work/$W2.act.jsonl" 2>/dev/null; grep -hF -e "$W1" -e "$W2" "$RUNNER_HOME/a/daemon.log"; } | grep -F -e "exitcode '137'" -e "is already in use by container" -e "No such container" -e "is not running" | head -1)
+shape=$(printf '%s' "$evidence" | grep -oE "exitcode '137'|is already in use by container|No such container|is not running" | head -1)
+echo "-- act collision evidence in the two streams and the daemon log: ${shape:-none}${evidence:+ — $(printf '%s' "$evidence" | cut -c1-400)}"
 check "projection names differ and carry the attempt ids" "yes" "$(p1=$(dojo_value "projection-name:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$W1/noun))" | tr -d '\n'); p2=$(dojo_value "projection-name:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$W2/noun))" | tr -d '\n'); echo "$p1 / $p2" >&2; case "$p1" in *"$W1/fixture-wait"*) case "$p2" in *"$W2/fixture-wait"*) echo yes;; *) echo "no: $p2";; esac;; *) echo "no: $p1";; esac)"
 check "the plan carries the real workflow name" "fixture-wait" "$(dojo_value "name:(head (need plan:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$C1/noun))))" | tr -d "\n'")"
 check "both candidates passed" "%passed %passed" "$(wait_cand "$C1" '%passed' 60) $(wait_cand "$C2" '%passed' 60)"

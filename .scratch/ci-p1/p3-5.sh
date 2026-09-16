@@ -54,3 +54,5 @@ check_not_contains "no second push happened (clone is at the same commit as mast
 echo "-- attempts of $CID:"; cand_attempts "$CID"
 echo "export CID5=$CID; export OID5=$OID; export A_ATT=$A_ATT; export B_ATT=$B_ATT" > "$TMP/p5.env"
 end_row P5
+# a failed row fails the script, so battery.sh stops at it
+[ "$NFAIL" = 0 ]

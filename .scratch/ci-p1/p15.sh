@@ -55,3 +55,5 @@ grep -E 'result success POST|act exited' "$RUNNER_HOME/a/daemon.log" | tail -16 
 echo "-- P15 wall time: $(( T1 - T0 )) s from push to verdict"
 echo "export ERPIT_CID=$CID; export ERPIT_OID=$OID; export ERPIT_T=$(( T1 - T0 ))" > "$TMP/p15.env"
 end_row P15
+# a failed row fails the script, so battery.sh stops at it
+[ "$NFAIL" = 0 ]

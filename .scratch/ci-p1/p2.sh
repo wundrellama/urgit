@@ -4,7 +4,7 @@
 # with the state file -> no re-enrollment, polls.
 source "$(dirname "$0")/lib.sh"
 row "P2: enroll from config, state file 0600, banner; restart without re-enrolling"
-TOKEN=$("$P1/mint.sh"); echo "-- minted token (${#TOKEN} chars)"
+TOKEN=$("$P1/mint.sh") || exit 1; echo "-- minted token (${#TOKEN} chars)"
 rm -rf "$RUNNER_HOME/a"
 "$P1/runner.sh" start a 1 "$TOKEN" >/dev/null
 sleep 4
@@ -29,3 +29,5 @@ sleep 2
 check_contains "daemon is polling (last-seen set on the ship)" "[~ ~" "$(dojo_value "last-seen:(need .^((unit daemon:ci) %gx /=urgit-ci=/daemon/$DAEMON_A/noun))" | tr -d '\n')"
 echo "export DAEMON_A=$DAEMON_A" > "$TMP/p2.env"
 end_row P2
+# a failed row fails the script, so battery.sh stops at it
+[ "$NFAIL" = 0 ]

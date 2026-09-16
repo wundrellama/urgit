@@ -20,3 +20,5 @@ out=$("$dojo" ":urgit-ci &ci-action [%set-ci-protected '$REPO' 'refs/heads/maste
 check "protected after the seed push" '%.y' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$REPO')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
 echo "export SEED=$OID" > "$TMP/p1.env"
 end_row P1
+# a failed row fails the script, so battery.sh stops at it
+[ "$NFAIL" = 0 ]

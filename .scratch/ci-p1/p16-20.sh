@@ -100,7 +100,7 @@ L="$TMP/clone-linked"; rm -rf "$L"; mkdir -p "$L"; cd "$L"; git init -q -b maste
 git remote add origin "$URL/git/$LINKED"; echo seed > README.md; git add -A; git commit -qm seed; git push -q origin master 2>&1 | tail -1
 "$dojo" ":urgit &git-action [%bind-desk '$LINKED' %scratch 'refs/heads/master']" 60 3 | tail -1
 check "linked repo reports linked=%.y" "%.y" "$(dojo_value ".^((unit [tip=@ux linked=?]) %gx /=urgit=/ci-ref/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | tr -d '\n' | grep -oE '%\.[yn]' | tail -1)"
-out=$("$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]" 60 8)
+out=$(dojo_value ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]")
 check_contains "CI protection refused for the linked repo" "CI protection is not available for desk-linked repositories in this release" "$out"
 check "linked repo not protected" '%.n' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
 echo "-- bind the CI-protected plain repo AFTER protection, then push"

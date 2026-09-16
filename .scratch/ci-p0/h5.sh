@@ -28,8 +28,8 @@ echo "CAND2=$CAND2"
 echo "== materialize (divergent: expect a merge commit)"
 "$dojo" ":urgit-ci &ci-action [%materialize $CAND2]" 60 3 | tail -2
 sleep 3
-"$dojo" ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CAND2/noun)" 60 16 | tail -14 | tee "$TMP/h5-candidate.txt"
-MERGE_UX=$(grep -o 'candidate=\[~ 0x[0-9a-f.]*' "$TMP/h5-candidate.txt" | sed 's/candidate=\[~ //')
+"$dojo" ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CAND2/noun)" 60 40 | tail -38 | tee "$TMP/h5-candidate.txt"
+MERGE_UX=$(grep -o 'candidate=\[~ 0x[0-9a-f.]*' "$TMP/h5-candidate.txt" | tail -1 | sed 's/candidate=\[~ //')
 echo "MERGE_UX=$MERGE_UX"
 echo "== expose the merge object on refs/ci/candidate and inspect it from clone-b"
 "$dojo" ":urgit &git-action [%set-ref 'ci-fixture' 'refs/ci/candidate' $MERGE_UX]" 60 3 | tail -2

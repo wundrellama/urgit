@@ -20,7 +20,7 @@ for f in "$ROOT"/desk/gen/*-vector.hoon; do
     echo "${verdict:-<no verdict>}"; [ "$verdict" = "%.y" ] || fails=$((fails+1))
   else
     if printf '%s\n' "$out" | grep -qE 'generator-build-fail|dojo: hoon expression failed|bail:'; then echo "FAILED to build or run"; fails=$((fails+1))
-    else echo "printed (value dump, no loobean verdict): $(printf '%s\n' "$out" | grep -v "^~$SHIP" | grep -v '^>' | tail -1 | cut -c1-60)"; fi
+    else echo "printed (value dump, no loobean verdict): $(printf '%s\n' "$out" | grep -v "^~$SHIP" | grep -v '^>' | grep -vE '^(gall|behn|clay|ames|eyre|dill|kiln|iris|jael|khan|lick|arvo): ' | tail -1 | cut -c1-60)"; fi
   fi
 done
 echo "== cd fe && npm test"

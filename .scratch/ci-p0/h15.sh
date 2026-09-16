@@ -9,7 +9,8 @@ source "$TMP/oids.env"
 dojo="$ROOT/.scratch/ci-p0/dojo.sh"
 echo "== attempt $ATTEMPT is %trusted:"
 echo "trust=$(att_field "$ATTEMPT" trust)"
+# the (unit @t) is read joined: a narrow pane pretty-prints it over lines
 echo "== sign-get %untrusted from the %trusted attempt (expect ~):"
-"$dojo" ".^((unit @t) %gx /=urgit-ci=/sign-get/$ATTEMPT/untrusted/(scot %t 'cache.tar')/noun)" 60 3 | tail -2
+dojo_unit_cord ".^((unit @t) %gx /=urgit-ci=/sign-get/$ATTEMPT/untrusted/(scot %t 'cache.tar')/noun)"
 echo "== sign-get %trusted from the %trusted attempt (expect a URL under ci/):"
-"$dojo" ".^((unit @t) %gx /=urgit-ci=/sign-get/$ATTEMPT/trusted/(scot %t 'cache.tar')/noun)" 60 3 | tail -2
+dojo_unit_cord ".^((unit @t) %gx /=urgit-ci=/sign-get/$ATTEMPT/trusted/(scot %t 'cache.tar')/noun)"

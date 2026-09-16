@@ -104,9 +104,12 @@ PY
     ;;
   tripwire)
     # what the sabotaged build itself produces, as the row logs it; a RED
-    # without it failed for the wrong reason. Alternatives one per line
-    # (P13-overlap: act's loser either finds the job container name in
-    # use at create time or is force-removed and dies 137).
+    # without it failed for the wrong reason. Alternatives one per line.
+    # P13-overlap: two acts on one container name; the loser's shape
+    # depends on the race — force-removed mid-run (exitcode '137', the
+    # brief's live proof), the name in use at create time (Sep 13), or
+    # removed between create and copy/exec (`No such container`,
+    # `is not running`; the close-out run).
     case "${2:-}" in
       P1)  echo "%set-ci-protected on a ref with no tip: accepted (>=)" ;;
       P7)  echo "fail job %failed: FAIL (observed: %passed" ;;
@@ -115,7 +118,7 @@ PY
       P10) echo "attempt %infrastructure-error: FAIL (observed: %passed" ;;
       P11) echo "closed at the deadline: FAIL (observed: %passed" ;;
       P12) echo "advertised capacity now 2" ;;
-      P13-overlap) printf '%s\n' "exitcode '137'" "is already in use by container" ;;
+      P13-overlap) printf '%s\n' "exitcode '137'" "is already in use by container" "No such container" "is not running" ;;
       P14) echo "daemon exited non-zero: FAIL (observed: running pid" ;;
       P17) echo "verdict-reason: FAIL (observed: 'candidate object is missing from the store'" ;;
       P18) echo "no credentials -> 401: FAIL (observed: 200" ;;

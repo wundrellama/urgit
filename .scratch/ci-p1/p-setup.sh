@@ -14,7 +14,11 @@ source "$(dirname "$0")/lib.sh"
 "$TMP/act-static/act" --version
 ( cd "$ROOT" && zig build -Drunner 2>&1 | grep -E 'runner' )
 echo "== create repository $REPO (public, no commits)"
-"$api" POST /repositories "{\"name\":\"$REPO\",\"publicRead\":true}"
+created=$("$api" POST /repositories "{\"name\":\"$REPO\",\"publicRead\":true}")
+echo "$created"
+# row P1 needs a repository with no tip: an existing $REPO (a reused
+# ship) would turn P1's refusal into acceptance for the wrong reason
+case "$created" in 201*) ;; *) echo "p-setup: could not create $REPO ($created); the P1 table needs a fresh ship" >&2; exit 1 ;; esac
 rm -rf "$CLONE"; mkdir -p "$CLONE"; cd "$CLONE"
 git init -q -b master .
 git config user.name p1; git config user.email p1@example
