@@ -1,9 +1,16 @@
 # CI P2 questions — astra
 
-Rider 1 resolved §1–§3 in the re-frozen brief at `4872953`; those sections
-were removed in S0 (`0ca9ff8`). S1 is complete at `9071dd0`, with the live
-Q2–Q4 evidence in `.scratch/p2-live-table.md`. Stopping at S2 before editing
-`%urgit`, under the brief's §6. No S2 or later row is claimed complete.
+Rider 1 resolved §1–§3; those sections were removed in S0 (now `a0f38e7`
+after the operator's rebase). S1 is complete at `25aa23f`, with Q2–Q4
+evidence in `.scratch/p2-live-table.md`.
+
+Rider 2 resolves §4 and §5 in the brief re-frozen at `682c8cf`, launch
+HEAD `f589b4e`. The two answered sections remain below because Rider 2
+requests their deletion in the S2 commit. S2 is not complete: compilation
+exposed the additional lexical-scope issue in **§6**, the only
+open question. The incomplete implementation is saved locally as
+`.scratch/tmp/s2-rider2-draft.patch`; product source is restored to launch
+HEAD. No S2 or later row is claimed complete.
 
 ## §4 — The new stage action requires changing the existing push caller
 
@@ -82,3 +89,53 @@ local CI peek, outside the three enumerated touches?
 
 No push, merge, or rebase was performed. `%urgit` source and state are
 unchanged by this chair.
+
+## §6 — The writer helper is local to on-poke, outside on-peek's scope
+
+**Read:** Re-freeze 2's fence touch 5 requires the new
+`[%x %ci-can-write @ @ ~]` peek to reuse `repository-writable` and permits
+nothing else in `%urgit`. At launch HEAD `f589b4e`, `on-poke` starts at
+`desk/app/urgit.hoon:2272` and opens a local `|^` core at line 2278. Its
+helper arms include `group-peek` (2329–2346), `group-seat` (2359–2386),
+`repository-group-capability` (2406–2411), and `repository-writable`
+(2425–2433). That local core closes at line 9168. `on-peek` is a sibling
+arm beginning at line 9174, outside the helper scope.
+
+**Tried:** Implemented touch 5 with the ratified call:
+
+```hoon
+``noun+!>(?~(found %.n ?~(actor %.n (repository-writable u.found u.actor))))
+```
+
+`zig build -Ddesk=<lup-pier>/urgit` copied successfully. The actual
+`|commit %urgit` compilation on `~lup` refused the new peek:
+
+```text
+-find.repository-writable
+/app/urgit/hoon::[9,298 42].[9,298 61]>
+```
+
+Evidence: `.scratch/tmp/s2-build2-pane.log` and
+`.scratch/tmp/s2-build3.log`. The latter repeats the same error after
+placing `ciUntrustedPolicy` in the authenticated repository GET handler,
+which has the bowl needed for its guarded read. No access helper has
+been moved or duplicated. No Q5a–Q8 assertion was run.
+
+**Question:** May touch 5 include lifting the existing writer helpers into
+the enclosing agent door so both entry points can call them?
+
+- **Widen touch 5 to include the lift (recommended):** move `group-peek`,
+  `group-seat`, `repository-group-capability`, and `repository-writable`
+  to the agent door, keeping their bodies unchanged. Their existing
+  on-poke callers resolve the same arms in the enclosing scope; the new
+  on-peek branch can then call `repository-writable`. `group-members`
+  and `repository-readable` can stay local and use the lifted dependencies.
+  No state change, duplicate access logic, or additional wire protocol.
+- **Keep the helpers local:** revise the interface to a request/reply
+  through `on-poke`, where the predicate is callable. Staging and approval
+  would wait for the reply and refuse an unavailable result. This changes
+  the brief's synchronous guarded-peek contract and requires a separate
+  protocol design; I would not invent it under the current fence.
+
+This is a scope requirement for the already ratified predicate, not a
+request to change which actors count as writers. Stopping under brief §6.

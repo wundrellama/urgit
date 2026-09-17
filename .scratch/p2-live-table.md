@@ -2,6 +2,9 @@
 
 Worktree `urgit-ci-p2-astra`, branch `ci/p2-astra`, re-frozen brief base
 `4872953`, launch HEAD `a5cc44f`. Rider 1 resolved the original §1–§3.
+The operator subsequently rebased the chair onto re-freeze 2 (`682c8cf`),
+with launch footer `f589b4e`; the stage hashes below reflect that rebase.
+Rider 2 resolved §4/§5. The resumed S2 pass stopped at the new §6 scope box.
 
 Ship `~lup`, HTTP 8352, pier `/var/home/michael/piers/urgit-ci-p2-lup`.
 The pier did not exist before boot. `.scratch/ci-p0/boot.sh` split herdr
@@ -27,9 +30,9 @@ owned by the invoking host user. The server's console port is not published.
 
 | Stage | Commit | Gate |
 |---|---|---|
-| S0 | `0ca9ff8` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
-| S1 | `9071dd0` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
-| S2 | Boxed before implementation | `QUESTIONS-CI-P2.md` §4: extending the stage action requires a fourth `%urgit` touch for the push caller; §5: no authoritative writer peek exists for private repositories. No S2 row is claimed. |
+| S0 | `a0f38e7` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
+| S1 | `25aa23f` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
+| S2 | Boxed; draft restored out of product source | Rider 2 resolves §4/§5. `QUESTIONS-CI-P2.md` §6 records the new peek's `-find.repository-writable`: the predicate and its group helpers are local to `on-poke`, outside `on-peek`. No S2 row is claimed. |
 
 ## Observations
 
@@ -85,7 +88,7 @@ The unchanged `+urgit!ci-storage-vector` prints `%.y` on `~lup`.
 - **S0 bookkeeping:** Rider 1 explicitly requested deleting the answered
   questions in S0; that file change accompanies the spec paragraph.
 
-## Shutdown
+## S1 shutdown
 
 Completed with `.scratch/ci-p1/p2-shutdown.sh`; transcript:
 `.scratch/tmp/p2-shutdown.log`. Runner PID **2887520** was checked through
@@ -99,3 +102,47 @@ the shell prompt returned and the pane was closed. A final `/proc` scan
 finds no matching ship or runner. The **484 MB** pier remains at
 `/var/home/michael/piers/urgit-ci-p2-lup`; store data are retained. The
 chair's rootless Docker daemon remains available, with no containers running.
+
+## S2 resumed pass and shutdown
+
+Rider 2 was read at `f589b4e`. The five-touch draft was copied to `~lup`
+with `zig build -Ddesk=<pier>/urgit`; the actual Clay compilation refused
+the new `on-peek` branch with `-find.repository-writable` at draft line
+9298. The predicate is in the local core opened by `on-poke`'s `|^`, not
+the enclosing agent door. The dependency chain that needs shared scope is
+`repository-writable` → `repository-group-capability` → `group-seat` →
+`group-peek`. The box recommends moving those four arms without changing
+their bodies. None was moved in this pass.
+
+The repository policy field belongs in the authenticated repository GET
+handler (within touch 3), where the bowl is available. An initial attempt
+to read it from the pure shared JSON renderer failed with `-find.our.bowl`;
+the draft was corrected before the repeated writer-scope failure.
+
+The incomplete implementation and harness edits are saved in the ignored
+`.scratch/tmp/s2-rider2-draft.patch`, SHA-256
+`7904083df4316e7eb4d309ff2c8cdd90bdfeefc3fc9370c9c2399556c5ec6808`.
+The new resume script is saved as `.scratch/tmp/s2-rider2-boot.sh`.
+Product source and tracked harness files were restored to `f589b4e` before
+the box commit. The draft has not passed compilation or any S2 row.
+
+`~lup` resumed its retained pier in pane `w1B:p3`, with HTTP 8352 and no
+`-p`. The CI agent was nuked for the in-place mold change; after the failed
+compile, the S1 desk was restored and `%urgit-ci` revived with empty CI
+state. Its S1 evidence above is historical, not a claim that those attempt
+ids remain in current state. `%urgit` was not nuked.
+
+`~dys`'s pier did not exist before this pass. The P0 boot harness created it
+in pane `w1B:p4` with `-F dys`, the footer pill, HTTP 8354, and no `-p`.
+After restoring the S1 sources, the desk installed all four `%urgit` agents.
+No peer discovery, fork, push, or PR test ran before the box. Boot transcript:
+`.scratch/tmp/s2-boot-dys.log`; restoration transcripts:
+`.scratch/tmp/s2-restore-{lup-revive,dys-install}.log`.
+
+The resumed shutdown transcript is `.scratch/tmp/s2-shutdown.log`.
+The runner was already stopped. RustFS reports stopped. `/proc` verification
+identified `~dys` PIDs **3277958 / 3282581** and `~lup` PIDs
+**3269495 / 3269497** by binary and pier. Ctrl+D stopped both ships; each
+shell prompt returned before its pane was closed. Both piers remain:
+`urgit-ci-p2-dys` **220 MB**, `urgit-ci-p2-lup` **505 MB**. The rootless
+Docker daemon remains available with no running containers.
