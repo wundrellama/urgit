@@ -14,7 +14,9 @@ row "Q18: full ERPit — eight jobs, eight logs in the bucket under /trusted/, l
 sleep 3
 # p15.sh uses REPO=erpit-p15; a second run on the same ship needs a fresh name
 export P15_REPO="erpit-q18-$(date +%H%M%S)"
-sed "s/^REPO=erpit-p15; CLONE=\"\$TMP\/clone-erpit\"/REPO=\$P15_REPO; CLONE=\"\$TMP\/clone-erpit-q18\"/" "$P1/p15.sh" > "$TMP/q18-p15.sh"
+# the copy sources the P1 lib by its absolute path (it no longer sits beside it)
+sed -e "s|^source \"\$(dirname \"\$0\")/lib.sh\"|source \"$P1/lib.sh\"|" \
+    -e "s/^REPO=erpit-p15; CLONE=\"\$TMP\/clone-erpit\"/REPO=\$P15_REPO; CLONE=\"\$TMP\/clone-erpit-q18\"/" "$P1/p15.sh" > "$TMP/q18-p15.sh"
 chmod +x "$TMP/q18-p15.sh"
 "$TMP/q18-p15.sh" 2>&1 | tee "$TMP/q18-p15.log" | grep -E 'PASS|FAIL|^--|^P15' | cut -c1-200
 source "$TMP/p15.env"
