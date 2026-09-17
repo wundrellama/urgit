@@ -57,6 +57,12 @@ edits = [
  ("Q11", "desk/app/urgit-ci.hoon",
   "  =/  =event:ci  (scrub:ci-event p.parsed (credential-values (candidate-repo candidate.u.found)))\n",
   "  =/  =event:ci  p.parsed\n"),
+ ("Q12", "runner/internal/daemon/daemon.go",
+  "\t\tif err := d.verifyAssignment(assignment); err != nil {\n",
+  "\t\tif err := d.verifyAssignment(assignment); err != nil && false {\n"),
+ ("Q13", "runner/internal/daemon/daemon.go",
+  "\t\tif g.Expiry <= now {\n",
+  "\t\tif false {\n"),
 ]
 texts = {}
 for row, path, old, new in edits:
@@ -87,6 +93,8 @@ PY
       Q8)  echo "approval by ~sampel-palnet refused: FAIL (observed: accepted (>=)" ;;
       Q10) echo "grants=~ on the untrusted assignment: FAIL (observed: grants 1 (TOKEN)" ;;
       Q11) echo "the attempt's recorded output is the scrubbed leak: FAIL (observed: 'q9-hunter2-" ;;
+      Q12) echo "daemon b prepared no sandbox (no work): FAIL (observed: 1" ;;
+      Q13) echo "expired grant refused by the daemon: FAIL (observed: 0" ;;
       *) echo "q-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

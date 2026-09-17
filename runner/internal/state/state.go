@@ -14,6 +14,9 @@ type State struct {
 	DaemonID string `json:"daemon_id"`
 	Bearer   string `json:"bearer"`
 	ShipURL  string `json:"ship_url"`
+	// the ship's CI public key as handed over at enrollment (D5); every
+	// assignment and grant must verify against it
+	CIPublicKey string `json:"ci_public_key,omitempty"`
 }
 
 // Load returns nil, nil when the file does not exist.

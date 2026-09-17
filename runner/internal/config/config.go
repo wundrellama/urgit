@@ -25,6 +25,9 @@ type Config struct {
 	Capacity    int    `toml:"capacity"`
 	WorkDir     string `toml:"work_dir"`
 	StateFile   string `toml:"state_file"`
+	// the CI public key to verify assignments and grants with, as an
+	// operator-pinned override of the one enrollment recorded (D5)
+	CIPublicKey string `toml:"ci_public_key"`
 
 	// microvm backend (P2): parsed, never used in this release
 	ImagePath string `toml:"image_path"`

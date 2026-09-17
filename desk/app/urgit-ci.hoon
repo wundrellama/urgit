@@ -53,9 +53,15 @@
     def   ~(. (default-agent this %|) bowl)
     hc    ~(. +> bowl)
 ::
+::  the CI signing key exists from the first event (D5): every assignment
+::  is signed, so a daemon can refuse an unsigned one from its first
+::  enrollment.  the ship's own signing pair arrives from Jael's
+::  %private-keys and certifies it; a rotation re-certifies.
+::
 ++  on-init
   ^-  (quip card _this)
-  [~[connect-card:hc] this]
+  =.  signing  `fresh-signing-key:hc
+  [~[connect-card:hc keys-card:hc] this]
 ::
 ++  on-save
   !>(state)
@@ -67,7 +73,9 @@
     ?+  -.q.old  !!
       %0  !<(state-0:ci old)
     ==
-  [~[connect-card:hc] this(state loaded, polls ~)]
+  =.  state  loaded
+  =?  signing  ?=(~ signing)  `fresh-signing-key:hc
+  [~[connect-card:hc keys-card:hc] this(polls ~)]
 ::
 ++  on-poke
   |=  [=mark =vase]
@@ -209,6 +217,23 @@
   ^-  (quip card _this)
   ?+    wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
+  ::
+      ::  the ship's keys, once at subscription and again at every
+      ::  rotation: the signing half of the current ring is derived the
+      ::  way ames derives [sgn.pub sgn.sek] and the CI key is
+      ::  (re)certified with it.  nothing of the ring is logged.
+      ::
+      [%jael %keys ~]
+    ?.  ?=([%jael %private-keys *] sign-arvo)  (on-arvo:def wire sign-arvo)
+    =/  ring=(unit @)  (~(get by vein.sign-arvo) life.sign-arvo)
+    ?~  ring  `this
+    =/  derived=(unit ship-keys:ci)  (ship-keys-from-ring:hc life.sign-arvo u.ring)
+    ?~  derived
+      %-  (slog leaf+"urgit-ci: the ship's ring is not a suite-b ring; the CI key is uncertified" ~)
+      `this
+    =.  ship-keys  derived
+    =.  signing  (certified:hc signing u.derived)
+    `this
   ::
       ::  a long-poll that saw no assignment closes with 204
       ::
@@ -578,8 +603,9 @@
     (emit ~)
   ::
       %rotate-ci-key
-    ~|  'the signing key arrives with the signing stage'
-    !!
+    =.  signing  `fresh-signing-key
+    =?  signing  ?=(^ ship-keys)  (certified signing u.ship-keys)
+    (emit ~)
   ::
       %materialize-candidate
     ~|  '%materialize-candidate is a poke on %urgit, not %urgit-ci'
@@ -1160,6 +1186,21 @@
       %env  ?~(environment ~ ?:((~(has in envs.credential) u.environment) `[name value.credential] ~))
     ==
   =/  expiry=@da  (add assigned.assignment deadline.assignment)
+  ::  the assignment's own signature (D5): the recipient, the attempt,
+  ::  the operation 'assign', an expiry a minute past the attempt's
+  ::  deadline (delivery is not instant), and a nonce
+  ::
+  =/  sig-json=json
+    =/  nonce=@uv  (fresh-nonce [%assign id.assignment])
+    =/  sig-expiry=@da  (add expiry ~m1)
+    %-  pairs:enjs:format
+    :~  ['recipient' s+(scot %uv daemon.assignment)]
+        ['attempt' s+(scot %uv attempt.assignment)]
+        ['operation' s+'assign']
+        ['expiry' (numb:enjs:format (unix-seconds sig-expiry))]
+        ['nonce' s+(scot %uv nonce)]
+        ['sig' s+(hex-bytes (sign-authorization daemon.assignment attempt.assignment 'assign' sig-expiry nonce) 64)]
+    ==
   =/  grants-json=json
     :-  %a
     %+  turn  grants
@@ -1193,7 +1234,61 @@
       ['deadline-seconds' (numb:enjs:format (div deadline.assignment ~s1))]
       ['assigned' s+(scot %da assigned.assignment)]
       ['grants' grants-json]
+      ['sig' sig-json]
   ==
+::
+::  the Jael subscription that hands over the ship's keys
+::
+++  keys-card
+  ^-  card
+  [%pass /jael/keys %arvo %j %private-keys ~]
+::
+::  a fresh CI keypair from entropy: luck:ed:crypto takes a 32-byte seed
+::  and answers [pub sek]; the certificate is 0 until the ship's keys
+::  arrive
+::
+++  fresh-signing-key
+  ^-  signing:ci
+  =/  pair  (luck:ed:crypto (end [3 32] eny.bowl))
+  [pub.pair sek.pair 0x0 now.bowl]
+::
+::  the ship's signing pair from a suite-b ring ('B' then 64 bytes: the
+::  encryption seed above the signing seed, as nol:nu:crub reads it);
+::  the pair is (luck:ed seed), which is what ames signs with
+::
+++  ship-keys-from-ring
+  |=  [=life ring=@]
+  ^-  (unit ship-keys:ci)
+  ?.  =('B' (end 3 ring))  ~
+  =/  body=@  (rsh 3 ring)
+  =/  seed=@  (end 8 body)
+  =/  pair  (luck:ed:crypto seed)
+  `[life pub.pair sek.pair]
+::
+::  the certificate: the ship's signature over the CI public key (D5)
+::
+++  certified
+  |=  [key=(unit signing:ci) keys=ship-keys:ci]
+  ^-  (unit signing:ci)
+  ?~  key  ~
+  `u.key(cert (sign-raw:ed:crypto pub.u.key pub.keys sek.keys))
+::
+::  what the ship signs for one authorization (D5): the jam of the
+::  recipient daemon, the attempt, the operation, the expiry in unix
+::  seconds and a nonce.  the daemon rebuilds the same noun from the
+::  fields it received and verifies with the pinned public key.
+::
+++  sign-authorization
+  |=  [recipient=daemon-id:ci attempt=attempt-id:ci operation=@t expiry=@da nonce=@uv]
+  ^-  @ux
+  ?~  signing  0x0
+  =/  message=@  (jam [recipient attempt operation (unix-seconds expiry) nonce])
+  (sign-raw:ed:crypto message pub.u.signing sek.u.signing)
+::
+++  fresh-nonce
+  |=  salt=*
+  ^-  @uv
+  (end [3 16] (shas %ci-nonce (jam [salt eny.bowl now.bowl])))
 ::
 ::  unix seconds of a time, for the wire (a @da is not a JSON number)
 ::
@@ -1227,8 +1322,8 @@
 ++  sign-grant
   |=  [recipient=daemon-id:ci attempt=attempt-id:ci name=@t expiry=@da]
   ^-  grant:ci
-  =/  nonce=@uv  (end [3 16] (shas %ci-grant-nonce (jam [recipient attempt name expiry eny.bowl])))
-  [name expiry nonce 0x0]
+  =/  nonce=@uv  (fresh-nonce [%grant recipient attempt name])
+  [name expiry nonce (sign-authorization recipient attempt (cat 3 'grant:' name) expiry nonce)]
 ::
 ++  credential-names
   |=  repo=@t
@@ -1361,6 +1456,10 @@
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-log-read eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %key ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-key eyre-id req)
   (emit (give-error eyre-id 404 'ci route not found'))
 ::
 ::  enrollment: the token is the credential.  its hash must match a
@@ -1418,6 +1517,7 @@
       ['bearer' s+(scot %uv bearer)]
       ['capacity' (numb:enjs:format (fall u.capacity 1))]
       ['sandbox' s+sandbox]
+      ['ci-public-key' ?~(signing ~ s+(hex-bytes pub.u.signing 32))]
   ==
 ::
 ::  the assignment channel.  a polling daemon has capacity to offer, so
@@ -1724,6 +1824,29 @@
   %-  emit
   %+  give-simple-payload:app:server  eyre-id
   [[302 ~[['location' u.url] ['cache-control' 'no-store']]] ~]
+::
+::  the CI key's public half and the ship's certificate over it (D5):
+::  what a verifier holds.  neither private key, nor the ring, is ever
+::  answered by any route or scry.
+::
+++  handle-key
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  authenticated.req
+    (emit (give-error eyre-id 401 'session required'))
+  ?~  signing
+    (emit (give-error eyre-id 503 'the CI signing key is not generated'))
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['pub' s+(hex-bytes pub.u.signing 32)]
+      ['cert' s+(hex-bytes cert.u.signing 64)]
+      ['certified' b+!=(0x0 cert.u.signing)]
+      ['ship' s+(scot %p our.bowl)]
+      ['life' ?~(ship-keys ~ (numb:enjs:format life.u.ship-keys))]
+      ['shipSigningKey' ?~(ship-keys ~ s+(hex-bytes pub.u.ship-keys 32))]
+      ['created' (numb:enjs:format (unix-seconds created.u.signing))]
+  ==
 ::
 ::  the daemon could not finish: act exited without a jobResult, the
 ::  sandbox failed, or teardown failed (D8).  the attempt closes as an

@@ -3,6 +3,8 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -21,6 +23,7 @@ import (
 	"urgit/runner/internal/config"
 	"urgit/runner/internal/sandbox"
 	"urgit/runner/internal/ship"
+	"urgit/runner/internal/sig"
 )
 
 // fakeBox records every call. It has no way to read its own filesystem,
@@ -356,10 +359,25 @@ func TestClaimIgnoresInFlight(t *testing.T) {
 	}
 }
 
-// grants (D4): an unexpired grant becomes an act secret; an expired one
-// never reaches act; the daemon's own log redacts the value; the relayed
-// lines and the saved stream carry *** where act printed the value
+// signGrant is the ship's side in miniature: a grant signed with a key
+// the test daemon pins
+func signGrant(t *testing.T, priv ed25519.PrivateKey, daemonID, attempt, name, value string, expiry int64) ship.Grant {
+	t.Helper()
+	m := sig.Message{Recipient: daemonID, Attempt: attempt, Operation: "grant:" + name, Expiry: expiry, Nonce: "0v1.nonce"}
+	n, err := m.Noun()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ship.Grant{Name: name, Value: value, Expiry: expiry, Nonce: m.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, sig.LittleEndian(sig.Jam(n))))}
+}
+
+// grants (D4/D5): a verified, unexpired grant becomes an act secret; an
+// expired one and one signed with another key never reach act; the
+// daemon's own log redacts the value; the relayed lines and the saved
+// stream carry *** where act printed the value
 func TestGrantsToActSecretsAndScrub(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
 	sh := &fakeShip{}
 	srv := httptest.NewServer(sh.handler(t))
 	defer srv.Close()
@@ -368,11 +386,13 @@ func TestGrantsToActSecretsAndScrub(t *testing.T) {
 	var logged bytes.Buffer
 	d := newTestDaemon(t, box, srv, 1)
 	d.log = log.New(&logged, "", 0)
+	d.ciKey = hex.EncodeToString(pub)
 	now := time.Now().Unix()
 	a := *jobAssignment
 	a.Grants = []ship.Grant{
-		{Name: "TOKEN", Value: "hunter2hunter2", Expiry: now + 600},
-		{Name: "STALE", Value: "stalevalue1234", Expiry: now - 1},
+		signGrant(t, priv, d.daemonID, a.Attempt, "TOKEN", "hunter2hunter2", now+600),
+		signGrant(t, priv, d.daemonID, a.Attempt, "STALE", "stalevalue1234", now-1),
+		signGrant(t, otherPriv, d.daemonID, a.Attempt, "FORGED", "forgedvalue123", now+600),
 	}
 	d.handle(context.Background(), &a)
 	run := ""
@@ -381,14 +401,14 @@ func TestGrantsToActSecretsAndScrub(t *testing.T) {
 			run = op
 		}
 	}
-	if !strings.Contains(run, "--secret TOKEN=hunter2hunter2") || strings.Contains(run, "STALE") {
+	if !strings.Contains(run, "--secret TOKEN=hunter2hunter2") || strings.Contains(run, "STALE") || strings.Contains(run, "FORGED") {
 		t.Fatalf("act argv: %s", run)
 	}
 	text := logged.String()
 	if strings.Contains(text, "hunter2hunter2") || !strings.Contains(text, "--secret TOKEN=***") {
 		t.Fatalf("the daemon log must redact the secret: %s", text)
 	}
-	if !strings.Contains(text, "grant STALE refused: expired") || !strings.Contains(text, "grants 1 (TOKEN) of 2 offered") {
+	if !strings.Contains(text, "grant STALE refused: expired") || !strings.Contains(text, "grant FORGED refused: signature does not verify") || !strings.Contains(text, "grants 1 (TOKEN) of 3 offered") {
 		t.Fatalf("refusals must be logged: %s", text)
 	}
 	if len(sh.events) != 2 || !strings.Contains(sh.events[0], "token is *** twice ***") {
@@ -400,5 +420,43 @@ func TestGrantsToActSecretsAndScrub(t *testing.T) {
 	}
 	if strings.Contains(string(saved), "hunter2hunter2") || !strings.Contains(string(saved), "token is *** twice ***") {
 		t.Fatalf("the saved stream must be scrubbed: %s", saved)
+	}
+}
+
+// the assignment signature (D5): unsigned, signed for another daemon,
+// signed with another key or expired is refused; the ship's own is not
+func TestVerifyAssignment(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
+	d := &Daemon{daemonID: "0v1.daemon", ciKey: hex.EncodeToString(pub), log: log.New(io.Discard, "", 0)}
+	sign := func(priv ed25519.PrivateKey, recipient, attempt, op string, expiry int64) *ship.Signature {
+		m := sig.Message{Recipient: recipient, Attempt: attempt, Operation: op, Expiry: expiry, Nonce: "0v7"}
+		n, _ := m.Noun()
+		return &ship.Signature{Recipient: recipient, Attempt: attempt, Operation: op, Expiry: expiry, Nonce: m.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, sig.LittleEndian(sig.Jam(n))))}
+	}
+	later := time.Now().Unix() + 300
+	good := *jobAssignment
+	good.Sig = sign(priv, "0v1.daemon", good.Attempt, "assign", later)
+	if err := d.verifyAssignment(&good); err != nil {
+		t.Fatalf("the ship's own signature must verify: %v", err)
+	}
+	cases := map[string]*ship.Signature{
+		"unsigned":        nil,
+		"other daemon":    sign(priv, "0v2.other", good.Attempt, "assign", later),
+		"other attempt":   sign(priv, "0v1.daemon", "0v9.att", "assign", later),
+		"other operation": sign(priv, "0v1.daemon", good.Attempt, "grant:X", later),
+		"other key":       sign(otherPriv, "0v1.daemon", good.Attempt, "assign", later),
+		"expired":         sign(priv, "0v1.daemon", good.Attempt, "assign", time.Now().Unix()-1),
+	}
+	for name, s := range cases {
+		a := *jobAssignment
+		a.Sig = s
+		if err := d.verifyAssignment(&a); err == nil {
+			t.Fatalf("%s must be refused", name)
+		}
+	}
+	unpinned := &Daemon{daemonID: "0v1.daemon", log: log.New(io.Discard, "", 0)}
+	if err := unpinned.verifyAssignment(&good); err == nil {
+		t.Fatal("no pinned key must refuse")
 	}
 }

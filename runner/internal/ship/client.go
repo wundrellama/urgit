@@ -70,6 +70,18 @@ type Assignment struct {
 	DeadlineSeconds int                          `json:"deadline-seconds"`
 	Assigned        string                       `json:"assigned"`
 	Grants          []Grant                      `json:"grants"`
+	Sig             *Signature                   `json:"sig"`
+}
+
+// Signature is the ship's authorization over an assignment (D5): the
+// fields it signed and the signature, hex of the little-endian bytes.
+type Signature struct {
+	Recipient string `json:"recipient"`
+	Attempt   string `json:"attempt"`
+	Operation string `json:"operation"`
+	Expiry    int64  `json:"expiry"`
+	Nonce     string `json:"nonce"`
+	Sig       string `json:"sig"`
 }
 
 type Response struct {
@@ -118,28 +130,32 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 	return Response{Status: resp.StatusCode, Body: data}, nil
 }
 
-// Enroll consumes the token and returns the daemon id and bearer. The
-// caller forgets the token afterwards.
-func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string) (daemonID, bearer string, err error) {
+// Enrollment is what the ship hands a daemon once: its id, the bearer,
+// and the CI public key the daemon pins (D5).
+type Enrollment struct {
+	DaemonID    string `json:"daemon-id"`
+	Bearer      string `json:"bearer"`
+	CIPublicKey string `json:"ci-public-key"`
+}
+
+// Enroll consumes the token. The caller forgets the token afterwards.
+func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string) (*Enrollment, error) {
 	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox})
 	resp, err := c.do(ctx, http.MethodPost, "/daemon/enroll", body)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	if resp.Status != http.StatusOK {
-		return "", "", fmt.Errorf("enroll: %s", resp.Error())
+		return nil, fmt.Errorf("enroll: %s", resp.Error())
 	}
-	var answer struct {
-		DaemonID string `json:"daemon-id"`
-		Bearer   string `json:"bearer"`
-	}
+	var answer Enrollment
 	if err := json.Unmarshal(resp.Body, &answer); err != nil {
-		return "", "", fmt.Errorf("enroll: %w", err)
+		return nil, fmt.Errorf("enroll: %w", err)
 	}
 	if answer.DaemonID == "" || answer.Bearer == "" {
-		return "", "", errors.New("enroll: ship answered without daemon-id and bearer")
+		return nil, errors.New("enroll: ship answered without daemon-id and bearer")
 	}
-	return answer.DaemonID, answer.Bearer, nil
+	return &answer, nil
 }
 
 // Poll holds the channel open; nil, nil means the window closed with

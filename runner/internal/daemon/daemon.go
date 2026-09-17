@@ -27,6 +27,7 @@ import (
 	"urgit/runner/internal/relay"
 	"urgit/runner/internal/sandbox"
 	"urgit/runner/internal/ship"
+	"urgit/runner/internal/sig"
 	"urgit/runner/internal/state"
 
 	"gopkg.in/yaml.v3"
@@ -44,6 +45,9 @@ type Daemon struct {
 	client   *ship.Client
 	daemonID string
 	log      *log.Logger
+	// the CI public key every assignment and grant must verify against
+	// (D5): the config's pin when set, else enrollment's
+	ciKey string
 
 	mu          sync.Mutex
 	capacity    int
@@ -73,17 +77,25 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 		}
 		d.log.Printf("enrolling with the ship at %s", cfg.ShipURL)
 		client := ship.New(cfg.ShipURL, "")
-		id, bearer, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox)
+		enrolled, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox)
 		if err != nil {
 			return nil, err
 		}
-		st = &state.State{DaemonID: id, Bearer: bearer, ShipURL: cfg.ShipURL}
+		st = &state.State{DaemonID: enrolled.DaemonID, Bearer: enrolled.Bearer, ShipURL: cfg.ShipURL, CIPublicKey: enrolled.CIPublicKey}
 		if err := state.Save(cfg.StateFile, st); err != nil {
 			return nil, fmt.Errorf("state file: %w", err)
 		}
-		d.log.Printf("enrolled as daemon %s; state written to %s (mode 0600)", id, cfg.StateFile)
+		d.log.Printf("enrolled as daemon %s; state written to %s (mode 0600); CI public key pinned: %s", enrolled.DaemonID, cfg.StateFile, enrolled.CIPublicKey)
 	} else {
 		d.log.Printf("state file %s present: daemon %s, no re-enrollment", cfg.StateFile, st.DaemonID)
+	}
+	d.ciKey = st.CIPublicKey
+	if cfg.CIPublicKey != "" {
+		d.ciKey = cfg.CIPublicKey
+		d.log.Printf("CI public key pinned by the config: %s", cfg.CIPublicKey)
+	}
+	if d.ciKey == "" {
+		d.log.Printf("no CI public key pinned: every assignment will be refused until one is (re-enroll, or set ci_public_key)")
 	}
 	// the token is consumed: forget it so it is never logged or written
 	cfg.EnrollToken = ""
@@ -177,6 +189,17 @@ func (d *Daemon) Run(ctx context.Context) int {
 			d.slots <- struct{}{}
 			continue
 		}
+		// an assignment the ship did not sign, or signed with a key other
+		// than the pinned one, is refused before any work (D5): the reason
+		// is logged and the attempt abandoned with it
+		if err := d.verifyAssignment(assignment); err != nil {
+			d.log.Printf("[%s %s] assignment %s refused: %v; no work", assignment.Kind, assignment.Attempt, assignment.ID, err)
+			d.fail(ctx, assignment, "assignment refused: "+err.Error(), func(format string, args ...any) {
+				d.log.Printf("[%s %s] "+format, append([]any{assignment.Kind, assignment.Attempt}, args...)...)
+			})
+			d.slots <- struct{}{}
+			continue
+		}
 		// the ship offers a delivered assignment again when its attempt
 		// shows no activity; one this process is already running is ignored
 		if !d.claim(assignment.Attempt) {
@@ -194,6 +217,37 @@ func (d *Daemon) Run(ctx context.Context) int {
 			}
 		}(assignment)
 	}
+}
+
+// verifyAssignment checks the ship's signature over the assignment
+// against the pinned CI public key: the recipient must be this daemon,
+// the attempt the assignment's, the operation "assign", the expiry in
+// the future.
+func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
+	if d.ciKey == "" {
+		return errors.New("no CI public key pinned")
+	}
+	if a.Sig == nil || a.Sig.Sig == "" {
+		return errors.New("assignment is unsigned")
+	}
+	if a.Sig.Recipient != d.daemonID {
+		return fmt.Errorf("signed for daemon %s, not this one", a.Sig.Recipient)
+	}
+	if a.Sig.Attempt != a.Attempt {
+		return fmt.Errorf("signed for attempt %s, not %s", a.Sig.Attempt, a.Attempt)
+	}
+	if a.Sig.Operation != "assign" {
+		return fmt.Errorf("signed for operation %q", a.Sig.Operation)
+	}
+	if a.Sig.Expiry <= time.Now().Unix() {
+		return fmt.Errorf("authorization expired at %s", time.Unix(a.Sig.Expiry, 0).UTC().Format(time.RFC3339))
+	}
+	m := sig.Message{Recipient: a.Sig.Recipient, Attempt: a.Sig.Attempt, Operation: a.Sig.Operation, Expiry: a.Sig.Expiry, Nonce: a.Sig.Nonce}
+	if err := sig.Verify(d.ciKey, m, a.Sig.Sig); err != nil {
+		return err
+	}
+	d.log.Printf("[%s %s] assignment signature verified (nonce %s, expires %s)", a.Kind, a.Attempt, a.Sig.Nonce, time.Unix(a.Sig.Expiry, 0).UTC().Format(time.RFC3339))
+	return nil
 }
 
 func (d *Daemon) claim(attempt string) bool {
@@ -577,13 +631,19 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 }
 
 // usableGrants is the assignment's grants minus the ones the daemon
-// refuses: an expired grant is never passed to act (D4).
+// refuses: an expired grant, or one whose signature does not verify
+// against the pinned CI key, is never passed to act (D4/D5).
 func (d *Daemon) usableGrants(a *ship.Assignment, logf func(string, ...any)) []ship.Grant {
 	var out []ship.Grant
 	now := time.Now().Unix()
 	for _, g := range a.Grants {
 		if g.Expiry <= now {
 			logf("grant %s refused: expired at %s (now %s); not passed to act", g.Name, time.Unix(g.Expiry, 0).UTC().Format(time.RFC3339), time.Unix(now, 0).UTC().Format(time.RFC3339))
+			continue
+		}
+		m := sig.Message{Recipient: d.daemonID, Attempt: a.Attempt, Operation: "grant:" + g.Name, Expiry: g.Expiry, Nonce: g.Nonce}
+		if err := sig.Verify(d.ciKey, m, g.Sig); err != nil {
+			logf("grant %s refused: %v; not passed to act", g.Name, err)
 			continue
 		}
 		out = append(out, g)
