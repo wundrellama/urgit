@@ -67,6 +67,17 @@ fork_pr() {
 trusted_id() {  # <head> <base>
   dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' \`@ux\`(rash '$1' hex) \`@ux\`(rash '$2' hex)]))" | one '0v[0-9a-v.]+'
 }
+untrusted_id() {  # <head> <base>
+  dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' \`@ux\`(rash '$1' hex) \`@ux\`(rash '$2' hex) %untrusted]))" | one '0v[0-9a-v.]+'
+}
+# staged_id <head> <base> <answer-id>: the candidate the ship holds for the
+# head and base, whichever class it gave it (a build that classes the
+# author wrong stores it under the other id than the merge answer names)
+staged_id() {
+  local u t; u=$(untrusted_id "$1" "$2"); t=$(trusted_id "$1" "$2")
+  for c in "$3" "$u" "$t"; do [ -n "$c" ] && [ -n "$(cand_trust "$c")" ] && { echo "$c"; return; }; done
+  echo "$3"
+}
 approve() {  # <cid> <actor>: the dojo poke, printing refused:<reason> or accepted
   local out; out=$("$dojo" ":urgit-ci &ci-action [%approve-candidate $1 $2]" 60 14 | awk 1)
   if printf '%s' "$out" | grep -q 'actor cannot write'; then echo "refused: actor cannot write $REPO"
@@ -130,7 +141,7 @@ echo "-- Merge -> $(printf '%s' "$r" | cut -c1-200)"
 check "merge -> 202" "202" "$(status_of "$r")"
 check "the answer's trust class" "untrusted" "$(jq_of "$r" .trust)"
 check "the answer's actor" "~$SHIP2" "$(jq_of "$r" .actor)"
-CID=$(jq_of "$r" .candidate)
+CID=$(staged_id "$PR_HEAD" "$BASE" "$(jq_of "$r" .candidate)")
 sleep 20
 check "candidate is %untrusted" '%untrusted' "$(cand_trust "$CID")"
 check "candidate actor is the second galaxy" "~$SHIP2" "$(dojo_value "actor:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CID/noun))" | one '^~[a-z-]+$')"
@@ -198,7 +209,7 @@ BASE=$(repo_master)
 # a fresh fork: the Q5 fork's master predates Q7's landing
 fork_pr "q8-contrib-$TS" "Q8 contributor change" fixture-pass.yml
 r=$(merge_pr "$PR")
-CID=$(jq_of "$r" .candidate)
+CID=$(staged_id "$PR_HEAD" "$BASE" "$(jq_of "$r" .candidate)")
 sleep 3
 check "staged %untrusted" '%untrusted' "$(cand_trust "$CID")"
 check "ci-can-write answers %.n for the second galaxy" '%.n' "$(dojo_value ".^(? %gx /=urgit=/ci-can-write/(scot %t '$REPO')/(scot %p ~$SHIP2)/noun)" | one '^%\.[yn]$')"
