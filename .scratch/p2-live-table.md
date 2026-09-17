@@ -1,10 +1,10 @@
 # CI P2 live table — astra
 
-Worktree `urgit-ci-p2-astra`, branch `ci/p2-astra`, re-frozen brief base
-`4872953`, launch HEAD `a5cc44f`. Rider 1 resolved the original §1–§3.
-The operator subsequently rebased the chair onto re-freeze 2 (`682c8cf`),
-with launch footer `f589b4e`; the stage hashes below reflect that rebase.
-Rider 2 resolved §4/§5. The resumed S2 pass stopped at the new §6 scope box.
+Worktree `urgit-ci-p2-astra`, branch `ci/p2-astra`. The current brief body
+is re-freeze 3, `f7391cb` (SHA-256 prefix `947595909726`), with launch
+footer `c703034`. Riders 1–3 resolve the original six boxes. Earlier
+shutdowns and their evidence below are historical; the current pass
+resumes the retained piers and continues from S2.
 
 Ship `~lup`, HTTP 8352, pier `/var/home/michael/piers/urgit-ci-p2-lup`.
 The pier did not exist before boot. `.scratch/ci-p0/boot.sh` split herdr
@@ -30,9 +30,9 @@ owned by the invoking host user. The server's console port is not published.
 
 | Stage | Commit | Gate |
 |---|---|---|
-| S0 | `a0f38e7` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
-| S1 | `25aa23f` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
-| S2 | Boxed; draft restored out of product source | Rider 2 resolves §4/§5. `QUESTIONS-CI-P2.md` §6 records the new peek's `-find.repository-writable`: the predicate and its group helpers are local to `on-poke`, outside `on-peek`. No S2 row is claimed. |
+| S0 | `1acf739` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
+| S1 | `854237b` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
+| S2 | This stage commit | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
 
 ## Observations
 
@@ -43,7 +43,12 @@ owned by the invoking host user. The server's console port is not published.
 | Q3 | RED → GREEN | One-line `sign-get` trust-guard sabotage returned a signed `/untrusted/log.jsonl` URL for that trusted attempt (tripwire `cross-trust read refused: FAIL`). Restored build returns **~**. Actual stored key contains `/trusted/`. Logs: `.scratch/tmp/q3-red.log`, `.scratch/tmp/q3-green.log`. |
 | Q4 | RED → GREEN | Running attempt `0v5.719le.1c4o8.2bput.rg2cf.8if7s`: one-line upload-name guard sabotage → 200 for `../x` (tripwire `upload ../x -> 200`); source restored and reloaded → 400. Logs: `.scratch/tmp/q4-red.log`, `.scratch/tmp/q4-green.log`. |
 | Q2-missing (D1) | RED → GREEN | Deleted the completed erasure log from the bucket. One-line stale-handle sabotage: GET **404** but log metadata retained (tripwire `missing object cleared: FAIL`); restored code: GET **404**, `log=null`, attempt still **passed**. Logs: `.scratch/tmp/q2-missing-red.log`, `.scratch/tmp/q2-missing-green.log`. |
-| Q5a–Q18 | Pending | No later-stage rows claimed |
+| Q5a | RED → GREEN | One-line web-gate bypass: merge → **200**, master moved and pull merged before checks (tripwire `Q5a RED: protected master moved before checks`). Restored gate: merge → **202**, master held at `c569d30…`, candidate `0v6u31p.9ifng.3b1f5.n1qct.1dera` trusted; real runner passed, master moved to `5434b9b…`, pull #1 then merged. Unprotected `free` merge → **200** and direct write. `.scratch/tmp/q5a-{red,green}.log`. |
+| Q5 | RED → GREEN | Actual `~dys` peer discovery/fork/push/pull, each response id matched in its own completion record. Constant-trusted sabotage offered work → **200** (tripwire `Q5 RED: non-writer PR offered trusted work`). Restored build: repo `q5-green-514984057371`, actor `~dys`, candidate `0v1.d736e.sfdov.fqpt5.jjed0.cpofu`, untrusted/pending, plan `~`, attempts `~`, poll **204**, master unchanged. `.scratch/tmp/q5-{red,green}.log`. |
+| Q6 | RED → GREEN | One-line eligibility sabotage let untrusted candidate `0vllmtj.c1b2q.9vil3.22fbl.ask5i` pass and land (tripwire `Q6 RED: untrusted candidate landed`). Restored build, same Q5 GREEN PR under restricted policy: real plan and job attempts untrusted; captured plan assignment has `trust=untrusted`, `grants=[]`; job uses `/work/cache/untrusted`. Candidate **passed**, refusal **`candidate trust is untrusted; cannot land`**, master remains `e4c9f11…`, pull #1 open. `.scratch/tmp/q6-{red,green}.log`; actual wire captures in ignored `p2-q6-*-offer.json`. |
+| Q7 | PASS | Actual owner `%approve-candidate` poke: old `0v1.d736e.sfdov.fqpt5.jjed0.cpofu` → **skipped**, reason **`superseded by approval`**; new `0v5.a96eh.tbtht.fukh5.6rapq.ofk7n` trusted with exactly the same head/base, fresh plan and job, **passed/landed**, master `c40a6d5…`, PR #1 merged. `.scratch/tmp/q7.log`. |
+| Q8 | RED → GREEN | One-line writer-refusal bypass in the action handler: synthetic `src.bowl=~dys` accepted, also accepted while `%urgit` was actually suspended (tripwire `Q8 RED: non-writer approval accepted by the action handler`). Restored handler refuses **`actor cannot write q5-green-514984057371`**; with `%urgit` `%gu=%.n`, refuses **`ci: %urgit writer read is unavailable`**. Q7 is the real owner-positive poke. `.scratch/tmp/q8-{red,unavailable-red,green,unavailable}.log`. |
+| Q9–Q18 | Pending | Later stages remain |
 
 The fixture's independent curl-signed PUT/GET succeeded and its anonymous
 object GET returned **403**, before any product signing test. All seven
@@ -103,7 +108,7 @@ finds no matching ship or runner. The **484 MB** pier remains at
 `/var/home/michael/piers/urgit-ci-p2-lup`; store data are retained. The
 chair's rootless Docker daemon remains available, with no containers running.
 
-## S2 resumed pass and shutdown
+## Historical S2 box pass and shutdown
 
 Rider 2 was read at `f589b4e`. The five-touch draft was copied to `~lup`
 with `zig build -Ddesk=<pier>/urgit`; the actual Clay compilation refused
@@ -146,3 +151,83 @@ identified `~dys` PIDs **3277958 / 3282581** and `~lup` PIDs
 shell prompt returned before its pane was closed. Both piers remain:
 `urgit-ci-p2-dys` **220 MB**, `urgit-ci-p2-lup` **505 MB**. The rootless
 Docker daemon remains available with no running containers.
+
+
+## S2 current pass: scope and harness
+
+Both retained piers resumed without `-p`: `~lup` in pane `w1B:p5`,
+`~dys` in `w1B:p6`. `%urgit-ci` was nuked/revived for the in-place
+`state-0` change; `%urgit` retained its existing schema and state. Q5's
+setup reset CI once more to retire the preliminary Q5a daemon; Q5a's
+results above are historical. Both ships compiled the S2 source.
+
+The five authorized `%urgit` touches at this stage are:
+
+1. `handle-api`, merge branch **7349–7396**: guarded protection read,
+   stage with the pull's source ship and number, answer 202. The pull
+   stays open; no `native-pull` slot or persisted `%urgit` schema changed.
+2. `land-candidate`, **8006–8053**: read the candidate by id, validate
+   its fields and eligibility, report the trust refusal, and mark its
+   pull merged after the ref update.
+3. `handle-api`, authenticated repository GET **6092–6115**:
+   `ciUntrustedPolicy`. The shared pure JSON renderer lacks the bowl
+   needed by the guarded read, so the field is added in this handler.
+4. `handle-receive-pack`, **8698**: the existing push stage constructor
+   supplies `-.actor +.actor ~`, including the new empty pull slot.
+5. `on-peek`, **9212–9217**: `/ci-can-write/<repo>/<actor>`, plus the
+   unchanged helper lift. `group-peek` **10300–10317**, `group-seat`
+   **10330–10357**, `repository-group-capability` **10359–10364**, and
+   `repository-writable` **10366–10374** have byte-identical arm bodies
+   to `c703034`. The outer helper door and four aliases are at **2230–2239**
+   and **10287–10375**. A direct addition of arms to Gall's ten-arm
+   core fails its `agent:gall` cast; the enclosing door follows the
+   existing `%urgit-ci` pattern and shares the same bowl. The body hashes
+   are `4d342068…`, `f9b2eb02…`, `d5be6e04…`, and `a7e552a8…` respectively.
+
+Additional live writer reads: the Q5 repo with `~lup` → `%.y`, with
+`~dys` → `%.n`, an unknown repo with `~lup` → `%.n`.
+
+Harness findings resolved within S2:
+
+- Peer fixtures now set their advertised default branch to `master`.
+  A fresh repo advertises `main`; seeding only `master` left the first
+  fork transfer with an incomplete default graph.
+- P1 ignores capacity zero. The Q5 capture-only enrollment must age out
+  for five minutes before Q6 starts its runner; a zero-capacity poll did
+  not retire it. The first Q6 setup returned 204 from the wrong daemon
+  and did not count as RED. The corrected RED and GREEN both ran real
+  plan and job attempts.
+- Capturing a real assignment before starting the runner consumes its
+  first delivery. Both Q6 phases waited for P1's two-minute redelivery;
+  the poll loop and sandbox interface remain unchanged.
+- Reload checks now require Gall's reload/boot/bump message after an
+  invocation marker. Repeating an identical source uses single-agent
+  `|rein` off/on to load its saved state. A comment-only source change
+  does not force a Gall reload. No CI state is lost by this retry path.
+
+`go test ./...` and the static runner build passed after adding the
+trust-specific cache path. The existing job lifecycle test checks that
+path; all other execution arguments and projection behavior are retained.
+
+
+Q8's P2 limitation is explicit: only the owner can reach the production
+approval poke. A remote writer has neither a local session nor a remote
+approve route; that `%git-peer` route belongs to P3. The probe extracts
+the current controller helper source verbatim, compiles it with a real
+snapshot and a synthetic bowl, calls `handle-action` under `mule`, and
+returns only acceptance or the refusal's leaf message. It neither saves
+state nor dispatches cards. This tests the real predicate and action
+handler without weakening the production poke entry. Both RED probes
+ran before Q7. The GREEN probes were repeated after Q7 because the first
+reader's 60-line tail dropped long error traces; the writer gate runs
+before the superseded-candidate check and still supplies the exact
+required refusal. `lib.sh` deliberately disables errexit; the Q8 driver
+now re-enables it after sourcing the library. No empty transcript is
+counted as a result. Q7's first reader also needed double spaces for its
+tall Hoon `=/`; its actual approval had already succeeded, and the fixed
+reader verified that same new candidate without a second approval.
+
+The generated probe is a fixture-only generator in the mounted desk,
+removed by the next normal desk build. It is not a product endpoint.
+The four lifted access-arm bodies were compared byte-for-byte again
+against `c703034` after Q8; all were equal. `git diff --check` passes.

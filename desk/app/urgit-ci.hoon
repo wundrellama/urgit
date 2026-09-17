@@ -110,6 +110,16 @@
     =/  ref=@t  (decode-segment:hc i.t.t.t.path)
     ``noun+!>((~(has in ci-protected) [repo ref]))
   ::
+      [%x %untrusted-policy @ ~]
+    ``noun+!>((policy:hc (decode-segment:hc i.t.t.path)))
+  ::
+      [%x %landing @ ~]
+    =/  id=(unit @uv)  (slaw %uv i.t.t.path)
+    =/  found=(unit candidate:ci)  ?~(id ~ (~(get by candidates) u.id))
+    :^  ~  ~  %noun
+    !>  ^-  (unit [record=candidate:ci eligible=?])
+    ?~(found ~ `[u.found (candidate-eligible:hc u.found)])
+  ::
       [%x %polls ~]        ``noun+!>(polls)
       [%x %candidates ~]   ``noun+!>(candidates)
       [%x %daemons ~]      ``noun+!>(daemons)
@@ -270,9 +280,29 @@
   |=  [* c=candidate:ci]
   ?&  =(repo repo.c)
       =(ref ref.c)
-      =(%passed status.c)
+      (candidate-eligible c)
       ?=(^ candidate.c)
       =(u.oid u.candidate.c)
+  ==
+::
+++  candidate-eligible
+  |=  c=candidate:ci
+  ^-  ?
+  ?&  =(%passed status.c)
+      =(%trusted trust.c)
+      ?=(^ candidate.c)
+  ==
+::
+++  policy
+  |=  repo=@t
+  ^-  untrusted-policy:ci
+  (~(gut by untrusted) repo %approval)
+::
+++  runnable
+  |=  c=candidate:ci
+  ^-  ?
+  ?&  !=(%skipped status.c)
+      |(=(%trusted trust.c) =(%restricted (policy repo.c)))
   ==
 ::
 ++  urgit-poke
@@ -285,7 +315,7 @@
   ^-  card
   [%pass (weld /urgit wire) %agent [our.bowl %urgit] %poke %git-action !>(act)]
 ::
-::  the three reads of %urgit, each guarded the way %urgit guards its own
+::  reads of %urgit, each guarded the way %urgit guards its own
 ::  reads of %urgit-ci: gall's %gu liveness first, under mule, and the %gx
 ::  read only once it says yes, because a bare %gx answered [~ ~] kills
 ::  the event even under mule.  ~ means "could not read": every caller
@@ -311,6 +341,21 @@
   =/  raw=(unit *)  (urgit-peek /ci-ref/(scot %t repo)/(scot %t ref))
   ?~  raw  ~
   `;;((unit [tip=oid:git linked=?]) u.raw)
+::
+++  can-write
+  |=  [repo=@t actor=@p]
+  ^-  (unit ?)
+  =/  raw=(unit *)
+    (urgit-peek /ci-can-write/(scot %t repo)/(scot %p actor))
+  ?~(raw ~ `;;(? u.raw))
+::
+++  writer-refusal
+  |=  [repo=@t actor=@p]
+  ^-  (unit @t)
+  =/  allowed=(unit ?)  (can-write repo actor)
+  ?~  allowed  `'ci: %urgit writer read is unavailable'
+  ?.  u.allowed  `(rap 3 ~['actor cannot write ' repo])
+  ~
 ::
 ++  tree-at
   |=  [repo=@t oid=oid:git under=@t]
@@ -364,6 +409,8 @@
       ::  against the same base is the same candidate and keeps its record
       ::
       %stage-candidate
+    =/  writer=(unit ?)  (can-write repo.act actor.act)
+    ?~  writer  ~|('ci: %urgit writer read is unavailable' !!)
     =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
     =/  existing=(unit candidate:ci)  (~(get by candidates) id)
     ?^  existing
@@ -371,13 +418,23 @@
       (emit ~)
     =/  next=candidate:ci
       :*  id  repo.act  ref.act  head.act  base.act
-          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  now.bowl  now.bowl
+          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act
+          ?:(u.writer %trusted %untrusted)  pull.act  now.bowl  now.bowl
       ==
     =.  candidates  (~(put by candidates) id next)
     %-  emit
     :_  ~
     %+  urgit-poke  /materialize/(scot %uv id)
     [%materialize-candidate repo.act ref.act head.act base.act]
+  ::
+      %set-untrusted-policy
+    =/  refusal=(unit @t)  (writer-refusal repo.act src.bowl)
+    ?^  refusal  ~|(u.refusal !!)
+    =.  untrusted  (~(put by untrusted) repo.act policy.act)
+    schedule
+  ::
+      %approve-candidate
+    (approve-candidate id.act src.bowl)
   ::
       %materialize
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
@@ -401,32 +458,41 @@
       ::  a ready candidate is planned at once (D4).
       ::
       %candidate-ready
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
-    =/  found=(unit candidate:ci)  (~(get by candidates) id)
-    ?~  found  (emit ~)
-    ?^  candidate.u.found  (emit ~)
+    =/  waiting=(list candidate:ci)
+      (awaiting-materialization repo.act ref.act head.act base.act)
+    =/  original=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
+    =|  cards=(list card)
+    |-
+    ?~  waiting
+      =/  old=(unit candidate:ci)  (~(get by candidates) original)
+      =?  cards  ?&(?=(^ old) =(%skipped status.u.old))
+        (snoc cards (urgit-git-poke /release/(scot %uv original) [%delete-ref repo.act (scratch-ref original)]))
+      =/  scheduled=out  schedule
+      [(weld cards cards.scheduled) state.scheduled polls.scheduled]
     =/  next=candidate:ci
-      u.found(candidate `candidate.act, conflict %.n, updated now.bowl)
-    =.  candidates  (~(put by candidates) id next)
-    schedule
+      i.waiting(candidate `candidate.act, conflict %.n, updated now.bowl)
+    =.  candidates  (~(put by candidates) id.next next)
+    =?  cards  !=(original id.next)
+      (snoc cards (urgit-git-poke /scratch/(scot %uv id.next) [%set-ref repo.next (scratch-ref id.next) candidate.act]))
+    $(waiting t.waiting)
   ::
       ::  a head that cannot be merged onto its base cannot be tested: the
       ::  candidate fails with the reason rather than waiting forever
       ::
       %candidate-conflict
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act)
-    =/  found=(unit candidate:ci)  (~(get by candidates) id)
-    ?~  found  (emit ~)
-    ?^  candidate.u.found  (emit ~)
+    =/  waiting=(list candidate:ci)
+      (awaiting-materialization repo.act ref.act head.act base.act)
+    |-
+    ?~  waiting  (emit ~)
     =.  candidates
-      %+  ~(put by candidates)  id
-      %=  u.found
+      %+  ~(put by candidates)  id.i.waiting
+      %=  i.waiting
         conflict        %.y
         status          %failed
         verdict-reason  `'candidate could not be materialized: the source conflicts with the destination'
         updated         now.bowl
       ==
-    (emit ~)
+    $(waiting t.waiting)
   ::
       %mint-enroll-token
     =/  token-hash=@  (shas %ci-enroll token.act)
@@ -442,6 +508,7 @@
       %assign
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
     ?~  found  ~|('no such candidate' !!)
+    ?.  (runnable u.found)  ~|('candidate requires approval before execution' !!)
     ?~  candidate.u.found  ~|('candidate is not materialized' !!)
     =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.act)
     ?~  runner  ~|('no such daemon' !!)
@@ -485,6 +552,64 @@
     (emit ~)
   ==
 ::
+++  awaiting-materialization
+  |=  [repo=@t ref=@t head=oid:git base=oid:git]
+  ^-  (list candidate:ci)
+  %+  skim  ~(val by candidates)
+  |=  c=candidate:ci
+  ?&  =(repo repo.c)  =(ref ref.c)  =(head head.c)  =(base base.c)
+      =(%pending status.c)  ?=(~ candidate.c)
+  ==
+::
+++  approve-candidate
+  |=  [id=candidate-id:ci actor=@p]
+  ^-  out
+  =/  found=(unit candidate:ci)  (~(get by candidates) id)
+  ?~  found  ~|('no such candidate' !!)
+  =/  refusal=(unit @t)  (writer-refusal repo.u.found actor)
+  ?^  refusal  ~|(u.refusal !!)
+  ?:  =(%skipped status.u.found)  ~|('candidate is superseded' !!)
+  ?:  =(%trusted trust.u.found)  ~|('candidate is already trusted' !!)
+  (restage u.found %trusted 'superseded by approval')
+::
+::  Approval makes a fresh execution record for the same head/base. If
+::  materialization is still in flight its reply fills the new record;
+::  otherwise the exact object is retained under the new scratch ref.
+::  Late results from the old attempts cannot revive a skipped candidate.
+::
+++  restage
+  |=  [old=candidate:ci trust=trust:ci reason=@t]
+  ^-  out
+  =/  id=candidate-id:ci  (sham [%ci-restage id.old now.bowl eny.bowl])
+  =/  next=candidate:ci
+    %=  old
+      id              id
+      trust           trust
+      status          %pending
+      conflict        %.n
+      attempts        ~
+      plan            ~
+      plan-oid        ~
+      verdict-reason  ~
+      created         now.bowl
+      updated         now.bowl
+    ==
+  =.  candidates
+    (~(put by candidates) id.old old(status %skipped, verdict-reason `reason, updated now.bowl))
+  =.  candidates  (~(put by candidates) id next)
+  ?~  candidate.next
+    %-  emit
+    ~[(urgit-poke /materialize/(scot %uv id) [%materialize-candidate repo.next ref.next head.next base.next])]
+  =/  scheduled=out  schedule
+  :*  %+  weld
+        :~  (urgit-git-poke /scratch/(scot %uv id) [%set-ref repo.next (scratch-ref id) u.candidate.next])
+            (urgit-git-poke /release/(scot %uv id.old) [%delete-ref repo.old (scratch-ref id.old)])
+        ==
+      cards.scheduled
+      state.scheduled
+      polls.scheduled
+  ==
+::
 ::  a new attempt and its assignment, undelivered, and the deadline timer
 ::  the caller emits.  the daemon's running set grows here and shrinks in
 ::  +close-attempt.
@@ -499,16 +624,17 @@
       ==
   ^-  [[attempt-id:ci timer=card] _state]
   =/  found=candidate:ci  (~(got by candidates) candidate)
+  ?>  (runnable found)
   =/  attempt-id=attempt-id:ci
     (sham [%ci-attempt candidate daemon kind workflow job now.bowl (lent attempts.found)])
   =/  assignment-id=assignment-id:ci  (sham [%ci-assignment attempt-id])
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
-        %trusted  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~  ~
+        trust.found  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  now.bowl  ~  ~
     ==
   =/  =assignment:ci
     :*  assignment-id  candidate  daemon  attempt-id
-        %trusted  kind  workflow  job  deadline  now.bowl  ~
+        trust.found  kind  workflow  job  deadline  now.bowl  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  assignments  (~(put by assignments) assignment-id assignment)
@@ -534,7 +660,7 @@
     (sham [%ci-skip candidate workflow.job id.job now.bowl (lent attempts.found)])
   =/  =attempt:ci
     :*  attempt-id  candidate  0v0  0v0
-        %trusted  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl  ~
+        trust.found  %job  `workflow.job  `id.job  %skipped  0  ~  ~  ~  `reason  ~  now.bowl  `now.bowl  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -606,7 +732,7 @@
   =/  pending=(list candidate:ci)
     %+  skim  ~(val by candidates)
     |=  =candidate:ci
-    ?&(=(%pending status.candidate) ?=(^ candidate.candidate) !conflict.candidate)
+    ?&(=(%pending status.candidate) ?=(^ candidate.candidate) !conflict.candidate (runnable candidate))
   =|  cards=(list card)
   =|  touched=(set daemon-id:ci)
   |-
@@ -706,6 +832,7 @@
   ^-  out
   =/  found=(unit candidate:ci)  (~(get by candidates) id)
   ?~  found  (emit ~)
+  ?:  =(%skipped status.u.found)  (emit ~)
   =/  before=candidate-status:ci  status.u.found
   =.  state
     ?~  plan.u.found  state
@@ -932,6 +1059,7 @@
       ['head' s+(oid-text:git-codec head.candidate)]
       ['base' s+(oid-text:git-codec base.candidate)]
       ['trust' s+trust.assignment]
+      ['grants' [%a ~]]
       ['kind' s+kind.assignment]
       ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
       ['job' ?~(job.assignment ~ s+u.job.assignment)]

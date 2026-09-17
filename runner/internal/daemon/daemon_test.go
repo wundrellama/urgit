@@ -159,7 +159,7 @@ func newTestDaemon(t *testing.T, box *fakeBox, srv *httptest.Server, capacity in
 
 var jobAssignment = &ship.Assignment{
 	ID: "0v1.asg", Attempt: "0v1.att", Candidate: "0v1.cand", Repo: "r", Ref: "refs/heads/master",
-	OID: "0000000000000000000000000000000000000001", Kind: "job", Workflow: "fixture-chain.yml", Job: "b",
+	OID: "0000000000000000000000000000000000000001", Trust: "trusted", Kind: "job", Workflow: "fixture-chain.yml", Job: "b",
 	PrereqOutputs: map[string]map[string]string{"a": {"go": "true"}}, DeadlineSeconds: 60,
 }
 
@@ -183,7 +183,7 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 		"copy src -> /work/src",
 		"copy sh -> /usr/local/bin/act",
 		"copy fixture-chain.yml -> /work/projected/fixture-chain.yml",
-		"run act push -W /work/projected/fixture-chain.yml -j b -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --env NEEDS_A_OUTPUTS_GO=true env=",
+		"run act push -W /work/projected/fixture-chain.yml -j b -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache/trusted --artifact-server-path /work/artifacts --env NEEDS_A_OUTPUTS_GO=true env=",
 		"destroy ci-0v1.att",
 	}
 	if strings.Join(box.ops, "\n") != strings.Join(want, "\n") {

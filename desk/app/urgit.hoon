@@ -2227,10 +2227,16 @@
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
 =/  webhook-in-flight  *(map @uv webhook-flight)
+=<
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
     def   ~(. (default-agent this %|) bowl)
+    ac    ~(. +> bowl)
+    group-peek                   group-peek:ac
+    group-seat                   group-seat:ac
+    repository-group-capability  repository-group-capability:ac
+    repository-writable          repository-writable:ac
 ::
 ++  on-init
   ^-  (quip card _this)
@@ -2314,77 +2320,6 @@
   ^-  card
   [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
 ::
-::  a guarded read of this ship's %groups: ~ unless %groups is running,
-::  knows the group, and answers the path without crashing.  each scry is
-::  guarded by one that cannot answer [~ ~], because that answer kills the
-::  event even under +mule on the current runtime: gall itself answers the
-::  /$ liveness check, and %groups answers /u/groups/<flag> with a loobean
-::  whether the group exists or not.  the path read is
-::  /<under>/groups/<host>/<name>/<rest>, and rest ends in the mark asked
-::  for: gall hands the answer over as-is when %groups serves that mark,
-::  and otherwise converts it through the %groups desk's marks at request
-::  time, so a read asks for the served mark where that is known.  the only
-::  arm that scries %groups
-::
-++  group-peek
-  |=  [group=[host=@p name=@tas] under=path rest=path]
-  ^-  (unit *)
-  =/  prefix=path  /(scot %p our.bowl)/groups/(scot %da now.bowl)
-  =/  flag=path  /groups/(scot %p host.group)/[name.group]
-  =/  live=(each ? tang)
-    %-  mule  |.
-    .^(? %gu (weld prefix /$))
-  ?.  ?&(?=(%& -.live) p.live)  ~
-  =/  known=(each ? tang)
-    %-  mule  |.
-    .^(? %gu (weld prefix flag))
-  ?.  ?&(?=(%& -.known) p.known)  ~
-  =/  raw=(each * tang)
-    %-  mule  |.
-    .^(* %gx (weld prefix (weld under (weld flag rest))))
-  ?.  ?=(%& -.raw)  ~
-  `p.raw
-::
-::  the requester's seat in the repository's group, read from %groups in this
-::  event and never cached.  fails closed: anything short of a seat that
-::  soft-casts to our minimal shape is ~.
-::
-::  a group hosted here is authoritative.  a joined group is the host's
-::  mirror, believed only while %groups reports it initialised and this
-::  ship is still seated in it (+mirror-trusted); the initialised bit is
-::  the tail of the /v2/ui/groups/<flag> peek, [group init=? member-count=@ud],
-::  which %groups resets together with its copy whenever it rebuilds one.
-::  the only arm that turns %groups into a capability.
-::
-++  group-seat
-  |=  [policy=(unit group-policy:git) requester=@p]
-  ^-  (unit group-seat:git)
-  ?~  policy  ~
-  =/  group=[host=@p name=@tas]  group.u.policy
-  =/  seat-of
-    |=  who=@p
-    ^-  (unit group-seat:git)
-    =/  raw=(unit *)  (group-peek group / /seats/(scot %p who)/noun)
-    ?~  raw  ~
-    =/  seat=(each (unit group-seat:git) tang)
-      %-  mule  |.
-      ;;((unit group-seat:git) u.raw)
-    ?.  ?=(%& -.seat)  ~
-    p.seat
-  =/  net=?(%pub %sub)  ?:(=(our.bowl host.group) %pub %sub)
-  =/  init=?
-    ?:  ?=(%pub net)  %.y
-    =/  raw=(unit *)  (group-peek group /v2/ui /noun)
-    ?~  raw  %.n
-    =/  ui=(each [* init=? member-count=@ud] tang)
-      %-  mule  |.
-      ;;([* init=? member-count=@ud] u.raw)
-    ?.  ?=(%& -.ui)  %.n
-    init.p.ui
-  =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our.bowl)))
-  ?.  (mirror-trusted:git-access net init seated)  ~
-  (seat-of requester)
-::
 ::  the ships seated in a group, for fanning discovery out to them.  the
 ::  group is believed on exactly the terms +group-seat believes it for
 ::  access, with this ship as the requester, so an untrusted mirror or a
@@ -2403,13 +2338,6 @@
   ?.  ?=(%& -.ships)  ~
   `p.ships
 ::
-++  repository-group-capability
-  |=  [repo=repository:git requester=@p]
-  ^-  capability:git
-  ?~  group-policy.repo  %none
-  ?:  =(requester owner.repo)  %none
-  (group-capability:git-access group-policy.repo (group-seat group-policy.repo requester))
-::
 ++  repository-readable
   |=  [repo=repository:git requester=@p]
   ^-  ?
@@ -2417,16 +2345,6 @@
   :*  public-read.repo
       owner.repo
       readers.repo
-      writers.repo
-      (repository-group-capability repo requester)
-      requester
-  ==
-::
-++  repository-writable
-  |=  [repo=repository:git requester=@p]
-  ^-  ?
-  %-  can-write:git-access
-  :*  owner.repo
       writers.repo
       (repository-group-capability repo requester)
       requester
@@ -6179,8 +6097,22 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
+    ::  The settings read adds CI policy here, where the current bowl is
+    ::  available. The shared repository renderer remains a pure gate.
+    =/  ci-policy=json
+      =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+      =/  live=(each ? tang)
+        %-  mule  |.
+        .^(? %gu (weld prefix /$))
+      ?.  ?&(?=(%& -.live) p.live)  ~
+      =/  read=(each untrusted-policy:ci tang)
+        %-  mule  |.
+        .^(untrusted-policy:ci %gx (weld prefix /untrusted-policy/(scot %t name)/noun))
+      ?:(?=(%& -.read) s+p.read ~)
+    =/  details=json  (repository-json name u.found)
+    ?>  ?=([%o *] details)
     :_  this
-    (api-json eyre-id 200 (repository-json name u.found))
+    (api-json eyre-id 200 [%o (~(put by p.details) 'ciUntrustedPolicy' ci-policy)])
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %issues ~] site)
       ==
@@ -7438,6 +7370,29 @@
     ?~  current
       :_  this
       (api-error eyre-id 409 'destination branch has no head')
+    ::  A CI-protected merge keeps the pull open. The candidate carries
+    ::  its number; only land-candidate changes the pull to merged.
+    =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+    =/  live=(each ? tang)
+      %-  mule  |.
+      .^(? %gu (weld prefix /$))
+    ?.  ?&(?=(%& -.live) p.live)
+      :_  this
+      (api-error eyre-id 503 'ci: %urgit-ci is not running; merge protection cannot be checked')
+    =/  protected=(each ? tang)
+      %-  mule  |.
+      .^(? %gx (weld prefix /ci-protected/(scot %t name)/(scot %t target-ref.pull)/noun))
+    ?.  ?=(%& -.protected)
+      :_  this
+      (api-error eyre-id 503 'ci: merge protection could not be read')
+    ?:  p.protected
+      =/  id=@uv  (sham [name target-ref.pull head.pull u.current])
+      :_  this
+      :-  :*  %pass  /ci/stage/(scot %uv id)
+              %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+              !>(`action:ci`[%stage-candidate name target-ref.pull head.pull u.current source-ship.pull %session `number.pull])
+          ==
+      (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['candidate' s+(scot %uv id)]]))
     =/  incoming-reachable=(unit (set oid:git))
       (reachable:git-graph objects.u.found (silt ~[head.pull]))
     =/  current-reachable=(unit (set oid:git))
@@ -8062,10 +8017,19 @@
     .^(? %gu (weld prefix /$))
   ?.  ?&(?=(%& -.live) p.live)
     (refuse 'ci: %urgit-ci is not running; the candidate cannot be landed')
-  =/  eligible=(each ? tang)
+  =/  landing=(each (unit [record=candidate:ci eligible=?]) tang)
     %-  mule  |.
-    ;;(? .^(* %gx (weld prefix /eligible/(scot %t repo-name)/(scot %t ref)/(scot %t (oid-text:git-codec candidate))/noun)))
-  ?.  ?&(?=(%& -.eligible) p.eligible)
+    .^((unit [record=candidate:ci eligible=?]) %gx (weld prefix /landing/(scot %uv id)/noun))
+  ?.  ?&(?=(%& -.landing) ?=(^ p.landing))
+    (refuse 'candidate landing record is unavailable')
+  =/  record=candidate:ci  record.u.p.landing
+  ?.  ?&  =(repo-name repo.record)  =(ref ref.record)
+          =(`candidate candidate.record)  =(expected base.record)
+      ==
+    (refuse 'candidate landing record does not match the request')
+  ?.  eligible.u.p.landing
+    ?:  =(%untrusted trust.record)
+      (refuse 'candidate trust is untrusted; cannot land')
     (refuse 'candidate is not eligible to land')
   =/  found=(unit repository:git)  (~(get by repositories) repo-name)
   ?~  found  (refuse 'repository not found')
@@ -8077,6 +8041,13 @@
   =/  applied=(unit repository:git)  (apply-receive u.found commands ~)
   ?~  applied  (refuse 'candidate object is missing from the store')
   =^  cards  this  (accept-receive ~ repo-name commands u.applied ~)
+  =?  repositories  ?=(^ pull.record)
+    =/  landed=repository:git  (~(got by repositories) repo-name)
+    =/  pulls=(list native-pull:git)
+      %+  turn  native-pulls.landed
+      |=  pull=native-pull:git
+      ?:(=(number.pull u.pull.record) pull(state %merged) pull)
+    (~(put by repositories) repo-name landed(native-pulls pulls))
   :_  this
   %+  snoc  cards
   [%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%landed id])]
@@ -8724,7 +8695,7 @@
         ?:(authenticated.req [our.bowl %session] [owner.u.found %token])
       :*  %pass  /ci/stage/(scot %uv id)
           %agent  [our.bowl %urgit-ci]  %poke  %ci-action
-          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate actor])
+          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate -.actor +.actor ~])
       ==
     %+  give-simple-payload:app:server  eyre-id
     (receive-payload 'ok' (receive-results commands.u.parsed %.n message.u.gate))
@@ -9238,6 +9209,12 @@
       ::  local %x read is the only way to reach them; nothing remote can.
       ::  each answers a unit, never [~ ~], so the reading event survives.
       ::
+      [%x %ci-can-write @ @ ~]
+    =/  name=@t  (ci-segment i.t.t.path)
+    =/  actor=(unit @p)  (slaw %p i.t.t.t.path)
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    ``noun+!>(?~(found %.n ?~(actor %.n (repository-writable u.found u.actor))))
+  ::
       [%x %ci-file @ @ @ ~]
     =/  name=@t  (ci-segment i.t.t.path)
     =/  oid=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.path))
@@ -10302,4 +10279,98 @@
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
   [(peer-ui-notify before after -.result) +.result]
 ++  on-fail   on-fail:def
+--
+::
+::  Shared access helpers. The Gall door above retains its ten entry arms;
+::  both entry points resolve these gates with the current event bowl.
+::
+|_  =bowl:gall
+::  a guarded read of this ship's %groups: ~ unless %groups is running,
+::  knows the group, and answers the path without crashing.  each scry is
+::  guarded by one that cannot answer [~ ~], because that answer kills the
+::  event even under +mule on the current runtime: gall itself answers the
+::  /$ liveness check, and %groups answers /u/groups/<flag> with a loobean
+::  whether the group exists or not.  the path read is
+::  /<under>/groups/<host>/<name>/<rest>, and rest ends in the mark asked
+::  for: gall hands the answer over as-is when %groups serves that mark,
+::  and otherwise converts it through the %groups desk's marks at request
+::  time, so a read asks for the served mark where that is known.  the only
+::  arm that scries %groups
+::
+++  group-peek
+  |=  [group=[host=@p name=@tas] under=path rest=path]
+  ^-  (unit *)
+  =/  prefix=path  /(scot %p our.bowl)/groups/(scot %da now.bowl)
+  =/  flag=path  /groups/(scot %p host.group)/[name.group]
+  =/  live=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix /$))
+  ?.  ?&(?=(%& -.live) p.live)  ~
+  =/  known=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix flag))
+  ?.  ?&(?=(%& -.known) p.known)  ~
+  =/  raw=(each * tang)
+    %-  mule  |.
+    .^(* %gx (weld prefix (weld under (weld flag rest))))
+  ?.  ?=(%& -.raw)  ~
+  `p.raw
+::
+::  the requester's seat in the repository's group, read from %groups in this
+::  event and never cached.  fails closed: anything short of a seat that
+::  soft-casts to our minimal shape is ~.
+::
+::  a group hosted here is authoritative.  a joined group is the host's
+::  mirror, believed only while %groups reports it initialised and this
+::  ship is still seated in it (+mirror-trusted); the initialised bit is
+::  the tail of the /v2/ui/groups/<flag> peek, [group init=? member-count=@ud],
+::  which %groups resets together with its copy whenever it rebuilds one.
+::  the only arm that turns %groups into a capability.
+::
+++  group-seat
+  |=  [policy=(unit group-policy:git) requester=@p]
+  ^-  (unit group-seat:git)
+  ?~  policy  ~
+  =/  group=[host=@p name=@tas]  group.u.policy
+  =/  seat-of
+    |=  who=@p
+    ^-  (unit group-seat:git)
+    =/  raw=(unit *)  (group-peek group / /seats/(scot %p who)/noun)
+    ?~  raw  ~
+    =/  seat=(each (unit group-seat:git) tang)
+      %-  mule  |.
+      ;;((unit group-seat:git) u.raw)
+    ?.  ?=(%& -.seat)  ~
+    p.seat
+  =/  net=?(%pub %sub)  ?:(=(our.bowl host.group) %pub %sub)
+  =/  init=?
+    ?:  ?=(%pub net)  %.y
+    =/  raw=(unit *)  (group-peek group /v2/ui /noun)
+    ?~  raw  %.n
+    =/  ui=(each [* init=? member-count=@ud] tang)
+      %-  mule  |.
+      ;;([* init=? member-count=@ud] u.raw)
+    ?.  ?=(%& -.ui)  %.n
+    init.p.ui
+  =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our.bowl)))
+  ?.  (mirror-trusted:git-access net init seated)  ~
+  (seat-of requester)
+::
+++  repository-group-capability
+  |=  [repo=repository:git requester=@p]
+  ^-  capability:git
+  ?~  group-policy.repo  %none
+  ?:  =(requester owner.repo)  %none
+  (group-capability:git-access group-policy.repo (group-seat group-policy.repo requester))
+::
+++  repository-writable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  %-  can-write:git-access
+  :*  owner.repo
+      writers.repo
+      (repository-group-capability repo requester)
+      requester
+  ==
+::
 --

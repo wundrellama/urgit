@@ -17,7 +17,8 @@
 ::
 +$  trust             ?(%trusted %untrusted)
 +$  result            ?(%success %failure %skipped %cancelled)
-+$  candidate-status  ?(%passed %failed %pending %unknown)
++$  candidate-status  ?(%passed %failed %pending %skipped %unknown)
++$  untrusted-policy  ?(%restricted %approval)
 +$  attempt-status    ?(%passed %failed %skipped %running %infrastructure-error)
 ::
 ::  what an assignment asks a daemon to do: run `act -l` over the candidate
@@ -74,6 +75,8 @@
       verdict-reason=(unit @t)
       actor=@p
       =via
+      =trust
+      pull=(unit @ud)
       created=@da
       updated=@da
   ==
@@ -152,6 +155,7 @@
       assignments=(map assignment-id assignment)
       attempts=(map attempt-id attempt)
       ci-protected=(set [repo=@t ref=@t])
+      untrusted=(map @t untrusted-policy)
   ==
 ::
 ::  the event envelope: one `act --json` line after validation
@@ -186,7 +190,9 @@
 ::
 +$  action
   $%  [%set-ci-protected repo=@t ref=@t protected=?]
-      [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via]
+      [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via pull=(unit @ud)]
+      [%set-untrusted-policy repo=@t policy=untrusted-policy]
+      [%approve-candidate id=candidate-id]
       [%materialize candidate=candidate-id]
       [%materialize-candidate repo=@t ref=@t head=oid:git base=oid:git]
       [%candidate-ready repo=@t ref=@t head=oid:git base=oid:git candidate=oid:git]

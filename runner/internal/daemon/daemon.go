@@ -502,6 +502,10 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, "copy projection: "+err.Error(), logf)
 		return
 	}
+	cachePath := "/work/cache/untrusted"
+	if a.Trust == "trusted" {
+		cachePath = "/work/cache/trusted"
+	}
 	argv := []string{
 		"act", "push",
 		"-W", "/work/projected/" + a.Workflow,
@@ -509,7 +513,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		"-P", "ubuntu-latest=" + d.cfg.ActImage,
 		"--network", h.Network,
 		"--json", "--pull=false",
-		"--cache-server-path", "/work/cache",
+		"--cache-server-path", cachePath,
 		"--artifact-server-path", "/work/artifacts",
 	}
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {

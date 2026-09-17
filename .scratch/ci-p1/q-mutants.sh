@@ -9,6 +9,22 @@ import json, pathlib, sys
 op, row, file = sys.argv[1:]
 snapshot = pathlib.Path(file)
 edits = {
+ 'Q5a': ('desk/app/urgit.hoon',
+         '    ?:  p.protected\n',
+         '    ?:  %.n\n',
+         'Q5a RED: protected master moved before checks'),
+ 'Q5': ('desk/app/urgit-ci.hoon',
+        '          ?:(u.writer %trusted %untrusted)  pull.act  now.bowl  now.bowl\n',
+        '          %trusted  pull.act  now.bowl  now.bowl\n',
+        'Q5 RED: non-writer PR offered trusted work'),
+ 'Q6': ('desk/app/urgit-ci.hoon',
+        '      =(%trusted trust.c)\n',
+        '      %.y\n',
+        'Q6 RED: untrusted candidate landed'),
+ 'Q8': ('desk/app/urgit-ci.hoon',
+        '  =/  refusal=(unit @t)  (writer-refusal repo.u.found actor)\n',
+        '  =/  refusal=(unit @t)  ~\n',
+        'Q8 RED: non-writer approval accepted by the action handler'),
  'Q4': ('desk/app/urgit-ci.hoon',
         '  ?.  ?&(?=(^ name) (upload-name u.name))\n',
         '  ?.  ?=(^ name)\n',
