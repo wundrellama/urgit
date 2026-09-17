@@ -172,7 +172,7 @@ func (s *fakeShip) store(t *testing.T) http.Handler {
 func newTestDaemon(t *testing.T, box *fakeBox, srv *httptest.Server, capacity int) *Daemon {
 	t.Helper()
 	work := t.TempDir()
-	cfg := &config.Config{ShipURL: srv.URL, ActBinary: "/bin/sh", ActImage: "img", Capacity: capacity, WorkDir: work, StateFile: filepath.Join(work, "state.json")}
+	cfg := &config.Config{ShipURL: srv.URL, ActBinary: "/bin/sh", ActImage: "img", Capacity: capacity, WorkDir: work, StateFile: filepath.Join(work, "state.json"), DockerHost: "unix:///run/user/1000/test/docker.sock"}
 	d := &Daemon{cfg: cfg, box: box, log: log.New(io.Discard, "", 0), capacity: capacity, client: ship.New(srv.URL, "0v1.bearer"), daemonID: "0v1.daemon"}
 	d.checkout = func(_ context.Context, a *ship.Assignment, dir string) error {
 		if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
@@ -209,7 +209,7 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 		"copy src -> /work/src",
 		"copy sh -> /usr/local/bin/act",
 		"copy fixture-chain.yml -> /work/projected/fixture-chain.yml",
-		"run act push -W /work/projected/fixture-chain.yml -j b -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --env NEEDS_A_OUTPUTS_GO=true env=",
+		"run act push -W /work/projected/fixture-chain.yml -j b -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --container-daemon-socket unix:///run/user/1000/test/docker.sock --env NEEDS_A_OUTPUTS_GO=true env=",
 		"destroy ci-0v1.att",
 	}
 	if strings.Join(box.ops, "\n") != strings.Join(want, "\n") {

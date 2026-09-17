@@ -160,6 +160,20 @@ source "$TMP/q5.env" 2>/dev/null
 # ---- Q6 ------------------------------------------------------------------------------------
 if [ "$which_row" = q6 ]; then
 row "Q6: %restricted policy — the untrusted candidate runs untrusted, passes, and cannot land"
+# the row runs Q5's candidate when it is still waiting; otherwise (the
+# mutant phases run Q6 without Q5, and Q5a's mutant would write a merge
+# straight through) it stages its own untrusted candidate the way %urgit
+# stages a pull request by ~put — the actor the ci-can-write peek refuses
+if [ -z "${Q5_CID:-}" ] || [ "$(cand_status "$Q5_CID")" != '%pending' ]; then
+  "$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %approval]" 60 3 | tail -1 >/dev/null
+  sync_clone; Q5_BASE=$(repo_master)
+  push_branch "q6-contrib-$TS" "ci-p2 Q6: a contributor's revision" fixture-pass.yml
+  Q5_HEAD=$BOID
+  "$dojo" ":urgit-ci &ci-action [%stage-candidate '$REPO' 'refs/heads/master' (rash '$Q5_HEAD' hex) (rash '$Q5_BASE' hex) ~$SHIP2 %session ~]" 60 3 | tail -1 >/dev/null
+  Q5_CID=$(untrusted_id "$Q5_HEAD" "$Q5_BASE"); Q5_PR=""
+  echo "-- staged $Q5_CID by the stage poke (actor ~$SHIP2, classed by the peek)"
+  check "the staged candidate is %untrusted" '%untrusted' "$(cand_trust "$Q5_CID")"
+fi
 "$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %restricted]" 60 3 | tail -1 >/dev/null
 st=$(wait_cand "$Q5_CID" '%passed|%failed|%unknown' 300)
 check "candidate %passed" '%passed' "$st"
@@ -174,7 +188,7 @@ check_contains "the daemon saw trust untrusted on the assignment" "trust untrust
 check_contains "verdict-reason names trust" "untrusted candidate cannot land" "$(cand_reason "$Q5_CID")"
 sleep 3
 check "master unmoved (restricted check cannot land)" "$Q5_BASE" "$(repo_master)"
-check "the pull is still open" "open" "$(pull_state "$Q5_PR")"
+[ -n "${Q5_PR:-}" ] && check "the pull is still open" "open" "$(pull_state "$Q5_PR")"
 check "eligibility scry answers %.n for the untrusted object" '%.n' "$(dojo_value ".^(? %gx /=urgit-ci=/eligible/(scot %t '$REPO')/(scot %t 'refs/heads/master')/(scot %t '$(cand_object_hex "$Q5_CID")')/noun)" | one '^%\.[yn]$')"
 end_row Q6
 fi

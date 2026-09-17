@@ -574,6 +574,11 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		"--json", "--pull=false",
 		"--cache-server-path", "/work/cache",
 		"--artifact-server-path", "/work/artifacts",
+		// the socket act binds into every job container (CI-SANDBOX-1.1):
+		// stock act defaults it to /var/run/docker.sock, the HOST's rootful
+		// socket, a path the daemon resolves; the sandbox's own socket is
+		// named so the job's docker is the rootless daemon by construction
+		"--container-daemon-socket", d.cfg.DockerHost,
 	}
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
 		argv = append(argv, "--env", e)

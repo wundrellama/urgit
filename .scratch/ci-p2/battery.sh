@@ -10,10 +10,10 @@ set +e
 # the negatives in three groups: Q5 and Q8 run on the merge gate that
 # Q5a's mutant removes, and Q8 approves the untrusted candidate that Q5's
 # mutant classes trusted, so each of the two is sabotaged on its own
-GROUP_A="Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16"
+GROUP_A="Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16 Q19"
 GROUP_B="Q5"
 GROUP_C="Q8"
-steps=(p2-setup "q2-4 q2" "q2-4 q3" "q2-4 q4" "q5-8 q5a" "q5-8 q5" "q5-8 q6" "q5-8 q7" "q5-8 q8" "q9-11 q9" "q9-11 q10" "q9-11 q11" "q12-13 q12" "q12-13 q13" q18 "q14-16 q14" "q14-16 q15" "q14-16 q16" "q-negatives red $GROUP_A" "q-negatives green $GROUP_A" "q-negatives red $GROUP_B" "q-negatives green $GROUP_B" "q-negatives red $GROUP_C" "q-negatives green $GROUP_C" foreground)
+steps=(p2-setup "q2-4 q2" "q2-4 q3" "q2-4 q4" "q5-8 q5a" "q5-8 q5" "q5-8 q6" "q5-8 q7" "q5-8 q8" "q9-11 q9" "q9-11 q10" "q9-11 q11" "q12-13 q12" "q12-13 q13" q18 "q14-16 q14" "q14-16 q15" "q14-16 q16" q19 "q-negatives red $GROUP_A" "q-negatives green $GROUP_A" "q-negatives red $GROUP_B" "q-negatives green $GROUP_B" "q-negatives red $GROUP_C" "q-negatives green $GROUP_C" foreground)
 # START_AT=<step> resumes a run at that step (the earlier steps' logs stand)
 skipping="${START_AT:-}"
 for step in "${steps[@]}"; do

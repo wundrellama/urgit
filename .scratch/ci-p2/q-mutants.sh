@@ -33,6 +33,8 @@
 #   Q13  runner daemon.go      an expired grant is still passed to act
 #   Q16  app/urgit-ci.hoon     ++viewer, the one session check every ci/* read
 #                              and the action route ask, answers yes to anyone
+#   Q19  runner daemon.go      --container-daemon-socket dropped: act binds the
+#                              host's /var/run/docker.sock into the job (CI-SANDBOX-1.1)
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null || { echo "q-mutants.sh: $PWD is not a git work tree"; exit 1; }
@@ -74,6 +76,9 @@ edits = [
  ("Q13", "runner/internal/daemon/daemon.go",
   "\t\tif g.Expiry <= now {\n",
   "\t\tif false {\n"),
+ ("Q19", "runner/internal/daemon/daemon.go",
+  "\t\t\"--container-daemon-socket\", d.cfg.DockerHost,\n",
+  ""),
  ("Q16", "desk/app/urgit-ci.hoon",
   "++  viewer\n  |=  req=inbound-request:eyre\n  ^-  ?\n  authenticated.req\n",
   "++  viewer\n  |=  req=inbound-request:eyre\n  ^-  ?\n  %.y\n"),
@@ -112,6 +117,7 @@ PY
       Q12) echo "daemon b prepared no sandbox (no work): FAIL (observed: 1" ;;
       Q13) echo "expired grant refused by the daemon: FAIL (observed: 0" ;;
       Q16) echo "/candidates without a session -> 401: FAIL (observed: 200" ;;
+      Q19) echo "the job container's socket bind is the rootless socket: FAIL (observed: /var/run/docker.sock:/var/run/docker.sock" ;;
       *) echo "q-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

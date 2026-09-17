@@ -105,6 +105,7 @@ for r in "${ROWS[@]}"; do
     Q12) run_row Q12 "$P2/q12-13.sh" q12 ;;
     Q13) run_row Q13 "$P2/q12-13.sh" q13 ;;
     Q16) run_row Q16 "$P2/q14-16.sh" q16 ;;
+    Q19) run_row Q19 "$P2/q19.sh" ;;
     *) echo "q-negatives.sh: unknown row $r" >&2 ;;
   esac
 done
