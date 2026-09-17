@@ -102,7 +102,7 @@
       ==
   ^-  (unit @t)
   ?~  settings  ~
-  ?.  =(requester trust)  ~
+  ?.  =(trust requester)  ~
   ?:  |(=(0 expires) (gth expires max-presign))  ~
   =/  seconds=@ud  (div expires ~s1)
   =.  seconds  ?:(=(0 seconds) 1 seconds)

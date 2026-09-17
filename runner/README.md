@@ -4,7 +4,11 @@ The runner daemon for `%urgit-ci`. A ship running `%urgit` schedules the jobs of
 
 ## What it does
 
-The daemon enrolls once, then long-polls the ship for assignments. A plan assignment means: check out the candidate, run `act -l` on every workflow file, and post the job list. The list carries each job's `needs` and compiled `if`. A job assignment means: check out the candidate, write a single-job projection of its workflow, and run `act push -j <job> --json` on it. The daemon relays every event line and claims the `jobResult` the stream carried. When `act` exits without a `jobResult`, the daemon abandons the attempt with the reason. It never infers success.
+The daemon enrolls once, then long-polls the ship for assignments. A plan assignment means: check out the candidate, run `act -l` on every workflow file, and post the job list. The list carries each job's `needs`, compiled `if` and `environment` name. A job assignment means: check out the candidate, write a single-job projection of its workflow, and run `act push -j <job> --json` on it. The daemon relays every event line and claims the `jobResult` the stream carried. When `act` exits without a `jobResult`, the daemon abandons the attempt with the reason. It never infers success.
+
+After `act` exits, the daemon uploads the saved stream to the ship's object store before it posts the result. It asks the ship for a signed PUT of `log.jsonl`, sends the bytes with the ship's headers, and names the object's size and sha-256 in the result. The ship records the handle. A viewer reads the log through the ship, which answers a presigned link into the attempt's own trust class.
+
+Every assignment carries the ship's signature over the recipient, the attempt, the operation, an expiry and a nonce. The daemon verifies it with the CI public key it pinned at enrollment and refuses an unsigned or bad-signed assignment before any work. The refusal is logged and the attempt is abandoned with the reason. A trusted job's assignment also carries grants: the credentials the ship released to that attempt, each signed and bounded by the attempt's deadline. Each grant becomes an `act --secret`. A grant past its expiry, or one whose signature does not verify, is never passed to `act`. The daemon scrubs every released value from the relayed lines and from the saved stream, and its own log shows `--secret NAME=***`.
 
 Sandbox disclosure: `sandbox: docker-rootless (container isolation; microvm backend pending)`. The daemon prints this line at startup.
 
@@ -51,7 +55,8 @@ Copy `urgit-runner.toml.example` and set these keys. The spec names the first fo
 | `act_image` | The image `act` maps `ubuntu-latest` to. |
 | `capacity` | Concurrent attempts this daemon offers the ship. Default 1. |
 | `work_dir` | Checkouts, projections and saved `act` streams, one directory per attempt. |
-| `state_file` | Where `daemon_id` and the bearer land after enrollment. Written with mode 0600. |
+| `state_file` | Where `daemon_id`, the bearer and the pinned CI public key land after enrollment. Written with mode 0600. |
+| `ci_public_key` | Optional. The CI public key to verify assignments and grants with, as hex. It overrides the key enrollment recorded. |
 
 The `microvm` keys `image_path`, `cpus`, `memory_mib` and `disk_mib` parse into the sandbox specification. The `microvm` backend refuses to start in this release.
 
@@ -90,8 +95,10 @@ The assignment carries the recorded outputs of the job's prerequisites as `prere
 - Sandboxes are containers on a rootless daemon, not virtual machines. The `microvm` backend is P2's first item on the same interface.
 - Egress from a sandbox is unrestricted NAT. Allow-listing arrives with the VM backend.
 - The candidate's own workflow files are the required evidence (CI-BASELINE-P1). The ship stores the OID it read them from as `plan-oid`, so a later baseline can pin an approved revision.
-- Every staged candidate is trusted, because the only way to the gate is a push that passed the repository's write check (CI-TRUST-P1). Pull-request and fork trust classification, and approval, arrive with step 5.
-- The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error. Per-attempt read tokens are step 5's work.
+- A candidate is trusted when its actor can write the repository, and untrusted otherwise. An untrusted candidate waits for a writer's approval, or runs as a restricted check when the repository's policy says so. A restricted check receives no grants and never lands. Only this ship's owner can approve in this release.
+- The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error. Per-attempt read tokens are later work.
+- A credential value must be a single line of at least eight characters. `act` 0.2.89 masks a secret only where the whole value appears on one output line, so a multi-line value would print in clear.
+- The CI public key is pinned at enrollment. A rotated CI key needs a fresh enrollment, or `ci_public_key` in the config. The daemon does not walk the certificate chain to the ship's networking key.
 - A repository bound to a Clay desk cannot be CI-protected. A repository bound after protection passes CI and is refused at landing with the same reason. Binding a CI-protected repository to a desk is not blocked in this release.
 - A matrix strategy, and any job-level `if` other than `needs.<job>.outputs.<name> == '<literal>'`, fail the plan with a diagnosed reason.
-- Logs and artifacts stay in `work_dir`. Object-store upload arrives with step 6.
+- The saved `act` stream is uploaded as `log.jsonl`. Step summaries and artifacts stay in the sandbox and are not uploaded in this release.
