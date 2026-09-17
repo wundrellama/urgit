@@ -9,6 +9,7 @@ source "$TMP/oids.env"
 api="$HERE/api.sh"
 dojo="$HERE/dojo.sh"
 echo "== mint"
+"$ROOT/.scratch/ci-p1/p2-key.sh"
 # the generator's ~& prints `[%ci-enroll-token 0v…]` before the echoed
 # command, pretty-printed over three lines when the pane is narrow: read
 # 30 lines and take the last token after a `ci-enroll-token` line

@@ -3,10 +3,11 @@
 Worktree `urgit-ci-p2-astra`, branch `ci/p2-astra`. The current brief body
 is re-freeze 4, `46e9616` (SHA-256
 `53939bc5e0a30aa65c370773ac1b41a0cdbe738d0c3164460a64daf2dacde0cf`),
-with launch footer `946ae24`. Riders 1–5 resolve all eight boxes. S5 is
-complete: the web surface and rootless child-socket fix have Q14–Q16 and
-Q19 evidence below. The following S6 commit records the completed cold
-regression and verified shutdown.
+with launch footer `946ae24`. Riders 1–5 resolve all eight boxes. S5 and
+S6 are complete. Every cold row passed its required checks on fresh `~lup`
+and `~dys` piers, with the final expiry row resumed after a recorded harness
+error. Both ships, runners and the fixture store are stopped. Earlier boot
+and shutdown records below are historical; the cold run is at the end.
 
 Historical S1–S5 transcripts named under `.scratch/tmp/` are preserved
 under `.scratch/tmp/before-cold-1789645582952093920/` with the same
@@ -44,8 +45,8 @@ owned by the invoking host user. The server's console port is not published.
 | S2 | `c2bc6b3` | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
 | S3 | `6f4a286` | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
 | S4 | `f78b1a8` | CI key and network certificate, signed assignment/grant bodies, config pin, Q12/Q13 RED → GREEN |
-| S5 | This stage commit | CI web surface, Q14–Q16 and Q19, browser actions/pagination |
-| S6 | Following stage commit | Cold regression and shutdown evidence recorded separately |
+| S5 | `812591d` | CI web surface, Q14–Q16 and Q19, browser actions/pagination |
+| S6 | This commit (`ci-p2: S6`) | Cold P0 → P1 → P2 checks complete, including resumed Q13; verified shutdown at 14:09:48 UTC |
 
 ## Observations
 
@@ -67,7 +68,7 @@ owned by the invoking host user. The server's console port is not published.
 | Q12 | RED → GREEN | One-line Ed25519 verification bypass: daemon `0v6.65b0j.c0tgk.7mo2v.ncpaj.f958u`, explicitly pinned to wrong `0x1`, started plan `0v1.rmtpr.i3eap.nq14p.jt9bc.9467a` (tripwire `Q12 RED: wrong-pub daemon started signed work`). Restored verifier: the pending job `0v2.1poaq.mn0e8.f12ja.q9hma.i5d0j` is refused **`signature does not verify with pinned CI public key`**, before work directory, checkout or sandbox. GREEN repeated after final canonical-string encoding. Session key GET returns exactly `pub`, `cert`, `ship-life=1`. `.scratch/tmp/q12-red.log`, `.scratch/tmp/q12-green-final.log`. |
 | Q13 | RED → GREEN | Held job `0v3.ah1qo.1oj4l.qvq01.v1ls1.40rdn` from candidate `0v1.9mvno.q5utt.6n2pa.vuav3.q04lr`, recipient `0v3.oisea.70c70.2but2.8colp.hs1h2`, until its original grant expired at Unix **1789617951** (04:05:51 UTC). One-line `grantCurrent` bypass: actual job ran with `--secret TOKEN=***`, 15 accepted events, passed at **04:06:01**, log uploaded (tripwire `Q13 RED: expired signed grant reached act`). Restored guard: replay the authentic redelivery while its outer signature is still current; **04:06:28**, **`credential grant expired`**, no work directory/sandbox/act. `.scratch/tmp/q13-hold-final.log`, `.scratch/tmp/q13-{red,green}.log`. |
 | Q14–Q16 | PASS | S5 browser and session checks below |
-| Q17 | Recorded in S6 | Full P1 regression evidence belongs to the following stage commit |
+| Q17 | PASS | Cold P1 main table 20/20; negatives 13/13 RED and GREEN; Q19 RED → GREEN; foreground checks passed. Details below. |
 | Q18 | PASS | Rider 4 accepted retry below; retained by Rider 5 |
 | Q19 | RED → GREEN | Wrong child mount on the unfixed runner and flag-drop mutant; restored rootless mount and in-job daemon identity below |
 
@@ -492,9 +493,187 @@ Q14 and Q15 were repeated after this fix (`q14-final.log`, `q15-final.log`).
 Frontend tests: **132/132**; production build succeeds. Go unit/race/vet
 checks pass. §7 and §8 are removed from the questions file. The S5 commit
 contains this implementation and its Q14–Q16/Q19 evidence. S6's later cold
-regression is recorded in the following stage commit.
+regression is recorded below.
 
 The fixture-only first Q19 harness push correctly returned Git's staging
 refusal, which the new driver initially treated as a shell error. Its unused
 job was abandoned during runner shutdown. The driver now asserts that exact
 staging response; this shakedown is not counted as a RED or GREEN row.
+
+
+## S6 preliminary battery — interrupted; superseded by cold run
+
+The P0 phase ran **06:17:10–06:22:04 UTC** on the retained `~lup` pier,
+after resetting only the greenfield CI controller and clearing the storage
+endpoint for H1. H1 refused CI without storage; H2 enabled it after configuration;
+H3 kept master at `fc5fbd59be3760b377b3f0df96eab3c48a168a16` while retaining
+the staged objects. H8 landed `3cb0366ef0272929bc6712d541ce8a1c1684e873`.
+Deadline and failed-job paths produced unknown and failed respectively.
+All seven H9–H15 mutants were RED, then **7/7 GREEN** on restored source.
+All four P0 vectors returned `%.y`; frontend **132/132**. Full output:
+`.scratch/tmp/s6-p0-battery.log`. P1 began at **06:23:16 UTC**.
+
+The preliminary P1 main table completed **20/20**. Its ERPit candidate
+`0v5.vfuo5.pfeh5.o1298.2a2ts.84h2j` passed all eight jobs and landed in
+1,127 seconds, without reruns. The provider interrupted the P1 negative
+phase; this is not a completed Q17 regression. Rows left unexecuted in
+that preliminary phase are recorded as **provider-blocked, not run**.
+The completed cold run below supersedes that incomplete pass. On the operator's resume
+instruction, the working tree was checked: only the S5 implementation and
+harness changes remain, and all mutation harnesses report `real build`.
+The leftover runner PID 214675 and both existing ships were verified through
+`/proc` and stopped, along with the fixture store. The next run starts from
+fresh ships, retaining the prior piers and transcripts. One provider retry
+is authorized; a repeated block ends the run with the remaining row recorded
+as `provider-blocked, not run`.
+
+Harness changes for the composed run: P0 enrollment initializes the P2
+signing key; mutation reverts restore snapshots instead of discarding the
+working tree; P0's H15 mutates only the original signer guard; P1's abandon
+mutant targets the reason-scrubbing line; frontend failures now fail the
+foreground driver. `battery.sh` runs P0 → P1 → P2, adds Q19 to P1, and runs
+the verified shutdown after P2 succeeds. Prior stage transcripts and
+fixture metadata were archived before CI resets; the accepted ERPit run
+and the failed run remain independent historical rows above.
+
+### Cold restart, 17 September 2026
+
+`p2-cold.sh` stopped the verified fixture processes and retained the old
+piers with suffix `-before-cold-1789645582952093920`; previous evidence is
+under `.scratch/tmp/before-cold-1789645582952093920/`. It booted fresh
+`~lup` and `~dys` from the footer pill at their original paths and ports,
+without `-p`. Both controllers reported state version 0. RustFS restarted
+with retained private data; anonymous object GET returned 403.
+Boot completed at **11:48:06 UTC**. `battery.sh all` began at
+**11:48:21 UTC**; transcript `.scratch/tmp/s6-cold-battery.log`.
+Every required row is complete. Q13 resumed from its retained authentic
+delivery after the driver error documented below.
+
+| Cold phase | Result | Evidence |
+|---|---|---|
+| P0, 11:48:42–11:53:32 UTC | PASS | Main H1–H15 driver completed; seven negative probes RED, then seven GREEN. Four Hoon vectors `%.y`; frontend 132/132. `s6-p0-battery.log`, `foreground.log`. |
+| P1, 11:53:33–13:11:28 UTC | PASS | Main table 20/20; negatives 13/13 RED and GREEN; Q19 RED → GREEN; foreground checks passed. `s6-cold-battery.log` and `s6-p1-*.log`. |
+| P2, 13:11:28–14:09:42 UTC | PASS, final row resumed | All P2 rows passed. `s6-p2-battery.log`, per-row `s6-*.log`, and `s6-expiry-resume.log`. |
+| Shutdown, 14:09:42–14:09:48 UTC | PASS | Both ships and runners absent from `/proc`; RustFS stopped; piers and data retained. `s6-shutdown.log`. |
+
+Cold P1's ERPit candidate `0v4.j9ava.0g5pi.epg94.p6eks.u6vk0` passed
+**8/8 in 1,121 seconds**, with exactly eight job attempts and no reruns,
+and landed `7f344a5fead57ea2616968090423ac58c27cf0eb`. Source revision
+remains `a6d15eddefa898250bf5f656441a55a80273f751`; the fixture changes
+only README. Erasure attempt `0vdra22.p6tn0.16j0j.f55ns.l345c` passed at
+12:11:30 UTC (181 events); suite attempt `0vp9qo4.26r6p.mp6ns.3veln.32b04`
+passed at 12:23:04 UTC (159 events). Evidence: `s6-p1-p15.log`.
+
+The cold P1 main table completed **20/20**. Its RED phase ran
+**12:26:50–13:04:38 UTC** and confirmed **13/13 failures with their named
+assertions, zero failures for the wrong reason, and zero unexpected passes**.
+The earlier provider interruption did not recur. The driver restored the
+source and began GREEN at 13:04:38 UTC. GREEN completed at **13:10:43 UTC**
+with **13/13 PASS, zero failures**, and `real build` status. Evidence:
+`s6-p1-negatives-red.log`, `s6-p1-negatives-green.log`.
+
+Cold Q19 completed **13:10:48–13:11:01 UTC**. Dropping the flag produced
+the host rootful socket bind for candidate `0vhb2gi.mdnmo.pksui.ufds2.5673c`.
+Restoring it produced candidate `0v2eko6.rcvek.k4raq.qhel1.hlq5q`, job
+`0v5.4s7vp.2shq5.npe9k.a9gpb.57kej`, whose child bind source is
+`/run/user/1000/ci-p2-astra/docker.sock`. In-job `docker info` exited 0
+with `name=rootless`. Evidence: `s6-p1-p2-socket-regression.log`.
+Foreground completed at **13:11:28 UTC**: frontend **132/132**, Go unit and race tests, live
+Docker boundary, vet, formatting and static build passed; zero vector
+or Go-step failures. The composed battery then entered P2.
+
+Cold P2's ERPit candidate `0v6qhuf.1617k.lcmc7.guess.cupgv` passed
+**8/8 in 1,140 seconds**, with exactly eight job attempts, and landed
+`7f126f80040b3a87b2e38bd301e90c3dd0b61ee2`. The workload remains the
+unchanged `a6d15ed` revision with a README-only fixture commit. Erasure
+passed at **13:19:33 UTC**; suite passed at **13:30:57 UTC**. This is an
+additional cold regression run; the Rider 4 accepted retry remains its
+own historical row.
+
+Q14 passed at **13:32:12 UTC**: eight job rows, eight passing statuses,
+eight log links, rendered log lines, and working deep link/reload/back
+navigation. Q18 then fetched all eight logs through session-authorized
+302 responses and their signed private-store URLs. Every GET returned
+200 with the exact recorded size and SHA-256. Evidence: `s6-q14.log`,
+`s6-q18.log`, `s6-p2-erpit.log`.
+
+| Cold Q18 job | Bytes | SHA-256 |
+|---|---:|---|
+| fixtures/pins | 7,706 | `bbb76e5f34faaf68d101c1b541b0a3442d792a73e4582abe8b18de9282488ace` |
+| fixtures/plan | 6,852 | `f4aadff5cec94d9aad640d7244e5b46725327630923bd6bce73d5e818b4c5487` |
+| suite/plan | 6,178 | `aea576e6d5cac53da28082c1550f4d16c8d90e7aba1e563e4494a42162ade9d1` |
+| suite/structural | 22,531 | `3e457ec0922003b9e0d2a71b3aedd72d4c99f580f6fac1187a2767a5a8ed03c6` |
+| fixtures/replay | 58,537 | `3f8efae888e79227f857055025d0b7efc39032d8937b3e82f629db97359ea2da` |
+| fixtures/erasure | 63,508 | `26879909af586905fe0436fc2b5dcf42d374e4bbb3b201fc5794c0f1b9b2bcb0` |
+| fixtures/duo | 73,398 | `a2a5d995835810266dc548e652c7be7621c4281a4ede2e713cd79acea673132c` |
+| suite/suite | 50,499 | `46f46c3f42030fa9688400dfa55b4adeca84ca129f70ba0d69dfb708fa11283d` |
+
+Q15 also passed: CI protection and policy survive reload; scoped
+credentials can be added and deleted; the password is absent from page
+source; multiline paste is rejected before POST (`s6-q15.log`).
+
+| Cold P2 row | Verdict | Observed |
+|---|---|---|
+| Q16 | RED → GREEN | Anonymous web reads and action accepted under the probe; all require a session on restored source. The daemon attempt reader retains its independent authorization. `s6-q16.log`. |
+| Q2 | PASS | Real plan log: 6,178 bytes, 22 JSONL lines, hash matching the table above. Signed redirect followed without SigV4 headers returned 200; the same URL after expiry returned 403 and `Request has expired`. `s6-q2.log`. |
+| Q3 | RED → GREEN | Cross-trust signing probe returned an untrusted URL; restored guard returned `~` for that read. `s6-q3-{red,green}.log`. |
+| Q2-missing | RED → GREEN | Missing-object probe retained stale metadata; restored route returned 404, cleared the log handle, and retained the passed verdict. `s6-q2-missing-{red,green}.log`. The deliberate deletion occurred after Q18 verified all eight logs. |
+| Q4 | RED → GREEN | Unsafe upload name `../x` received 200 under the probe, then 400 after restoration. `s6-q4-{red,green}.log`. |
+| Q5a | RED → GREEN | The probe moved protected master before checks. Restored web merge staged the trusted candidate, then landed and merged the pull after passing; unprotected merge still wrote directly. `s6-q5a-{red,green}.log`. |
+| Q5 | RED → GREEN | The probe offered trusted work for the actual peer PR. Restored source recorded the real peer actor as untrusted/pending, with no plan, attempts or offered work. `s6-q5-{red,green}.log`. |
+| Q8 | RED → GREEN | Unauthorized approval probe detected; restored action handler refused it, including while the writer read was unavailable. `s6-q8.log`. |
+| Q6 | RED → GREEN | Probe let untrusted work land. Restored candidate `0v6.grcej.tva9n.72fnr.6ekgn.gjnde` passed with untrusted attempts and empty grants, but returned `candidate trust is untrusted; cannot land`; master stayed `7da84d506981854c2ee2044f93b7aec36bd50412`. `s6-q6-{red,green}.log`. |
+| Q7 | PASS | Owner approval superseded the old candidate and created trusted `0v4.79lns.g02tb.n8gqo.ncufe.mbd21` with unchanged head/base; it passed and landed `006b249b0f8a6b1ad0e4742e39473d6df82439fa`. `s6-q7.log`. |
+| Q9 | PASS | Newline credential refused; real trusted job received job and matching-environment grants; local log and ship outputs were masked. `s6-q9.log`. |
+| Q10 | RED → GREEN | Probe exposed a credential grant on a real untrusted assignment; restored source produced `grants=[]` despite stored credentials. `s6-q10-{red,green}.log`. |
+| Q11 | RED → GREEN | Read probe exposed a credential value; restored peeks and JSON reads, including the new web routes, contained none. Deleting the credentials left a real rerun with `grants=[]`. `s6-q11-{red,green}.log`. |
+| Q12 | RED → GREEN | Wrong-pin probe ran signed attempt `0v7.i5s2r.u1mqd.vv2rg.2t2pp.a264k`; restored verifier refused `0v2.nq746.1dda3.b2p6q.kmm7q.oidcj` before checkout or sandbox creation. A correct pin then verified a real assignment and grant; job `0v4.4229r.g1r3m.q2tqb.94f4l.ij3vd` passed and landed. `s6-q12-{red,green}.log`, `s6-signing-positive.log`. |
+| Q13 | RED → GREEN | Authentic grant expired at 14:07:52 UTC. At 14:09:37 the probe ran job `0v4.cibia.veq4a.gnu35.ueujb.67akk` with the expired grant; at 14:09:40 the restored guard rejected its authentic signed redelivery with `credential grant expired`, before sandbox or act. `s6-q13-{red,green}.log`. |
+
+The live signing-vector capture initially refreshed four random public-key
+and signature fields in the checked-in fixture. The cold driver now uses
+`p2-signing-vectors.sh check`: capture, verify with Go's
+`TestPinnedHoonVectors`, preserve the captured JSON under ignored evidence,
+and restore the original fixture byte-for-byte. This check mode was run
+as a follow-up in the cold pass and succeeded (`s6-signing-vectors-check.log`,
+`s6-hoon-vector.json`). No signing implementation or checked-in vector
+changed. The initial capture is also preserved as `s6-hoon-vector-initial.json`.
+
+Q13 held authentic signed job `0v4.cibia.veq4a.gnu35.ueujb.67akk` until
+its original grant expired at Unix **1789654072**, **14:07:52 UTC**.
+The RED execution produced 15 accepted events and a **4,407-byte** log,
+SHA-256 `22fce9548bd2ba4d2acbb09b2e7cb6292341b2eaeadf3094ea0b6e171c554238`.
+The GREEN refusal occurred while the redelivered outer signature remained
+current; it isolated the expired grant and created no sandbox or act process.
+
+### Cold driver interruption and completion
+
+The original `battery.sh all` process exited 2 after the expiry wait with
+a shell syntax error. The cause was editing `p2-battery.sh` for the vector
+check while Bash was still reading that file. Q13 had not started. The
+on-disk scripts passed `bash -n`; the expiry block was extracted to
+`p2-expiry.sh` so it can resume the retained authentic delivery directly.
+That continuation ran **14:09:36–14:09:42 UTC**, passed both Q13 phases,
+then ran the verified shutdown and exited 0 at **14:09:48 UTC**.
+The complete evidence is split across `s6-cold-battery.log` (including
+the original driver error) and `s6-expiry-resume.log`. Every required row
+ran on the same cold ships. The provider safeguard did not recur.
+
+### Final shutdown and tree check
+
+`/proc` verified the `~dys` process IDs **385083 / 385838** and `~lup`
+IDs **379483 / 380509** before shutdown. All four exited and their herdr
+panes closed. The final Q13 runner processes **858270 / 859370** were
+also verified and stopped; runner `b` had already stopped after the
+positive signing check. A final `/proc` scan found no owned ship or runner
+process. RustFS reports `running=false`, PID 0, and the dedicated rootless
+Docker daemon has no running containers.
+
+The fresh piers remain at the footer paths: `~lup` **833 MB**, `~dys`
+**225 MB**. Their predecessors remain under the recorded `before-cold`
+suffix; store data and transcripts are retained. All three mutation
+harnesses report `real build`. `git diff --check` is clean. Product changes
+remain the S5 web surface and bounded child-socket flag with its test;
+the captured public-vector fixture is restored. The operator subsequently
+requested two stage commits, S5 followed by S6, from footer `946ae24`.
+No additional acceptance rows were run during that commit-only handoff.

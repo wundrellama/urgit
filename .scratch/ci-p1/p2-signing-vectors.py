@@ -40,5 +40,19 @@ nums=re.findall(r'0x[0-9a-f.]+',result)
 assert len(nums)==7 and '%.y' in result, result
 vector=dict(json=body,recipient='0v1',attempt='0v2',expiry=1767225600,nonce='0v3',jam=nums[:3],pub=nums[3],message=nums[4],sig=nums[5],networkPub=nums[6],ciPub=key['pub'],cert=key['cert'])
 folder=t.ROOT/'runner/internal/signing/testdata';folder.mkdir(exist_ok=True)
-(folder/'hoon.json').write_text(json.dumps(vector,ensure_ascii=False,indent=2)+'\n')
+target=folder/'hoon.json'
+original=target.read_bytes() if target.exists() else None
+captured=(json.dumps(vector,ensure_ascii=False,indent=2)+'\n').encode()
+target.write_bytes(captured)
+if len(sys.argv)>1 and sys.argv[1]=='check':
+    # Cold verification keeps its random public keys in the evidence directory.
+    # Test the live capture with Go, then restore the pre-run fixture exactly.
+    try:
+        (t.TMP/'s6-hoon-vector.json').write_bytes(captured)
+        subprocess.run(['go','test','./internal/signing','-run','^TestPinnedHoonVectors$','-count=1'],cwd=t.ROOT/'runner',check=True)
+    finally:
+        if target.read_bytes()!=captured:
+            raise RuntimeError('public vector fixture changed during verification; preserving it')
+        if original is None: target.unlink()
+        else: target.write_bytes(original)
 print('Pinned ship: +luck, +sign-raw, canonical JSON/+jam vectors captured; Jael deed public key verifies live CI certificate')

@@ -284,6 +284,11 @@ def q11(phase):
             assert not secret_in_scry(path, secret), 'credential value appeared in ' + path
     reads['attempt-json'] = json.dumps(t.ok('GET', '/ci/attempt/' + state['attempt']))
     reads['repository-json'] = json.dumps(t.repository(state['repo']))
+    for path in ['/ci/candidate/' + state['cid'], '/ci/repository/' + state['repo'] + '/candidates',
+                 '/ci/repository/' + state['repo'] + '/policy', '/ci/key']:
+        reads[path] = json.dumps(t.ok('GET', path))
+    reads['log-route'] = t.run(['curl', '--silent', '--show-error', '--fail', '--location',
+        '--cookie', os.environ['JAR'], t.URL + '/apps/urgit/api/ci/attempt/' + state['attempt'] + '/log'])
     for label, body in reads.items():
         no_secret(state, body, label)
     for name in ['CI_TOKEN', 'PROD_TOKEN', 'TEST_ONLY']:

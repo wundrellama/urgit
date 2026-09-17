@@ -5,7 +5,7 @@ set -e
 STATE="$TMP/p2-storage.env"
 case "${1:-}" in
   setup)
-    REPO=ci-p2-storage
+    REPO=${P2_STORAGE_REPO:-ci-p2-storage}
     CLONE="$TMP/clone-$REPO"
     "$P0/prelude.sh" > "$TMP/p2-prelude.log"
     created=$("$api" POST /repositories "{\"name\":\"$REPO\",\"publicRead\":true}")

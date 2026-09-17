@@ -24,7 +24,7 @@ for f in "$ROOT"/desk/gen/*-vector.hoon; do
   fi
 done
 echo "== cd fe && npm test"
-( cd "$ROOT/fe" && npm test 2>&1 | tail -8 )
+( cd "$ROOT/fe" && set -o pipefail; npm test 2>&1 | tail -8 ) || fails=$((fails+1))
 # the Go suites: every step's exit code counts, so a red suite or a
 # non-static binary fails the foreground like a red vector does
 gofails=0

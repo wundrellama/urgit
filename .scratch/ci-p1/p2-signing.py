@@ -110,7 +110,7 @@ def q12(phase):
     start('b')
     if phase=='red': t.merge(state)
     t.save('q12-'+phase,state)
-    a=t.wait_until(lambda: next((a for a in server.offers if a['candidate']==state['cid']),None),90)
+    a=t.wait_until(lambda: next((a for a in server.offers if a['candidate']==state['cid']),None),180)
     assert a.get('sig') and a.get('recipient') and a.get('nonce')
     if phase=='red':
         t.wait_until(lambda:'sandbox ' in logs('b') and ' prepared ' in logs('b'),90)

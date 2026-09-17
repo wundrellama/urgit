@@ -141,5 +141,6 @@ PY
     "${dock[@]}" inspect --format '{{.Name}} running={{.State.Running}} image={{.Config.Image}}' "$NAME"
     ;;
   cors) configure_cors ;;
-  *) echo 'usage: store.sh start|stop|status|cors' >&2; exit 2 ;;
+  configure) configure_ship ;;
+  *) echo 'usage: store.sh start|stop|status|cors|configure' >&2; exit 2 ;;
 esac

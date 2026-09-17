@@ -2,9 +2,8 @@
 # usage: mutants.sh apply | revert | status
 # The seven one-line guard removals that must turn every negative row RED
 # (H9-H15). `apply` edits the working tree (each old text must occur exactly
-# once, or nothing is written); `revert` is `git checkout --` of the four
-# files, so any uncommitted edit in them would be lost: apply refuses to run
-# on a dirty file. The mutations are never committed.
+# once, or nothing is written). `revert` restores a snapshot of the current
+# working tree, preserving uncommitted P2 work. The mutations are never committed.
 #
 #   H9   app/urgit-ci.hoon  handle-result: the "no jobResult event was relayed"
 #                           409 becomes acceptance (close passed, answer 200)
@@ -25,12 +24,10 @@ git rev-parse --is-inside-work-tree >/dev/null || { echo "mutants.sh: $PWD is no
 FILES=(desk/app/urgit-ci.hoon desk/lib/ci-event.hoon desk/app/urgit.hoon desk/lib/ci-storage.hoon)
 case "${1:-}" in
   apply)
-    if ! git diff --quiet -- "${FILES[@]}"; then
-      echo "mutants.sh: uncommitted changes in ${FILES[*]}; commit them first (revert is git checkout --)" >&2
-      exit 1
-    fi
     python3 - <<'PY'
-import sys
+import json, os, pathlib, sys
+snapshot = pathlib.Path(os.environ['TMP']) / 'ci-p0-mutants.json'
+if snapshot.exists(): raise SystemExit('mutants already applied; revert first')
 edits = [
  ("H9",  "desk/app/urgit-ci.hoon",
   "      (emit (give-error eyre-id 409 'no jobResult event was relayed for this attempt'))\n",
@@ -55,24 +52,38 @@ edits = [
   "  ?.  %.y  ~\n"),
 ]
 texts = {}
+originals = {}
 for row, path, old, new in edits:
     s = texts.get(path) or open(path).read()
+    originals.setdefault(path, s)
     n = s.count(old)
-    if n != 1:
-        sys.exit(f"mutants.sh: {row}: expected exactly one match in {path}, found {n}; nothing written")
-    texts[path] = s.replace(old, new)
+    expected = 2 if row == 'H15' else 1
+    if n != expected:
+        sys.exit(f"mutants.sh: {row}: expected {expected} match(es) in {path}, found {n}; nothing written")
+    texts[path] = s.replace(old, new, 1)
+snapshot.write_text(json.dumps({'originals': originals, 'changed': texts}))
 for path, s in texts.items():
     open(path, "w").write(s)
     print(f"mutated {path}")
 PY
     ;;
   revert)
-    git checkout -- "${FILES[@]}"
-    git diff --quiet -- "${FILES[@]}" && echo "reverted: ${FILES[*]} clean"
+    python3 - <<'PY'
+import json, os, pathlib
+snapshot = pathlib.Path(os.environ['TMP']) / 'ci-p0-mutants.json'
+if snapshot.exists():
+    saved = json.loads(snapshot.read_text())
+    for name, original in saved['originals'].items():
+        if pathlib.Path(name).read_text() not in (original, saved['changed'][name]):
+            raise SystemExit('source changed while mutated; refusing to overwrite ' + name)
+    for name, original in saved['originals'].items():
+        pathlib.Path(name).write_text(original)
+    snapshot.unlink()
+print('reverted: original working tree restored')
+PY
     ;;
   status)
-    git diff --stat -- "${FILES[@]}"
-    git diff --quiet -- "${FILES[@]}" && echo "clean (real build)" || echo "MUTATED"
+    if [ -f "$TMP/ci-p0-mutants.json" ]; then echo MUTATED; else echo 'real build'; fi
     ;;
   *) echo "usage: mutants.sh apply|revert|status" >&2; exit 2 ;;
 esac

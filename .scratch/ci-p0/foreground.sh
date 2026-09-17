@@ -5,7 +5,9 @@ source "$(dirname "$0")/env.sh"
 dojo="$HERE/dojo.sh"
 for v in ci-event-vector ci-storage-vector git-migration-vector git-access-vector; do
   echo "== +urgit!$v"
-  "$dojo" "+urgit!$v" 600 4 | tail -3
+  output=$("$dojo" "+urgit!$v" 600 8)
+  printf '%s\n' "$output" | tail -3
+  printf '%s\n' "$output" | grep -qx '%.y'
 done
 echo "== cd fe && npm test"
 ( cd "$ROOT/fe" && npm test 2>&1 | tail -12 )

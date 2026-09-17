@@ -2,8 +2,8 @@
 # usage: mutants.sh apply | revert | status | tripwire <row>
 # One-line sabotage per negative row (P1, P7-P12, P14, P17-P20) that must
 # turn the row RED. `apply` edits the working tree (each old text must
-# occur exactly once, or nothing is written) and refuses on a dirty file;
-# `revert` is `git checkout --` of the files. Hoon mutants need
+# occur exactly once, or nothing is written); `revert` restores a snapshot
+# of the current working tree, preserving uncommitted P2 work. Hoon mutants need
 # rebuild.sh; Go mutants need `go build` and a daemon restart
 # (negatives.sh does both). The mutations are never committed.
 # `tripwire <row>` prints the exact substring the sabotaged build must
@@ -35,12 +35,10 @@ git rev-parse --is-inside-work-tree >/dev/null || { echo "mutants.sh: $PWD is no
 FILES=(desk/app/urgit-ci.hoon desk/lib/ci-plan.hoon desk/app/urgit.hoon runner/internal/daemon/daemon.go runner/internal/ship/client.go runner/internal/plan/plan.go)
 case "${1:-}" in
   apply)
-    if ! git diff --quiet -- "${FILES[@]}"; then
-      echo "mutants.sh: uncommitted changes in ${FILES[*]}; commit them first (revert is git checkout --)" >&2
-      exit 1
-    fi
     python3 - <<'PY'
-import sys
+import json, os, pathlib, sys
+snapshot = pathlib.Path(os.environ['TMP']) / 'ci-p1-mutants.json'
+if snapshot.exists(): raise SystemExit('mutants already applied; revert first')
 edits = [
  ("P1",  "desk/app/urgit-ci.hoon",
   "    ?~  u.tip\n      ~|  no-tip-refusal\n      !!\n",
@@ -55,7 +53,7 @@ edits = [
   "      [%| (rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])]\n",
   "      $(remaining t.remaining, seen (~(put in seen) k))\n"),
  ("P10", "desk/app/urgit-ci.hoon",
-  "  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' u.reason])])\n",
+  "  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' (scrub-text:ci-event u.reason (grant-values id.u.found))])])\n",
   "  =.  state  (close-attempt u.found [%job-result %success])\n"),
  ("P11", "desk/app/urgit-ci.hoon",
   "      (close-attempt:hc u.found [%infrastructure-error 'no result arrived before the deadline'])\n",
@@ -83,24 +81,37 @@ edits = [
   "\tprojected, err := original, error(nil)\n"),
 ]
 texts = {}
+originals = {}
 for row, path, old, new in edits:
     s = texts.get(path) or open(path).read()
+    originals.setdefault(path, s)
     n = s.count(old)
     if n != 1:
         sys.exit(f"mutants.sh: {row}: expected exactly one match in {path}, found {n}; nothing written")
-    texts[path] = s.replace(old, new)
+    texts[path] = s.replace(old, new, 1)
+snapshot.write_text(json.dumps({'originals': originals, 'changed': texts}))
 for path, s in texts.items():
     open(path, "w").write(s)
     print(f"mutated {path}")
 PY
     ;;
   revert)
-    git checkout -- "${FILES[@]}"
-    git diff --quiet -- "${FILES[@]}" && echo "reverted: ${FILES[*]} clean"
+    python3 - <<'PY'
+import json, os, pathlib
+snapshot = pathlib.Path(os.environ['TMP']) / 'ci-p1-mutants.json'
+if snapshot.exists():
+    saved = json.loads(snapshot.read_text())
+    for name, original in saved['originals'].items():
+        if pathlib.Path(name).read_text() not in (original, saved['changed'][name]):
+            raise SystemExit('source changed while mutated; refusing to overwrite ' + name)
+    for name, original in saved['originals'].items():
+        pathlib.Path(name).write_text(original)
+    snapshot.unlink()
+print('reverted: original working tree restored')
+PY
     ;;
   status)
-    git diff --stat -- "${FILES[@]}"
-    git diff --quiet -- "${FILES[@]}" && echo "clean (real build)" || echo "MUTATED"
+    if [ -f "$TMP/ci-p1-mutants.json" ]; then echo MUTATED; else echo 'real build'; fi
     ;;
   tripwire)
     # what the sabotaged build itself produces, as the row logs it; a RED
