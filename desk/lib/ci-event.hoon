@@ -148,6 +148,54 @@
   ?.  ?=(%set-output -.u.command.event)  outputs
   (~(put by outputs) name.u.command.event value.u.command.event)
 ::
+::  Grant values may be present in set-output's arg even when act masks
+::  msg. Scrub before storing any event-derived text, including output
+::  names and projection names. The caller supplies the attempt's own
+::  grant snapshot, which survives deletion of the stored credential.
+::
+++  scrub-text
+  |=  [text=@t values=(list @t)]
+  ^-  @t
+  ?~  values  text
+  =/  value=@t  i.values
+  ?:  =(0 value)  $(values t.values)
+  =/  size=@ud  (met 3 value)
+  =/  changed=@t
+    =/  remaining=@t  text
+    =|  reversed=(list @t)
+    |-
+    ?:  =(0 remaining)  (rap 3 (flop reversed))
+    ?:  =(value (end [3 size] remaining))
+      $(remaining (rsh [3 size] remaining), reversed ['***' reversed])
+    $(remaining (rsh [3 1] remaining), reversed [(end [3 1] remaining) reversed])
+  $(text changed, values t.values)
+::
+++  scrub
+  |=  [event=event:ci values=(list @t)]
+  ^-  event:ci
+  =/  clean  |=(text=@t (scrub-text text values))
+  =/  optional  |=(text=(unit @t) ?~(text ~ `(clean u.text)))
+  =.  event
+    %=  event
+      job      (clean job.event)
+      stage    (optional stage.event)
+      step     (optional step.event)
+      step-id  (turn step-id.event clean)
+      msg      (clean msg.event)
+    ==
+  ?~  command.event  event
+  =/  cmd=command:ci  u.command.event
+  =.  command.event
+    :-  ~
+    ?-  -.cmd
+      %set-output  [%set-output (clean name.cmd) (clean value.cmd)]
+      %summary     [%summary (clean body.cmd)]
+      %group       [%group (clean name.cmd)]
+      %endgroup    cmd
+      %other       [%other (clean +.cmd)]
+    ==
+  event
+::
 ::  RFC 3339: YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM), as act
 ::  emits it.  the result is the UTC instant.
 ::

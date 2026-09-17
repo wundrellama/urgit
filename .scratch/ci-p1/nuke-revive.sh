@@ -26,11 +26,11 @@ marker="nuke-$label-$(date +%s)"
 "$dojo" "'$marker'" 60 2 >/dev/null
 echo "== |commit %urgit (marker $marker)"
 "$dojo" '|commit %urgit' 300 3 | tail -2
-after_marker() { herdr pane read "$PANE" --source recent-unwrapped --lines 800 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
+after_marker() { herdr pane read "$PANE" --source recent-unwrapped --lines 800 | MARKER="$marker" python3 -c 'import os,sys; print(sys.stdin.read().split(os.environ["MARKER"])[-1])'; }
 # a commit of an unchanged desk prints nothing (no reload, no file lines)
 # and does not re-boot the nuked agent; the revive below covers both cases
 sleep 10
-if after_marker | grep -q 'crud: %into event failed'; then echo "nuke-revive.sh: the commit event failed" >&2; after_marker | grep -v '^/sys' | tail -40 >&2; exit 1; fi
+if after_marker | grep -qE 'crud: %into event failed|-find\.|nest-fail|syntax error|mull-grow|mint-nice'; then echo "nuke-revive.sh: the commit event failed" >&2; after_marker | grep -v '^/sys' | tail -40 >&2; exit 1; fi
 after_marker | grep -E "^gall: (reloading|booted|unnuking) %urgit|^[:+] /~$SHIP/urgit/" | head -5 || true
 echo "== |revive %urgit"
 "$dojo" '|revive %urgit' 120 4 | tail -3

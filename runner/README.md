@@ -73,7 +73,7 @@ When the ship no longer knows the bearer, the daemon logs `enrollment lost; re-e
 
 Every attempt gets its own Docker network, work volume and runner container on the rootless daemon. The checkout enters the container by copy, never by bind mount. `act` runs inside that container with `--network` set to the attempt's own bridge. The rootless socket is the only mount, because `act` needs a Docker API to create job containers. That socket belongs to the rootless daemon, never to the host's rootful daemon.
 
-The network is a user-defined bridge with NAT egress. Jobs reach the internet, because ERPit's workflows fetch `actions/cache@v4` and the urbit toolchain. The sandbox cannot reach the daemon's state file or config, the host's rootful Docker socket, or another attempt's network. Egress allow-listing arrives with the VM backend in P2.
+The network is a user-defined bridge with NAT egress. Jobs reach the internet, because ERPit's workflows fetch `actions/cache@v4` and the urbit toolchain. The sandbox cannot reach the daemon's state file or config, the host's rootful Docker socket, or another attempt's network. Egress allow-listing arrives with the VM backend in P3.
 
 The daemon destroys the sandbox after every attempt, whatever the outcome. When teardown fails, the daemon quarantines that slot: it lowers its capacity by one, logs the handle, and never reuses it. At capacity 0 it stops polling and exits with status 4. After a restart the daemon lists its leftover sandboxes, asks the ship about each attempt, and destroys every sandbox whose attempt is closed or unknown. It never resumes a job. The ship's deadline closes a job the daemon was running when it died.
 
@@ -85,13 +85,50 @@ The projection also rewrites the workflow's top-level `name:` to `<attempt id>/<
 
 The assignment carries the recorded outputs of the job's prerequisites as `prereq-outputs`. The daemon passes them to `act` as `--env NEEDS_<JOB>_OUTPUTS_<NAME>=<value>`. No ERPit step reads one in this release.
 
+## Credentials and trust
+
+A repository writer can store a credential with a `%ci-action` poke:
+
+```hoon
+[%set-credential 'repo' 'TOKEN' 'single-line-value' %job ~]
+[%set-credential 'repo' 'DEPLOY_TOKEN' 'single-line-value' %env (silt ~['production'])]
+[%delete-credential 'repo' 'TOKEN']
+```
+
+Values enter pier history when stored. Values must be a single line;
+base64 multiline material and decode it in the step. Read surfaces show
+only names, scopes, environment names and creation times.
+
+Only trusted job attempts receive grants. A job-scoped credential applies
+to every job in that repository; an environment-scoped credential applies
+when the job's static `environment` (a string or `name` mapping) is in its
+configured set. An expression cannot select an environment credential.
+The daemon passes grants as `act --secret NAME=value`. The grant expires
+15 minutes after creation, and the daemon checks expiry before execution.
+Deleting a stored credential affects future attempts. An active attempt
+keeps the snapshot needed to scrub its events; the ship clears that
+snapshot when the attempt closes.
+
+The daemon scrubs grant values before writing or relaying any stream line,
+including `set-output` arguments, escaped JSON strings and diagnostics.
+The ship independently scrubs event-derived text before storing outputs.
+Completed job logs are uploaded to the configured object store before the
+result is posted; only the key, size and hash enter CI state. An unavailable
+log upload preserves the attempt's verdict with no log handle.
+
+A fork PR from a non-writer starts untrusted and waits for approval unless
+the repository enables restricted checks. Restricted attempts receive no
+grants, use the untrusted cache namespace, and cannot land. Writer approval
+creates a new trusted candidate for the same head/base and skips the old
+candidate. The web merge gate stages a protected PR and marks it merged
+only after the candidate lands.
+
 ## Limitations in this release
 
-- Sandboxes are containers on a rootless daemon, not virtual machines. The `microvm` backend is P2's first item on the same interface.
+- Sandboxes are containers on a rootless daemon, not virtual machines. The `microvm` backend is deferred to P3 on the same interface.
 - Egress from a sandbox is unrestricted NAT. Allow-listing arrives with the VM backend.
 - The candidate's own workflow files are the required evidence (CI-BASELINE-P1). The ship stores the OID it read them from as `plan-oid`, so a later baseline can pin an approved revision.
-- Every staged candidate is trusted, because the only way to the gate is a push that passed the repository's write check (CI-TRUST-P1). Pull-request and fork trust classification, and approval, arrive with step 5.
-- The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error. Per-attempt read tokens are step 5's work.
+- The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error. Per-attempt checkout authentication is not implemented.
 - A repository bound to a Clay desk cannot be CI-protected. A repository bound after protection passes CI and is refused at landing with the same reason. Binding a CI-protected repository to a desk is not blocked in this release.
 - A matrix strategy, and any job-level `if` other than `needs.<job>.outputs.<name> == '<literal>'`, fail the plan with a diagnosed reason.
-- Logs and artifacts stay in `work_dir`. Object-store upload arrives with step 6.
+- Automatic artifact collection is not implemented.

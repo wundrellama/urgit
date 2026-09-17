@@ -56,6 +56,17 @@ type Assignment struct {
 	PrereqOutputs   map[string]map[string]string `json:"prereq-outputs"`
 	DeadlineSeconds int                          `json:"deadline-seconds"`
 	Assigned        string                       `json:"assigned"`
+	Grants          []Grant                      `json:"grants"`
+}
+
+// A grant is delivered only on the authorized assignment channel.
+// Expiry is a Unix second on the wire; the ship stores it as @da.
+type Grant struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Expiry int64  `json:"expiry"`
+	Nonce  string `json:"nonce"`
+	Sig    string `json:"sig"`
 }
 
 type Response struct {

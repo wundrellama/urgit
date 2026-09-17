@@ -62,9 +62,11 @@ def wait_until(test, seconds=180):
 
 def save(name, value):
     file = TMP / ('p2-' + name + '.json')
-    file.touch(mode=0o600, exist_ok=True)
-    file.chmod(0o600)
-    file.write_text(json.dumps(value, indent=2) + '\n')
+    temporary = file.with_name(file.name + '.' + str(time.time_ns()) + '.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as output:
+        output.write(json.dumps(value, indent=2) + '\n')
+    temporary.replace(file)
 
 
 def load(name):
@@ -167,113 +169,114 @@ def mutant(row, phase, agent='urgit-ci'):
     subprocess.run([str(P1 / 'p2-reload.sh'), agent], check=True)
 
 
-if ROW == 'q5a':
-    phase = ARGS[0]
-    mutant('Q5a', phase, 'urgit')
-    try:
-        state = writer_pull('q5a-' + phase)
-        merge(state, 200 if phase == 'red' else 202)
-        if phase == 'red':
-            assert ref(state['repo']) == state['head']
-            assert pull(state['repo'], state['pull'])['state'] == 'merged'
-            print('Q5a RED: protected master moved before checks', flush=True)
-        else:
+if __name__ == '__main__':
+    if ROW == 'q5a':
+        phase = ARGS[0]
+        mutant('Q5a', phase, 'urgit')
+        try:
+            state = writer_pull('q5a-' + phase)
+            merge(state, 200 if phase == 'red' else 202)
+            if phase == 'red':
+                assert ref(state['repo']) == state['head']
+                assert pull(state['repo'], state['pull'])['state'] == 'merged'
+                print('Q5a RED: protected master moved before checks', flush=True)
+            else:
+                assert ref(state['repo']) == state['base']
+                assert field(state['cid'], 'trust') == '%trusted'
+                assert pull(state['repo'], state['pull'])['state'] == 'open'
+                start_runner(); finished(state, True)
+                clone = pathlib.Path(state['clone'])
+                run(['git', '-C', clone, 'push', '-q', 'origin', state['base'] + ':refs/heads/free'])
+                free_pull = ok('POST', f"/repository/{state['repo']}/pulls", {'title': 'unprotected PR', 'sourceBranch': 'refs/heads/topic', 'targetBranch': 'refs/heads/free'}, status=201)['number']
+                ok('POST', f"/repository/{state['repo']}/pulls/{free_pull}/merge", {})
+                assert ref(state['repo'], 'refs/heads/free') == state['head']
+                print('Q5a GREEN: protected merge staged, trusted candidate landed, pull merged; unprotected merge writes directly', flush=True)
+            save('q5a-' + phase, state)
+        finally:
+            if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
+    elif ROW == 'q5-setup':
+        subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
+        subprocess.run([str(P1 / 'nuke-revive.sh'), 'q5'], check=True)
+        token = run([P1 / 'mint.sh'])
+        code, data = api('POST', '/ci/daemon/enroll', {'token': token, 'capacity': 1, 'sandbox': 'q5-offer-probe'}, '-')
+        assert code == 200, ('enroll status', code)
+        save('q5-daemon', data)
+    elif ROW == 'q5':
+        phase = ARGS[0]
+        mutant('Q5', phase)
+        try:
+            state = peer_pull('q5-' + phase)
+            merge(state)
+            cid = state['cid']
+            assert field(cid, 'actor') == '~' + PEER
             assert ref(state['repo']) == state['base']
-            assert field(state['cid'], 'trust') == '%trusted'
-            assert pull(state['repo'], state['pull'])['state'] == 'open'
-            start_runner(); finished(state, True)
-            clone = pathlib.Path(state['clone'])
-            run(['git', '-C', clone, 'push', '-q', 'origin', state['base'] + ':refs/heads/free'])
-            free_pull = ok('POST', f"/repository/{state['repo']}/pulls", {'title': 'unprotected PR', 'sourceBranch': 'refs/heads/topic', 'targetBranch': 'refs/heads/free'}, status=201)['number']
-            ok('POST', f"/repository/{state['repo']}/pulls/{free_pull}/merge", {})
-            assert ref(state['repo'], 'refs/heads/free') == state['head']
-            print('Q5a GREEN: protected merge staged, trusted candidate landed, pull merged; unprotected merge writes directly', flush=True)
-        save('q5a-' + phase, state)
-    finally:
-        if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
-elif ROW == 'q5-setup':
-    subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
-    subprocess.run([str(P1 / 'nuke-revive.sh'), 'q5'], check=True)
-    token = run([P1 / 'mint.sh'])
-    code, data = api('POST', '/ci/daemon/enroll', {'token': token, 'capacity': 1, 'sandbox': 'q5-offer-probe'}, '-')
-    assert code == 200, ('enroll status', code)
-    save('q5-daemon', data)
-elif ROW == 'q5':
-    phase = ARGS[0]
-    mutant('Q5', phase)
-    try:
-        state = peer_pull('q5-' + phase)
-        merge(state)
-        cid = state['cid']
-        assert field(cid, 'actor') == '~' + PEER
-        assert ref(state['repo']) == state['base']
-        daemon = load('q5-daemon')
-        code, assignment = api('GET', '/ci/daemon/' + daemon['daemon-id'] + '/assignment', bearer=daemon['bearer'])
-        print('assignment poll ->', code, flush=True)
-        if phase == 'red':
-            assert field(cid, 'trust') == '%trusted'
-            assert code == 200 and assignment['assignment']['candidate'] == cid, assignment
-            print('Q5 RED: non-writer PR offered trusted work', flush=True)
-            aid = assignment['assignment']['attempt']
-            code, result = api('POST', '/ci/attempt/' + aid + '/abandon', {'reason': 'Q5 RED probe complete'}, daemon['bearer'])
-            assert code == 200, (code, result)
-        else:
-            assert field(cid, 'trust') == '%untrusted'
-            assert field(cid, 'status') == '%pending'
-            assert field(cid, 'attempts') == '~' and field(cid, 'plan') == '~'
-            assert code == 204, assignment
-            print('Q5 GREEN: real peer actor, untrusted pending, no plan, no attempts, no offered work', flush=True)
-        save('q5-' + phase, state)
-    finally:
-        if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
-elif ROW == 'q6-setup':
-    # P1 ignores a zero capacity header. Retire the Q5 capture-only daemon
-    # by waiting out its existing five-minute liveness window.
-    print('Waiting five minutes for the Q5 probe enrollment to become stale', flush=True)
-    time.sleep(301)
-    start_runner()
-    subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
-elif ROW == 'q6':
-    phase = ARGS[0]
-    subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
-    mutant('Q6', phase)
-    try:
-        state = peer_pull('q6-red') if phase == 'red' else load('q5-green')
-        if phase == 'red': merge(state)
-        assert field(state['cid'], 'trust') == '%untrusted'
-        poke(f"[%set-untrusted-policy '{state['repo']}' %restricted]")
-        daemon = json.loads((TMP / 'runner/a/state.json').read_text())['daemon_id']
-        code, data = api('GET', '/ci/daemon/' + daemon + '/assignment')
-        assert code == 200, code
-        offer = data['assignment']
-        assert offer['candidate'] == state['cid'] and offer['trust'] == 'untrusted' and offer['grants'] == [], offer
-        save('q6-' + phase + '-offer', data)
-        print('Captured real assignment: trust=untrusted grants=[]; starting daemon for its two-minute redelivery', flush=True)
-        subprocess.run([str(P1 / 'runner.sh'), 'start', 'a'], check=True)
-        finished(state, phase == 'red')
-        attempts = re.findall(r'0v[0-9a-v.]+', field(state['cid'], 'attempts'))
-        assert attempts
-        for aid in attempts:
-            assert dojo(f'trust:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/{aid}/noun))') == '%untrusted'
-        assert '--cache-server-path /work/cache/untrusted' in (TMP / 'runner/a/daemon.log').read_text()
-        print('Q6 RED: untrusted candidate landed' if phase == 'red' else 'Q6 GREEN: untrusted attempts passed; landing refused naming trust', flush=True)
-        save('q6-' + phase, state)
-    finally:
-        if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
-elif ROW == 'q7':
-    state = load('q5-green'); old = state['cid']
-    if field(old, 'status') != '%skipped':
-        poke('[%approve-candidate ' + old + ']')
-    assert field(old, 'status') == '%skipped'
-    assert 'superseded by approval' in field(old, 'verdict-reason')
-    expr = "=/  cs=(map candidate-id:ci candidate:ci)  .^((map candidate-id:ci candidate:ci) %gx /=urgit-ci=/candidates/noun)  (murn ~(tap by cs) |=([id=candidate-id:ci c=candidate:ci] ?:(?&(=('" + state['repo'] + "' repo.c) =(%trusted trust.c)) `id ~)))"
-    ids = re.findall(r'0v[0-9a-v.]+', dojo(expr))
-    assert len(ids) == 1 and ids[0] != old, ids
-    state['cid'] = ids[0]
-    assert field(old, 'head') == field(state['cid'], 'head')
-    assert field(old, 'base') == field(state['cid'], 'base')
-    finished(state, True)
-    save('q7', state)
-    print('Q7 GREEN: new trusted candidate, same head/base, old skipped; owner approval accepted and landed', flush=True)
-else:
-    raise SystemExit('usage: p2-trust.sh q5a red|green | q5-setup | q5 red|green | q6-setup | q6 red|green | q7')
+            daemon = load('q5-daemon')
+            code, assignment = api('GET', '/ci/daemon/' + daemon['daemon-id'] + '/assignment', bearer=daemon['bearer'])
+            print('assignment poll ->', code, flush=True)
+            if phase == 'red':
+                assert field(cid, 'trust') == '%trusted'
+                assert code == 200 and assignment['assignment']['candidate'] == cid, assignment
+                print('Q5 RED: non-writer PR offered trusted work', flush=True)
+                aid = assignment['assignment']['attempt']
+                code, result = api('POST', '/ci/attempt/' + aid + '/abandon', {'reason': 'Q5 RED probe complete'}, daemon['bearer'])
+                assert code == 200, (code, result)
+            else:
+                assert field(cid, 'trust') == '%untrusted'
+                assert field(cid, 'status') == '%pending'
+                assert field(cid, 'attempts') == '~' and field(cid, 'plan') == '~'
+                assert code == 204, assignment
+                print('Q5 GREEN: real peer actor, untrusted pending, no plan, no attempts, no offered work', flush=True)
+            save('q5-' + phase, state)
+        finally:
+            if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
+    elif ROW == 'q6-setup':
+        # P1 ignores a zero capacity header. Retire the Q5 capture-only daemon
+        # by waiting out its existing five-minute liveness window.
+        print('Waiting five minutes for the Q5 probe enrollment to become stale', flush=True)
+        time.sleep(301)
+        start_runner()
+        subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
+    elif ROW == 'q6':
+        phase = ARGS[0]
+        subprocess.run([str(P1 / 'runner.sh'), 'stop', 'a'], check=True)
+        mutant('Q6', phase)
+        try:
+            state = peer_pull('q6-red') if phase == 'red' else load('q5-green')
+            if phase == 'red': merge(state)
+            assert field(state['cid'], 'trust') == '%untrusted'
+            poke(f"[%set-untrusted-policy '{state['repo']}' %restricted]")
+            daemon = json.loads((TMP / 'runner/a/state.json').read_text())['daemon_id']
+            code, data = api('GET', '/ci/daemon/' + daemon + '/assignment')
+            assert code == 200, code
+            offer = data['assignment']
+            assert offer['candidate'] == state['cid'] and offer['trust'] == 'untrusted' and offer['grants'] == [], offer
+            save('q6-' + phase + '-offer', data)
+            print('Captured real assignment: trust=untrusted grants=[]; starting daemon for its two-minute redelivery', flush=True)
+            subprocess.run([str(P1 / 'runner.sh'), 'start', 'a'], check=True)
+            finished(state, phase == 'red')
+            attempts = re.findall(r'0v[0-9a-v.]+', field(state['cid'], 'attempts'))
+            assert attempts
+            for aid in attempts:
+                assert dojo(f'trust:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/{aid}/noun))') == '%untrusted'
+            assert '--cache-server-path /work/cache/untrusted' in (TMP / 'runner/a/daemon.log').read_text()
+            print('Q6 RED: untrusted candidate landed' if phase == 'red' else 'Q6 GREEN: untrusted attempts passed; landing refused naming trust', flush=True)
+            save('q6-' + phase, state)
+        finally:
+            if phase == 'red': subprocess.run([str(P1 / 'q-mutants.sh'), 'revert'], check=True)
+    elif ROW == 'q7':
+        state = load('q5-green'); old = state['cid']
+        if field(old, 'status') != '%skipped':
+            poke('[%approve-candidate ' + old + ']')
+        assert field(old, 'status') == '%skipped'
+        assert 'superseded by approval' in field(old, 'verdict-reason')
+        expr = "=/  cs=(map candidate-id:ci candidate:ci)  .^((map candidate-id:ci candidate:ci) %gx /=urgit-ci=/candidates/noun)  (murn ~(tap by cs) |=([id=candidate-id:ci c=candidate:ci] ?:(?&(=('" + state['repo'] + "' repo.c) =(%trusted trust.c)) `id ~)))"
+        ids = re.findall(r'0v[0-9a-v.]+', dojo(expr))
+        assert len(ids) == 1 and ids[0] != old, ids
+        state['cid'] = ids[0]
+        assert field(old, 'head') == field(state['cid'], 'head')
+        assert field(old, 'base') == field(state['cid'], 'base')
+        finished(state, True)
+        save('q7', state)
+        print('Q7 GREEN: new trusted candidate, same head/base, old skipped; owner approval accepted and landed', flush=True)
+    else:
+        raise SystemExit('usage: p2-trust.sh q5a red|green | q5-setup | q5 red|green | q6-setup | q6 red|green | q7')

@@ -9,6 +9,14 @@ import json, pathlib, sys
 op, row, file = sys.argv[1:]
 snapshot = pathlib.Path(file)
 edits = {
+ 'Q10': ('desk/app/urgit-ci.hoon',
+         '  ?&(=(%trusted trust) =(%job kind))\n',
+         '  =(%job kind)\n',
+         'Q10 RED: untrusted job received a credential grant'),
+ 'Q11': ('desk/app/urgit-ci.hoon',
+         '  `[name.key scope.cred envs.cred created.cred]\n',
+         '  `[value.cred scope.cred envs.cred created.cred]\n',
+         'Q11 RED: credential value appeared in a read'),
  'Q5a': ('desk/app/urgit.hoon',
          '    ?:  p.protected\n',
          '    ?:  %.n\n',

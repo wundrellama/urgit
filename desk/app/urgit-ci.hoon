@@ -113,6 +113,9 @@
       [%x %untrusted-policy @ ~]
     ``noun+!>((policy:hc (decode-segment:hc i.t.t.path)))
   ::
+      [%x %credentials @ ~]
+    ``noun+!>((credential-infos:hc (decode-segment:hc i.t.t.path)))
+  ::
       [%x %landing @ ~]
     =/  id=(unit @uv)  (slaw %uv i.t.t.path)
     =/  found=(unit candidate:ci)  ?~(id ~ (~(get by candidates) u.id))
@@ -436,6 +439,22 @@
       %approve-candidate
     (approve-candidate id.act src.bowl)
   ::
+      %set-credential
+    =/  refusal=(unit @t)  (writer-refusal repo.act src.bowl)
+    ?^  refusal  ~|(u.refusal !!)
+    ?.  (credential-name name.act)  ~|('credential name must be an identifier' !!)
+    ?:  (lien (trip value.act) |=(c=@tD |(=(c 10) =(c 13))))
+      ~|('credential values must be a single line' !!)
+    =.  credentials
+      (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
+    (emit ~)
+  ::
+      %delete-credential
+    =/  refusal=(unit @t)  (writer-refusal repo.act src.bowl)
+    ?^  refusal  ~|(u.refusal !!)
+    =.  credentials  (~(del by credentials) [repo.act name.act])
+    (emit ~)
+  ::
       %materialize
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
     ?~  found  ~|('no such candidate' !!)
@@ -552,6 +571,95 @@
     (emit ~)
   ==
 ::
+++  credential-name
+  |=  name=@t
+  ^-  ?
+  =/  chars=tape  (trip name)
+  ?~  chars  %.n
+  =/  letter
+    |=(c=@tD |(=(c '_') &((gte c 'a') (lte c 'z')) &((gte c 'A') (lte c 'Z'))))
+  ?&  (letter i.chars)
+      (levy t.chars |=(c=@tD |((letter c) &((gte c '0') (lte c '9')))))
+  ==
+::
+++  credential-infos
+  |=  repo=@t
+  ^-  (list credential-info:ci)
+  %+  murn  ~(tap by credentials)
+  |=  [key=[repo=@t name=@t] cred=credential:ci]
+  ^-  (unit credential-info:ci)
+  ?.  =(repo repo.key)  ~
+  `[name.key scope.cred envs.cred created.cred]
+::
+::  Grant data are kept apart from the public attempt and assignment
+::  records. Only the authenticated delivery carries values. A snapshot
+::  lets late events be scrubbed even after a credential is deleted.
+::
+++  grant-values
+  |=  attempt=attempt-id:ci
+  ^-  (list @t)
+  %+  sort  (turn (~(gut by grants) attempt ~) |=(g=grant:ci value.g))
+  |=([a=@t b=@t] (gth (met 3 a) (met 3 b)))
+::
+++  release-grants
+  |=  [c=candidate:ci attempt=attempt-id:ci kind=kind:ci workflow=(unit @t) job=(unit @t)]
+  ^-  (list grant:ci)
+  ?.  (grantable trust.c kind)  ~
+  =/  environment=(unit @t)
+    ?~  workflow  ~
+    ?~  job  ~
+    (~(get by grant-envs) [id.c u.workflow u.job])
+  =/  expiry=@da  (from-unix:chrono:userlib (add 900 (div (sub now.bowl (from-unix:chrono:userlib 0)) ~s1)))
+  %+  murn  ~(tap by credentials)
+  |=  [key=[repo=@t name=@t] cred=credential:ci]
+  ^-  (unit grant:ci)
+  ?.  =(repo.c repo.key)  ~
+  ?.  |(=(%job scope.cred) ?~(environment %.n (~(has in envs.cred) u.environment)))  ~
+  =/  nonce=@uv  (sham [%ci-grant attempt name.key now.bowl eny.bowl])
+  `[name.key value.cred expiry nonce 0x0]
+::
+++  grants-json
+  |=  assignment=assignment:ci
+  ^-  json
+  :-  %a
+  ?.  (grantable trust.assignment kind.assignment)  ~
+  %+  turn  (~(gut by grants) attempt.assignment ~)
+  |=  g=grant:ci
+  %-  pairs:enjs:format
+  :~  ['name' s+name.g]
+      ['value' s+value.g]
+      ['expiry' (numb:enjs:format (div (sub expiry.g (from-unix:chrono:userlib 0)) ~s1))]
+      ['nonce' s+(scot %uv nonce.g)]
+      ['sig' s+(scot %ux sig.g)]
+  ==
+::
+++  grantable
+  |=  [trust=trust:ci kind=kind:ci]
+  ^-  ?
+  ?&(=(%trusted trust) =(%job kind))
+::
+::  The existing plan validator and scheduler stay unchanged. Environment
+::  names are credential-scope metadata from the same plan submission,
+::  retained only for jobs the validator accepted. Missing, dynamic or
+::  non-string environments cannot select an environment credential.
+::
+++  plan-grant-envs
+  |=  [id=candidate-id:ci jobs=(list job:ci) jon=json]
+  ^-  _grant-envs
+  =/  raw=(unit json)  ?:(?=([%o *] jon) (~(get by p.jon) 'jobs') ~)
+  ?~  raw  grant-envs
+  ?.  ?=([%a *] u.raw)  grant-envs
+  %+  roll  p.u.raw
+  |=  [item=json acc=_grant-envs]
+  =/  workflow=(unit @t)  (string-at 'workflow' item)
+  =/  job=(unit @t)  (string-at 'id' item)
+  =/  env=(unit @t)  (string-at 'environment' item)
+  ?~  workflow  acc
+  ?~  job  acc
+  ?~  env  acc
+  ?.  (lien jobs |=(j=job:ci ?&(=(u.workflow workflow.j) =(u.job id.j))))  acc
+  (~(put by acc) [id u.workflow u.job] u.env)
+::
 ++  awaiting-materialization
   |=  [repo=@t ref=@t head=oid:git base=oid:git]
   ^-  (list candidate:ci)
@@ -636,6 +744,7 @@
     :*  assignment-id  candidate  daemon  attempt-id
         trust.found  kind  workflow  job  deadline  now.bowl  ~
     ==
+  =.  grants  (~(put by grants) attempt-id (release-grants found attempt-id kind workflow job))
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  assignments  (~(put by assignments) assignment-id assignment)
   =.  candidates
@@ -917,6 +1026,8 @@
   =/  closed=attempt:ci
     attempt(status status, result `attempt-result, reason reason, finished `now.bowl)
   =.  attempts  (~(put by attempts) id.attempt closed)
+  ::  Closed attempts cannot accept events or receive another delivery.
+  =.  grants  (~(del by grants) id.attempt)
   =.  daemons
     =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.attempt)
     ?~  runner  daemons
@@ -1059,7 +1170,7 @@
       ['head' s+(oid-text:git-codec head.candidate)]
       ['base' s+(oid-text:git-codec base.candidate)]
       ['trust' s+trust.assignment]
-      ['grants' [%a ~]]
+      ['grants' (grants-json assignment)]
       ['kind' s+kind.assignment]
       ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
       ['job' ?~(job.assignment ~ s+u.job.assignment)]
@@ -1461,7 +1572,7 @@
   =/  parsed=(each event:ci refusal:ci-event)  (parse:ci-event body)
   ?:  ?=(%| -.parsed)
     (emit (give-error eyre-id status.p.parsed message.p.parsed))
-  =/  =event:ci  p.parsed
+  =/  =event:ci  (scrub:ci-event p.parsed (grant-values id.u.found))
   ::  the tripwire for the daemon's single-job projection (CI-PROJECT-1):
   ::  a line from any job but the assigned one means act ran more than
   ::  the ship admitted
@@ -1539,7 +1650,7 @@
     (emit (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
   ?^  infrastructure
     =.  found  `u.found(log p.log)
-    =.  state  (close-attempt u.found [%infrastructure-error u.infrastructure])
+    =.  state  (close-attempt u.found [%infrastructure-error (scrub-text:ci-event u.infrastructure (grant-values id.u.found))])
     =/  closed=out  (after-close candidate.u.found)
     =.  state  state.closed
     =.  polls  polls.closed
@@ -1568,7 +1679,7 @@
   =/  reason=(unit @t)  (string-at 'reason' u.jon)
   ?~  reason
     (emit (give-error eyre-id 422 'reason is required'))
-  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' u.reason])])
+  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' (scrub-text:ci-event u.reason (grant-values id.u.found))])])
   =/  closed=out  (after-close candidate.u.found)
   =.  state  state.closed
   =.  polls  polls.closed
@@ -1636,6 +1747,7 @@
   =.  candidates
     %+  ~(put by candidates)  id.candidate
     candidate(plan `p.validated, plan-oid `oid, updated now.bowl)
+  =.  grant-envs  (plan-grant-envs id.candidate p.validated u.jon)
   =.  state  (close-attempt u.found [%job-result %success])
   =/  closed=out  (after-close candidate.u.found)
   =.  state  state.closed

@@ -32,7 +32,8 @@ owned by the invoking host user. The server's console port is not published.
 |---|---|---|
 | S0 | `1acf739` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
 | S1 | `854237b` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
-| S2 | This stage commit | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
+| S2 | `84beb05` | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
+| S3 | This stage commit | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
 
 ## Observations
 
@@ -48,7 +49,10 @@ owned by the invoking host user. The server's console port is not published.
 | Q6 | RED → GREEN | One-line eligibility sabotage let untrusted candidate `0vllmtj.c1b2q.9vil3.22fbl.ask5i` pass and land (tripwire `Q6 RED: untrusted candidate landed`). Restored build, same Q5 GREEN PR under restricted policy: real plan and job attempts untrusted; captured plan assignment has `trust=untrusted`, `grants=[]`; job uses `/work/cache/untrusted`. Candidate **passed**, refusal **`candidate trust is untrusted; cannot land`**, master remains `e4c9f11…`, pull #1 open. `.scratch/tmp/q6-{red,green}.log`; actual wire captures in ignored `p2-q6-*-offer.json`. |
 | Q7 | PASS | Actual owner `%approve-candidate` poke: old `0v1.d736e.sfdov.fqpt5.jjed0.cpofu` → **skipped**, reason **`superseded by approval`**; new `0v5.a96eh.tbtht.fukh5.6rapq.ofk7n` trusted with exactly the same head/base, fresh plan and job, **passed/landed**, master `c40a6d5…`, PR #1 merged. `.scratch/tmp/q7.log`. |
 | Q8 | RED → GREEN | One-line writer-refusal bypass in the action handler: synthetic `src.bowl=~dys` accepted, also accepted while `%urgit` was actually suspended (tripwire `Q8 RED: non-writer approval accepted by the action handler`). Restored handler refuses **`actor cannot write q5-green-514984057371`**; with `%urgit` `%gu=%.n`, refuses **`ci: %urgit writer read is unavailable`**. Q7 is the real owner-positive poke. `.scratch/tmp/q8-{red,unavailable-red,green,unavailable}.log`. |
-| Q9–Q18 | Pending | Later stages remain |
+| Q9 | PASS | Actual newline credential poke refused **`credential values must be a single line`**. Trusted candidate `0vvc3vm.ab2f2.qcb35.b8q2m.t2d3u`, job attempt `0v2.kr0qq.piock.h13rd.ts01d.7ordf`: actual assignment contained `CI_TOKEN` and matching `PROD_TOKEN`, excluded `TEST_ONLY`; expiry within 900 seconds. `echo` and `set-output` are masked in local JSONL. An independently posted raw `set-output` was accepted **202** and stored as `***` by the ship. Candidate passed/landed, master `1e01fba…`; **5,621-byte** log, SHA-256 `d71e095f6583f658cb5de78bfc6015f2d7c084524818156df40e5df571e84a7e`. `.scratch/tmp/q9.log`. |
+| Q10 | RED → GREEN | One-line shared grant eligibility sabotage: actual untrusted job assignment included a credential (tripwire `Q10 RED: untrusted job received a credential grant`); the daemon's independent guard refused to pass it to act. Restored controller: credentials stored for the real `~dys` PR, candidate `0v6.t446l.4aviv.ul2lj.5cjlm.4uk0c`, job `0v2.bf9s8.ucv65.t50e1.dq4l6.v5b37`, actual assignment **`grants=[]`**; passed, trust refusal prevented landing. `.scratch/tmp/q10-{red,green}.log`. |
+| Q11 | RED → GREEN | One-line metadata sabotage returned the value in place of its name; both the read and complete-noun probe detected it (tripwire `Q11 RED: credential value appeared in a read`). Restored controller: **16 peek variants × 3 credential values**, plus attempt and repository JSON, contain none. Delete all three credentials → metadata `~`; actual `%assign` job rerun `0v1.ul8vh.ukfdn.mt5j6.1mgqc.qevgp` receives **`grants=[]`**, then passes. `.scratch/tmp/q11-red.log`, `.scratch/tmp/q11-green-final.log`; enumerated paths in ignored `p2-q11.json`. |
+| Q12–Q18 | Pending | S4–S6 remain |
 
 The fixture's independent curl-signed PUT/GET succeeded and its anonymous
 object GET returned **403**, before any product signing test. All seven
@@ -231,3 +235,64 @@ The generated probe is a fixture-only generator in the mounted desk,
 removed by the next normal desk build. It is not a product endpoint.
 The four lifted access-arm bodies were compared byte-for-byte again
 against `c703034` after Q8; all were equal. `git diff --check` passes.
+
+
+## S3: credentials and grant transport
+
+The CI agent was nuked/revived for the larger `state-0`; S2's ids above
+are historical. `%urgit` state and source are unchanged in S3. The
+credential map and active grant snapshots are private state. Existing
+candidate, assignment, attempt and daemon peeks retain no value fields.
+The dedicated credential peek returns only names, scopes, environment
+sets and creation times. Grant snapshots survive credential deletion
+while an attempt runs, then are removed when it closes.
+
+A grant is selected only for a trusted job, by repository and name. The
+job-scoped case and matching/nonmatching environment scopes were tested
+on the same actual Q9 assignment. Environment names come from the plan
+submission as separate grant policy metadata, keyed by candidate and
+validated workflow/job. No `job:ci` or `ci-plan` change, scheduler change,
+projection change, poll-loop change, or sandbox interface change was
+needed. The YAML reader accepts a static string or `environment.name`;
+an expression cannot select a credential. Expiry is stored as `@da` and
+serialized as a Unix second, 900 seconds after grant creation. S4 adds
+and verifies cryptographic signatures; S3 does not claim signing.
+
+Q9 also sends a raw secret directly to the running attempt's event route,
+bypassing the runner's scrub. Its recorded `ship-scrub` output is `***`.
+The attempt's 18 events are 17 daemon events plus that independent probe.
+The daemon's JSONL and diagnostics contain neither released value. Go
+tests additionally cover quotes, backslashes, escaped malformed
+diagnostics, nested JSON, set-output, expiry, untrusted grants, and
+static/nonstatic environment names. `go test ./...`, `go vet ./...`,
+`go test -race ./internal/daemon ./internal/relay`, and the static runner
+build passed.
+
+The capture harness is a loopback HTTP pass-through with an ephemeral
+port. It forwards the actual runner's requests to `~lup`, saving only
+assignment replies in ignored mode-0600 files. It preserves Eyre's gzip
+response while decoding a copy for the assertion. JSON snapshots use
+atomic replacement so a reader cannot see a partial capture. The proxy
+runs only inside its row driver and stops with it; each runner is stopped
+by `/proc`-verified PID before the proxy is closed. The final S3 runner
+PID was **3589219**. Both ships and the store remain up for S4.
+
+Shakedown fixes and limits of the evidence:
+
+- Khan reports a nack as a noun with numeric `%leaf` tapes. The newline
+  test now decodes those tapes from the actual poke reply and checks the
+  exact refusal; a missing asynchronous dojo message is not evidence.
+- The first capture proxy tried to parse a gzip reply as UTF-8 and lost
+  that delivery. Its original enrollment was restored from the retained
+  private state file, and the same plan was redelivered and completed.
+  The daemon-presence probe now requires a valid boolean before it can
+  enroll; an invalid Hoon test cannot silently trigger re-enrollment.
+- Q11 uses a fixture generator to scan every atom of the complete peek
+  noun, returning only a boolean. It detected the RED credential value.
+  Its hex needles use Hoon's four-digit grouping and its OID/file path
+  segments use `scot %t`; invalid literal attempts did not count. The
+  final GREEN log is a separate clean run. Q11 excludes the authorized
+  assignment delivery, whose purpose is to release the named credential.
+- Q11's rerun uses P1's existing operator `%assign`; the public rerun
+  action belongs to S5. Captures exclude all prior attempt ids so a
+  repeated row cannot pass using an earlier rerun's empty grant list.

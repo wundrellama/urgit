@@ -123,6 +123,14 @@
 ::
 +$  object-ref  [key=@t size=@ud sha256=@t]
 ::
++$  credential-scope  ?(%job %env)
++$  credential
+  [value=@t scope=credential-scope envs=(set @t) created=@da]
++$  credential-info
+  [name=@t scope=credential-scope envs=(set @t) created=@da]
++$  grant
+  [name=@t value=@t expiry=@da nonce=@uv sig=@ux]
+::
 ::  one execution of a candidate on one daemon.  the event stream is not
 ::  stored; only the count, the recorded outputs, the relayed jobResult
 ::  and the claimed result enter state.
@@ -156,6 +164,9 @@
       attempts=(map attempt-id attempt)
       ci-protected=(set [repo=@t ref=@t])
       untrusted=(map @t untrusted-policy)
+      credentials=(map [repo=@t name=@t] credential)
+      grants=(map attempt-id (list grant))
+      grant-envs=(map [candidate=candidate-id workflow=@t job=@t] @t)
   ==
 ::
 ::  the event envelope: one `act --json` line after validation
@@ -193,6 +204,8 @@
       [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via pull=(unit @ud)]
       [%set-untrusted-policy repo=@t policy=untrusted-policy]
       [%approve-candidate id=candidate-id]
+      [%set-credential repo=@t name=@t value=@t scope=credential-scope envs=(set @t)]
+      [%delete-credential repo=@t name=@t]
       [%materialize candidate=candidate-id]
       [%materialize-candidate repo=@t ref=@t head=oid:git base=oid:git]
       [%candidate-ready repo=@t ref=@t head=oid:git base=oid:git candidate=oid:git]

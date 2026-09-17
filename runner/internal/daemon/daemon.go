@@ -363,14 +363,15 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		return
 	}
 	type wireJob struct {
-		ID       string     `json:"id"`
-		Workflow string     `json:"workflow"`
-		Name     string     `json:"name"`
-		Stage    int        `json:"stage"`
-		Needs    []string   `json:"needs"`
-		Cond     *plan.Cond `json:"cond"`
-		Matrix   bool       `json:"matrix"`
-		Events   []string   `json:"events"`
+		ID          string     `json:"id"`
+		Workflow    string     `json:"workflow"`
+		Name        string     `json:"name"`
+		Stage       int        `json:"stage"`
+		Needs       []string   `json:"needs"`
+		Cond        *plan.Cond `json:"cond"`
+		Matrix      bool       `json:"matrix"`
+		Events      []string   `json:"events"`
+		Environment string     `json:"environment,omitempty"`
 	}
 	body := struct {
 		OID       string    `json:"oid"`
@@ -410,6 +411,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
 				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events,
+				Environment: grantEnvironment(data, row.JobID),
 			})
 		}
 		logf("act -l %s: %d job(s)", file, len(listed))
@@ -475,6 +477,19 @@ func (d *Daemon) capture(ctx context.Context, h sandbox.Handle, workDir string, 
 // act on the projection with the isolated network, relay every event
 // line, then claim the jobResult the stream carried or abandon.
 func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handle, work, src string, logf func(string, ...any)) {
+	scrub := newSecretScrubber(a.Grants)
+	writeLog := logf
+	logf = func(format string, args ...any) { writeLog("%s", scrub.text(fmt.Sprintf(format, args...))) }
+	if a.Trust != "trusted" && len(a.Grants) > 0 {
+		d.fail(ctx, a, "untrusted attempt received credential grants", logf)
+		return
+	}
+	for _, g := range a.Grants {
+		if g.Expiry <= time.Now().Unix() {
+			d.fail(ctx, a, "credential grant expired", logf)
+			return
+		}
+	}
 	if a.Workflow == "" || a.Job == "" {
 		d.fail(ctx, a, "job assignment without workflow and job", logf)
 		return
@@ -519,6 +534,9 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
 		argv = append(argv, "--env", e)
 	}
+	for _, g := range a.Grants {
+		argv = append(argv, "--secret", g.Name+"="+g.Value)
+	}
 	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow), strings.Join(argv, " "))
 	stream, done, err := d.box.Run(ctx, h, "/work/src", argv, nil)
 	if err != nil {
@@ -527,9 +545,9 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	}
 	logPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
 	streamLog, logErr := os.Create(logPath)
-	var tee io.Reader = stream
+	var tee io.Reader = scrub.reader(stream)
 	if logErr == nil {
-		tee = io.TeeReader(stream, streamLog)
+		tee = io.TeeReader(tee, streamLog)
 	} else {
 		logf("log file unavailable: %v", logErr)
 	}
