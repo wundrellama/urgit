@@ -25,13 +25,16 @@ const groupAccess = settings.slice(
   settings.indexOf('<h3>Group access</h3>'),
   settings.indexOf('<h3>Protected branches</h3>'),
 )
+// the %groups readers live in the agent door's helper core since P2's
+// ci-can-write peek (fence touch 5): the LAST occurrence is the body, the
+// first is the one-line wrapper on-poke's local core keeps for its callers
 const groupPeek = backend.slice(
-  backend.indexOf('++  group-peek'),
-  backend.indexOf('++  group-seat'),
+  backend.lastIndexOf('++  group-peek'),
+  backend.lastIndexOf('++  group-seat'),
 )
 const groupSeat = backend.slice(
-  backend.indexOf('++  group-seat'),
-  backend.indexOf('++  group-members'),
+  backend.lastIndexOf('++  group-seat'),
+  backend.lastIndexOf('++  repository-group-capability'),
 )
 const groupMembers = backend.slice(
   backend.indexOf('++  group-members'),
