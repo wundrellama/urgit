@@ -213,9 +213,16 @@ only, first in your sequence — it is already the code's behavior.
   (:8727) supplies the new `pull=~` slot** — `%stage-candidate` gains `pull=(unit @ud)`
   in `sur/ci.hoon` and the old cast nest-fails without it (astra proved it in the dojo);
   **(5) a new peek `[%x %ci-can-write @ @ ~]` → `?`** answering whether `<actor>` can
-  write `<repo>` via `repository-writable` (:2415–2434, which already resolves owner,
+  write `<repo>` via `repository-writable` (:2425–2433, which already resolves owner,
   listed writers, and `%write` group seats), `%.n` for an unknown repository, for public
-  AND private repositories. `%urgit-ci` reads it through its guarded peek adapter
+  AND private repositories. **Touch 5 includes the lift (astra §6, ratified):**
+  `repository-writable` and the three helpers it depends on — `group-peek` (:2329–2346),
+  `group-seat` (:2359–2386), `repository-group-capability` (:2406–2411) — live in the
+  `|^` core local to `on-poke` (:2278–9168) and are invisible to `on-peek` (:9174;
+  `-find.repository-writable` on `|commit`). Move those four arms, bodies unchanged,
+  into the enclosing agent door so both entry points resolve them; `group-members` and
+  `repository-readable` may stay local. A move, not a rewrite: `git diff --stat` on the
+  four bodies is zero lines changed. `%urgit-ci` reads it through its guarded peek adapter
   (`%gu` first) for D3's trust class at staging and for `%approve-candidate`, and
   refuses (never assumes) when the read is unavailable. Name all five arms and line
   ranges in your record. Nothing else in `urgit.hoon`; `native-pull`'s mold in
