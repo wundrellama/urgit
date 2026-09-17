@@ -96,7 +96,13 @@ policy `untrusted=%restricted` is set, in which case it is planned and run with
 `untrusted`, and it can never land; or (b) a writer approves it (`%approve-candidate
 id`), which re-stages the SAME head/base as `%trusted` — a new candidate id, the old one
 `%skipped` with `verdict-reason='superseded by approval'`. A `%trusted` candidate never
-needs approval.
+needs approval. **"Writer" means `ci-can-write` (fence touch 5) answers `%.y` for the
+actor** — the owner, a listed writer, or a `%write` group member — both for the trust
+class at staging and for approval. The actor of a `POST ci/action` is the session's
+ship; the actor of a dojo poke is `src.bowl`. In P2 the only actor that can reach the
+approve poke is the owner (no cross-ship approve route exists; `%git-peer` is where one
+would ride in P3) — the gate is built on the peek anyway so that route needs no change
+to the rule when it lands.
 
 **D3a — The web pull-request merge goes through the gate (a P1 gap, closed here).**
 §Protected refs: "A direct push, web edit, or import to a CI-protected branch is never
@@ -127,7 +133,18 @@ the credentials whose `scope=%job` (or `%env` with the job's `environment:` in `
 the daemon passes them to `act` as `--secret name=value` and **never writes them to the
 `.act.jsonl`** (act masks secrets in its own output; the daemon must additionally scrub
 any line containing a grant value before relay — a test proves it). An `%untrusted`
-attempt's assignment has `grants=~`, unconditionally.
+attempt's assignment has `grants=~`, unconditionally. **Ruled (opus §2, measured on act
+0.2.89): act masks a single-line secret in `msg` but the `set-output` line's `arg`
+field carries the raw value — scrub set-output values on BOTH the daemon and the ship
+(`scrub:ci-event` before `record-output`). act does NOT mask a multi-line secret at all
+(each line prints in clear). P2 rule: `%set-credential` refuses a value containing a
+newline (`'credential values must be a single line'`) and the settings form refuses it
+before posting; operators base64 multi-line material and decode it in the step. Per-line
+scrubbing (every line ≥ 8 chars of every released value, daemon and ship) is P3's — a
+PEM key is exactly the credential a deploy job needs, and it is not shipped under time
+pressure.** Q9 gains a row: a set-output of a secret value → the recorded output is
+`***` on the ship and the daemon's jsonl has no raw copy; a newline in
+`%set-credential` → refused.
 
 **D5 — The CI signing key** (§Trust: "A dedicated CI signing key lives in `%urgit-ci`.
 The ship's networking authentication key certifies the CI key… The signature format
@@ -188,14 +205,22 @@ only, first in your sequence — it is already the code's behavior.
 - `desk/app/urgit-ci.hoon`, `desk/sur/ci.hoon`, `desk/lib/ci-storage.hoon` (D2 wrapper
   only), `desk/lib/ci-event.hoon` (scrub), `desk/mar/ci-action.hoon` if the mark needs the
   new variants: yours.
-- `desk/app/urgit.hoon`: **exactly three touches** — (1) the `pulls/<n>/merge` route in
-  `handle-api` (:7417) gains the CI-protected branch: stage instead of write (D3a);
-  (2) `land-candidate` (:8051) flips a landed candidate's pull to `%merged` when it
-  carries one (D3a); (3) the repository JSON gains `ciUntrustedPolicy` for the settings
-  UI. Name all three arms and line ranges in your record. **The `%stage-candidate` action
-  gains an optional `pull=(unit @ud)` — that is `sur/ci.hoon`, yours.** Nothing else in
-  `urgit.hoon`; `native-pull`'s mold in `sur/git.hoon` is NOT touched (a pull's pending
-  candidate lives on the candidate, keyed by pull number, not on the pull).
+- `desk/app/urgit.hoon`: **exactly five touches** (re-freeze 2; astra §4/§5, opus §3) —
+  (1) the `pulls/<n>/merge` route in `handle-api` (:7417) gains the CI-protected branch:
+  stage instead of write (D3a); (2) `land-candidate` (:8051) flips a landed candidate's
+  pull to `%merged` when it carries one (D3a); (3) the repository JSON gains
+  `ciUntrustedPolicy` for the settings UI; **(4) the push caller in `handle-receive-pack`
+  (:8727) supplies the new `pull=~` slot** — `%stage-candidate` gains `pull=(unit @ud)`
+  in `sur/ci.hoon` and the old cast nest-fails without it (astra proved it in the dojo);
+  **(5) a new peek `[%x %ci-can-write @ @ ~]` → `?`** answering whether `<actor>` can
+  write `<repo>` via `repository-writable` (:2415–2434, which already resolves owner,
+  listed writers, and `%write` group seats), `%.n` for an unknown repository, for public
+  AND private repositories. `%urgit-ci` reads it through its guarded peek adapter
+  (`%gu` first) for D3's trust class at staging and for `%approve-candidate`, and
+  refuses (never assumes) when the read is unavailable. Name all five arms and line
+  ranges in your record. Nothing else in `urgit.hoon`; `native-pull`'s mold in
+  `sur/git.hoon` is NOT touched (a pull's pending candidate lives on the candidate,
+  keyed by pull number, not on the pull); `%urgit` state is NOT touched.
 - `runner/`: the upload step (D1/D2), grant handling + scrub (D4), signature verification
   (D5). No change to the sandbox interface, projection, or poll loop.
 - `fe/`: the CI tab, the settings additions, `api.js` helpers, tests.
@@ -215,10 +240,10 @@ Extend `.scratch/ci-p1/` (P1's harness) — same env, boot, rootless, drivers. R
 | Q3 | Trust class in the key: a `%trusted` attempt's key has `/trusted/`; the `sign-get` scry with `%untrusted` for that attempt returns `~` |
 | Q4 | Upload name fence: `POST upload` with `name=../x` → 400 |
 | Q5a | **Web merge gate (P1 gap):** a writer opens a PR to a CI-protected `master` and clicks Merge → 202 + candidate id, `master` unmoved, candidate `%trusted`; it runs and lands; the pull reads `%merged` only after landing. Merge to an unprotected branch still writes directly |
-| Q5 | Untrusted staging: a PR whose `source-ship` is not a writer, merged by a writer → stages `%untrusted %pending`, `plan=~`, zero attempts, no daemon offered work |
+| Q5 | Untrusted staging: a PR opened by the second galaxy (not a writer) through the peer protocol, merged by the first ship's writer → stages `%untrusted %pending` with `actor=<second galaxy>`, `plan=~`, zero attempts, no daemon offered work |
 | Q6 | `%restricted` policy: same PR → planned and run with `trust=%untrusted`, `grants=~` on the assignment, candidate reaches `%passed` and **cannot land** (`land-candidate` refuses with a reason naming trust) |
 | Q7 | Approval: `%approve-candidate` by a writer → new `%trusted` candidate, old `%skipped superseded by approval`, new one runs and lands |
-| Q8 | Approval by a non-writer → refused |
+| Q8 | Approval is gated by `ci-can-write`, not by `our.bowl`: with the owner REMOVED from its own repo's write set for the test (not possible — the owner always writes) the honest probe is the negative: a `%ci-action` `%approve-candidate` whose `actor` is the second galaxy → refused `'actor cannot write <repo>'`; the same with `%urgit` suspended → refused naming the unavailable read; then the owner approves → accepted. In P2 the only actor that can REACH the poke is the owner (session) — a listed writer on another ship has no session and no cross-ship approve route; record that in Deviations as the P3 item (`%git-peer` carries `src.bowl` and is the path a remote approve would ride). The peek is still what decides trust at staging (Q5) and is proven there |
 | Q9 | Credentials: `%set-credential` then a trusted job whose step `echo $NAME` → the log line is masked (`***`), the assignment JSON has the grant, the daemon's `.act.jsonl` does not contain the value |
 | Q10 | Untrusted attempt: `grants=~` even with credentials set |
 | Q11 | Credential never in a read: every scry/route JSON `grep -c <value>` = 0; `%delete-credential` removes it and a rerun's grant list is empty |
@@ -249,7 +274,20 @@ scoped access key; then the seven `%storage-action` pokes point the fixture ship
 (the P0 recipe in the rulings reference). Q2/Q3/Q18 read from that bucket with `curl`,
 never from the container's filesystem. `store.sh stop` is part of shutdown. If RustFS's
 SigV4 rejects a request the signer produces, that is a finding against the SIGNER (P0
-targeted AWS's documented canonical form) — box it with the store's error body. The fe tests run in `foreground.sh` alongside `go test`. Record:
+targeted AWS's documented canonical form) — box it with the store's error body.
+
+**The second ship (opus §1, ruled).** On one ship every pull request's `source-ship` is
+the owner (the web route records `our.bowl`; the peer path takes `src.bowl`, which a
+khan strand cannot forge), so Q5–Q8 cannot produce an `%untrusted` candidate honestly on
+one galaxy. Each chair boots a **second fake galaxy from its footer** (`~dys` / `~put`),
+`%urgit` installed, NO `-p` flag on either ship (fake galaxies use Vere-derived Ames
+ports and must, or they cannot hear each other). `.scratch/ci-p1/peer.sh` on the second
+ship: `POST /peer/discover {ship}` → `POST /peer/fork {name}` → push a commit to the
+fork → `POST /peer/pull-request` against the first ship's repo (read each request's own
+id from the response and match it in `GET /peer/discoveries` / `/peer/transfers`; "last
+entry" lies once forks and pushes interleave). The first ship's writer then merges it
+through the web; `source-ship` is the second galaxy, which is not a writer. Q5–Q8 run
+on that pull. The second ship is torn down by `/proc`-verified PID with the first. The fe tests run in `foreground.sh` alongside `go test`. Record:
 `.scratch/p2-live-table.md`, same columns as P1's, observed values from YOUR run, a
 Deviations section, shutdown by `/proc`-verified PID, pier retained.
 
