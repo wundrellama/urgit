@@ -41,7 +41,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  [~[connect-card:hc] this]
+  [~[connect-card:hc keys-card:hc] this]
 ::
 ++  on-save
   !>(state)
@@ -53,7 +53,7 @@
     ?+  -.q.old  !!
       %0  !<(state-0:ci old)
     ==
-  [~[connect-card:hc] this(state loaded, polls ~)]
+  [~[connect-card:hc keys-card:hc] this(state loaded, polls ~)]
 ::
 ++  on-poke
   |=  [=mark =vase]
@@ -183,6 +183,14 @@
   ?+    wire  (on-arvo:def wire sign-arvo)
       [%eyre *]  `this
   ::
+      [%jael %keys ~]
+    ?.  ?=([%jael %private-keys *] sign-arvo)  (on-arvo:def wire sign-arvo)
+    =/  active=(unit @)  (~(get by vein.sign-arvo) life.sign-arvo)
+    ?~  active  `this
+    =.  network-key  `[life.sign-arvo u.active]
+    =.  signing  (recertify:hc signing)
+    `this
+  ::
       [%log @ @ ~]
     =/  id=(unit @uv)  (slaw %uv i.t.wire)
     ?~  id  `this
@@ -237,6 +245,64 @@
 ++  connect-card
   ^-  card
   [%pass /eyre/connect %arvo %e %connect [~ /apps/urgit/api/ci] %urgit-ci]
+::
+++  keys-card
+  ^-  card
+  [%pass /jael/keys %arvo %j %private-keys ~]
+::
+::  zuse +nol:nu:crub activates the network ring; +sigh:as:crub
+::  invokes +sign:ed on its signing seed, which calls +luck and
+::  +sign-raw. Neither the ring nor either private key is exposed.
+::
+++  recertify
+  |=  key=(unit signing-key:ci)
+  ^-  (unit signing-key:ci)
+  ?~  key  ~
+  ?~  network-key  ~|('CI key requires Jael private keys' !!)
+  =/  suite  (nol:nu:crub:crypto key.u.network-key)
+  `u.key(cert (sigh:as.suite pub.u.key))
+::
+++  fresh-signing-key
+  ^-  (unit signing-key:ci)
+  =/  pair  (luck:ed:crypto (shas %ci-signing-key eny.bowl))
+  (recertify `[pub.pair sek.pair 0x0 now.bowl])
+::
+++  sign-envelope
+  |=  [recipient=daemon-id:ci attempt=attempt-id:ci operation=* expiry=@da nonce=@uv]
+  ^-  @ux
+  ?~  signing  ~|('CI key is not initialized; rotate-ci-key first' !!)
+  (sign-raw:ed:crypto (jam [recipient attempt operation expiry nonce]) pub.u.signing sek.u.signing)
+::
+::  The assignment operation binds its entire JSON body. Canonical JSON
+::  nouns preserve the ordinary JSON tags, but encode objects as lists
+::  of [key value] pairs sorted by +aor instead of runtime map trees.
+::  Array order and nulls are preserved; strings and number text are
+::  [byte-length atom] pairs, so trailing NUL bytes cannot alias a string.
+::
+++  signing-json
+  |=  value=json
+  ^-  *
+  ?~  value  ~
+  ?+  -.value  value
+    %a  [%a (turn p.value signing-json)]
+    %s  [%s (met 3 p.value) p.value]
+    %n  [%n (met 3 p.value) p.value]
+    %o
+      :-  %o
+      %+  turn
+        (sort ~(tap by p.value) |=([a=[@t json] b=[@t json]] (aor -.a -.b)))
+      |=  [key=@t val=json]
+      [[(met 3 key) key] (signing-json val)]
+  ==
+::
+++  key-json
+  ^-  json
+  ?~  signing  ~
+  %-  pairs:enjs:format
+  :~  ['pub' s+(scot %ux pub.u.signing)]
+      ['cert' s+(scot %ux cert.u.signing)]
+      ['ship-life' (numb:enjs:format ?~(network-key 0 life.u.network-key))]
+  ==
 ::
 ++  candidate-id
   |=  [repo=@t ref=@t head=oid:git base=oid:git]
@@ -445,8 +511,13 @@
     ?.  (credential-name name.act)  ~|('credential name must be an identifier' !!)
     ?:  (lien (trip value.act) |=(c=@tD |(=(c 10) =(c 13))))
       ~|('credential values must be a single line' !!)
+    =.  signing  ?~(signing fresh-signing-key signing)
     =.  credentials
       (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
+    (emit ~)
+  ::
+      %rotate-ci-key
+    =.  signing  fresh-signing-key
     (emit ~)
   ::
       %delete-credential
@@ -602,7 +673,7 @@
   |=([a=@t b=@t] (gth (met 3 a) (met 3 b)))
 ::
 ++  release-grants
-  |=  [c=candidate:ci attempt=attempt-id:ci kind=kind:ci workflow=(unit @t) job=(unit @t)]
+  |=  [c=candidate:ci attempt=attempt-id:ci recipient=daemon-id:ci kind=kind:ci workflow=(unit @t) job=(unit @t)]
   ^-  (list grant:ci)
   ?.  (grantable trust.c kind)  ~
   =/  environment=(unit @t)
@@ -616,7 +687,7 @@
   ?.  =(repo.c repo.key)  ~
   ?.  |(=(%job scope.cred) ?~(environment %.n (~(has in envs.cred) u.environment)))  ~
   =/  nonce=@uv  (sham [%ci-grant attempt name.key now.bowl eny.bowl])
-  `[name.key value.cred expiry nonce 0x0]
+  `[name.key value.cred expiry nonce (sign-envelope recipient attempt [%grant [(met 3 name.key) name.key] [(met 3 value.cred) value.cred]] expiry nonce)]
 ::
 ++  grants-json
   |=  assignment=assignment:ci
@@ -744,7 +815,7 @@
     :*  assignment-id  candidate  daemon  attempt-id
         trust.found  kind  workflow  job  deadline  now.bowl  ~
     ==
-  =.  grants  (~(put by grants) attempt-id (release-grants found attempt-id kind workflow job))
+  =.  grants  (~(put by grants) attempt-id (release-grants found attempt-id daemon kind workflow job))
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  assignments  (~(put by assignments) assignment-id assignment)
   =.  candidates
@@ -1157,27 +1228,35 @@
     %-  pairs:enjs:format
     %+  turn  ~(tap by (~(gut by outputs.known) [u.workflow.assignment need] ~))
     |=([name=@t value=@t] [name s+value])
-  %-  pairs:enjs:format
-  :_  ~
-  :-  'assignment'
-  %-  pairs:enjs:format
-  :~  ['id' s+(scot %uv id.assignment)]
-      ['attempt' s+(scot %uv attempt.assignment)]
-      ['candidate' s+(scot %uv candidate.assignment)]
-      ['repo' s+repo.candidate]
-      ['ref' s+ref.candidate]
-      ['oid' s+oid]
-      ['head' s+(oid-text:git-codec head.candidate)]
-      ['base' s+(oid-text:git-codec base.candidate)]
-      ['trust' s+trust.assignment]
-      ['grants' (grants-json assignment)]
-      ['kind' s+kind.assignment]
-      ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
-      ['job' ?~(job.assignment ~ s+u.job.assignment)]
-      ['prereq-outputs' prereq-outputs]
-      ['deadline-seconds' (numb:enjs:format (div deadline.assignment ~s1))]
-      ['assigned' s+(scot %da assigned.assignment)]
-  ==
+  =/  payload=json
+    %-  pairs:enjs:format
+    :~  ['id' s+(scot %uv id.assignment)]
+        ['attempt' s+(scot %uv attempt.assignment)]
+        ['candidate' s+(scot %uv candidate.assignment)]
+        ['repo' s+repo.candidate]
+        ['ref' s+ref.candidate]
+        ['oid' s+oid]
+        ['head' s+(oid-text:git-codec head.candidate)]
+        ['base' s+(oid-text:git-codec base.candidate)]
+        ['trust' s+trust.assignment]
+        ['grants' (grants-json assignment)]
+        ['kind' s+kind.assignment]
+        ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
+        ['job' ?~(job.assignment ~ s+u.job.assignment)]
+        ['prereq-outputs' prereq-outputs]
+        ['deadline-seconds' (numb:enjs:format (div deadline.assignment ~s1))]
+        ['assigned' s+(scot %da assigned.assignment)]
+    ==
+  =/  expiry=@da  (from-unix:chrono:userlib (add 300 (div (sub now.bowl (from-unix:chrono:userlib 0)) ~s1)))
+  =/  nonce=@uv  (sham [%ci-delivery id.assignment now.bowl eny.bowl])
+  =/  sig=@ux
+    (sign-envelope daemon.assignment attempt.assignment [%assignment (signing-json payload)] expiry nonce)
+  ?>  ?=([%o *] payload)
+  =.  p.payload  (~(put by p.payload) 'recipient' s+(scot %uv daemon.assignment))
+  =.  p.payload  (~(put by p.payload) 'expiry' (numb:enjs:format (div (sub expiry (from-unix:chrono:userlib 0)) ~s1)))
+  =.  p.payload  (~(put by p.payload) 'nonce' s+(scot %uv nonce))
+  =.  p.payload  (~(put by p.payload) 'sig' s+(scot %ux sig))
+  (pairs:enjs:format ~[['assignment' payload]])
 ::
 ++  attempt-json
   |=  =attempt:ci
@@ -1216,6 +1295,11 @@
   =/  line=request-line:server  (parse-request-line:server url.request.req)
   =/  site=(list @t)  site.line
   =/  method=@tas  method.request.req
+  ?:  ?=([%apps %urgit %api %ci %key ~] site)
+    ?.  authenticated.req  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  =(%'GET' method)  (emit (give-error eyre-id 405 'method not allowed'))
+    ?~  signing  (emit (give-error eyre-id 503 'CI key is not initialized; rotate-ci-key first'))
+    (emit (give-json eyre-id 200 key-json))
   ?:  ?=([%apps %urgit %api %ci %attempt @ %upload ~] site)
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -1407,6 +1491,9 @@
 ++  handle-enroll
   |=  [eyre-id=@ta req=inbound-request:eyre]
   ^-  out
+  =/  key=(unit signing-key:ci)  signing
+  ?~  key  (emit (give-error eyre-id 503 'CI key is not initialized; rotate-ci-key first'))
+  =/  pinned-pub=@ux  pub.u.key
   =/  jon=(unit json)  (body-json req)
   ?~  jon
     (emit (give-error eyre-id 400 'valid JSON body required'))
@@ -1451,6 +1538,7 @@
   %-  pairs:enjs:format
   :~  ['daemon-id' s+(scot %uv id.daemon)]
       ['bearer' s+(scot %uv bearer)]
+      ['pub' s+(scot %ux pinned-pub)]
       ['capacity' (numb:enjs:format (fall u.capacity 1))]
       ['sandbox' s+sandbox]
   ==

@@ -33,7 +33,8 @@ owned by the invoking host user. The server's console port is not published.
 | S0 | `1acf739` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
 | S1 | `854237b` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
 | S2 | `84beb05` | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
-| S3 | This stage commit | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
+| S3 | `2835fbc` | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
+| S4 | This stage commit | CI key and network certificate, signed assignment/grant bodies, config pin, Q12/Q13 RED → GREEN |
 
 ## Observations
 
@@ -52,7 +53,9 @@ owned by the invoking host user. The server's console port is not published.
 | Q9 | PASS | Actual newline credential poke refused **`credential values must be a single line`**. Trusted candidate `0vvc3vm.ab2f2.qcb35.b8q2m.t2d3u`, job attempt `0v2.kr0qq.piock.h13rd.ts01d.7ordf`: actual assignment contained `CI_TOKEN` and matching `PROD_TOKEN`, excluded `TEST_ONLY`; expiry within 900 seconds. `echo` and `set-output` are masked in local JSONL. An independently posted raw `set-output` was accepted **202** and stored as `***` by the ship. Candidate passed/landed, master `1e01fba…`; **5,621-byte** log, SHA-256 `d71e095f6583f658cb5de78bfc6015f2d7c084524818156df40e5df571e84a7e`. `.scratch/tmp/q9.log`. |
 | Q10 | RED → GREEN | One-line shared grant eligibility sabotage: actual untrusted job assignment included a credential (tripwire `Q10 RED: untrusted job received a credential grant`); the daemon's independent guard refused to pass it to act. Restored controller: credentials stored for the real `~dys` PR, candidate `0v6.t446l.4aviv.ul2lj.5cjlm.4uk0c`, job `0v2.bf9s8.ucv65.t50e1.dq4l6.v5b37`, actual assignment **`grants=[]`**; passed, trust refusal prevented landing. `.scratch/tmp/q10-{red,green}.log`. |
 | Q11 | RED → GREEN | One-line metadata sabotage returned the value in place of its name; both the read and complete-noun probe detected it (tripwire `Q11 RED: credential value appeared in a read`). Restored controller: **16 peek variants × 3 credential values**, plus attempt and repository JSON, contain none. Delete all three credentials → metadata `~`; actual `%assign` job rerun `0v1.ul8vh.ukfdn.mt5j6.1mgqc.qevgp` receives **`grants=[]`**, then passes. `.scratch/tmp/q11-red.log`, `.scratch/tmp/q11-green-final.log`; enumerated paths in ignored `p2-q11.json`. |
-| Q12–Q18 | Pending | S4–S6 remain |
+| Q12 | RED → GREEN | One-line Ed25519 verification bypass: daemon `0v6.65b0j.c0tgk.7mo2v.ncpaj.f958u`, explicitly pinned to wrong `0x1`, started plan `0v1.rmtpr.i3eap.nq14p.jt9bc.9467a` (tripwire `Q12 RED: wrong-pub daemon started signed work`). Restored verifier: the pending job `0v2.1poaq.mn0e8.f12ja.q9hma.i5d0j` is refused **`signature does not verify with pinned CI public key`**, before work directory, checkout or sandbox. GREEN repeated after final canonical-string encoding. Session key GET returns exactly `pub`, `cert`, `ship-life=1`. `.scratch/tmp/q12-red.log`, `.scratch/tmp/q12-green-final.log`. |
+| Q13 | RED → GREEN | Held job `0v3.ah1qo.1oj4l.qvq01.v1ls1.40rdn` from candidate `0v1.9mvno.q5utt.6n2pa.vuav3.q04lr`, recipient `0v3.oisea.70c70.2but2.8colp.hs1h2`, until its original grant expired at Unix **1789617951** (04:05:51 UTC). One-line `grantCurrent` bypass: actual job ran with `--secret TOKEN=***`, 15 accepted events, passed at **04:06:01**, log uploaded (tripwire `Q13 RED: expired signed grant reached act`). Restored guard: replay the authentic redelivery while its outer signature is still current; **04:06:28**, **`credential grant expired`**, no work directory/sandbox/act. `.scratch/tmp/q13-hold-final.log`, `.scratch/tmp/q13-{red,green}.log`. |
+| Q14–Q18 | Pending | S5–S6 remain |
 
 The fixture's independent curl-signed PUT/GET succeeded and its anonymous
 object GET returned **403**, before any product signing test. All seven
@@ -296,3 +299,82 @@ Shakedown fixes and limits of the evidence:
 - Q11's rerun uses P1's existing operator `%assign`; the public rerun
   action belongs to S5. Captures exclude all prior attempt ids so a
   repeated row cannot pass using an earlier rerun's empty grant list.
+
+## S4 signing observations
+
+The in-place `state-0` addition was installed by nuking `%urgit-ci` only;
+`%urgit` state and the retained peer pier were preserved. The first
+`%rotate-ci-key` succeeded after Jael's private-key gift. Its public API
+reports life **1** and CI public key
+`0x80d4.5ca3.0fb7.3355.e8c3.5460.eab6.30c5.08cb.20f8.88af.553f.39b8.2575.2a09.eca4`.
+A reload subscribes again and preserves this key.
+
+The network certificate was checked twice: the live generator reads
+Jael's **public** `/deed/<ship>/<life>` answer and verifies through
+`+safe:as:crub`; Go independently verifies the same certificate using that
+public key. No network ring, network signing seed, or CI private key was
+exported. Public-only vectors are in
+`runner/internal/signing/testdata/hoon.json`; the harness that regenerates
+them is `.scratch/ci-p1/p2-signing-vectors.sh`, which extracts the current
+`+signing-json` body rather than keeping a divergent Hoon copy. The live
+log is `.scratch/tmp/s4-vectors.log`.
+
+The cryptographic source path is zuse's `+nol:nu:crub` (1817–1823),
+`+sigh:as:crub` (1720–1724), `+sign:ed` (1231–1235), `+luck:ed`
+(1198–1210), and `+sign-raw:ed` (1236–1240), on the footer source tree.
+`+sigh` derives the expanded signing pair from the ring's signing seed
+and calls the specified `+sign-raw` path. Jael's subscription uses the
+brief's exact `/jael/keys` task on initialization and reload; every
+private-key gift re-certifies the CI public key.
+
+`operation` binds the full assignment JSON body, with its four envelope
+fields bound separately by the five-part tuple. A grant operation binds
+its name and value. Canonical JSON nouns sort object pairs by UTF-8 bytes
+and use explicit byte lengths for strings and number text. This binds
+OID, trust, workflow, job, prerequisites, and grants, including attempted
+trailing-NUL changes. Jam interning uses exact structural identities and
+linear space. No poll loop, projection, or sandbox interface changed.
+
+Positive control on the final encoding: candidate
+`0vomj33.nlp4k.kb0e2.ta93p.a581m`, job
+`0v3.9sgid.4l7li.04tnt.7ivnd.7b7so`, correct pin, valid assignment and
+credential signatures, actual `act --secret TOKEN=***`, **15** accepted
+events, **passed/landed** at `4b4435c0a1459337b880c922c89c78c550ee5f21`.
+Its log has **4,389 bytes**, SHA-256
+`8a0c263d9a93ab8365c54b5856370541c4f93526dba5a1d007d26a5bd67fa183`.
+The wire capture contains the grant; local JSONL and diagnostics contain
+no raw value. `.scratch/tmp/s4-positive.log`.
+
+First enrollment pins the public key atomically in the runner TOML and
+clears the consumed token. An existing pin is never overwritten. The
+service example uses a runner-owned config directory so this atomic
+write succeeds. A CI key rotation requires an explicit operator pin
+update; networking-key rotation only re-certifies the existing CI key.
+The README documents draining attempts before CI rotation. Old pending
+grants are not silently re-signed or extended.
+
+S4 unit checks cover Hoon/Go jam and Ed25519 equivalence, the live network
+certificate, altered payload/recipient/expiry, a bad grant under a valid
+assignment signature, trailing NULs, expiry before sandbox/act, and pin
+persistence. `go test ./...`, `go vet ./...`, and focused race suites
+passed. The actual ship compiled the controller; a first compile exposed
+a Hoon refinement of `signing` across the enrollment scheduler's state
+replacement. Reading the key into a local before refining it fixed the
+compile without changing the schema or scheduler.
+
+Q13 retained the production 900-second grant TTL. The in-process harness
+proxy captured the real job response and returned 204 to withhold it;
+the daemon was then stopped by its verified PID. After expiry, the ship
+re-offered the same job with a fresh five-minute assignment envelope and
+the original grant. The RED binary still verified both Ed25519 signatures;
+only the shared expiry predicate was bypassed. GREEN replayed that
+publicly verifiable envelope to the same recipient after restoring the
+predicate. The RED job completed, so the GREEN replay cannot depend on a
+still-running ship attempt. It is rejected locally for grant expiry.
+
+An earlier held fixture was explicitly abandoned when the canonical
+string encoding was tightened; `q13-hold-final.log` is the actual
+15-minute fixture. The RED result's stored log is 4,389 bytes, SHA-256
+`f5d7d6ffc244dd30d67540a959237f57d1ac655f4e4b9347f5b935c8cd591aa8`.
+Both runners are stopped; the ships and RustFS remain up for S5. The final
+runner binary is static and neither Q12 nor Q13 sabotage remains applied.

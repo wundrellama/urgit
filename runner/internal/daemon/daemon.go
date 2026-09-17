@@ -25,6 +25,7 @@ import (
 	"urgit/runner/internal/relay"
 	"urgit/runner/internal/sandbox"
 	"urgit/runner/internal/ship"
+	"urgit/runner/internal/signing"
 	"urgit/runner/internal/state"
 
 	"gopkg.in/yaml.v3"
@@ -71,9 +72,17 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 		}
 		d.log.Printf("enrolling with the ship at %s", cfg.ShipURL)
 		client := ship.New(cfg.ShipURL, "")
-		id, bearer, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox)
+		id, bearer, pub, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox)
 		if err != nil {
 			return nil, err
+		}
+		if _, err := signing.PublicKey(pub); err != nil {
+			return nil, fmt.Errorf("enroll CI public key: %w", err)
+		}
+		if cfg.CIPub == "" {
+			if err := cfg.PinCIPub(pub); err != nil {
+				return nil, err
+			}
 		}
 		st = &state.State{DaemonID: id, Bearer: bearer, ShipURL: cfg.ShipURL}
 		if err := state.Save(cfg.StateFile, st); err != nil {
@@ -82,6 +91,9 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 		d.log.Printf("enrolled as daemon %s; state written to %s (mode 0600)", id, cfg.StateFile)
 	} else {
 		d.log.Printf("state file %s present: daemon %s, no re-enrollment", cfg.StateFile, st.DaemonID)
+	}
+	if _, err := signing.PublicKey(cfg.CIPub); err != nil {
+		return nil, fmt.Errorf("ci_pub must pin the ship's CI public key in the config: %w", err)
 	}
 	// the token is consumed: forget it so it is never logged or written
 	cfg.EnrollToken = ""
@@ -227,6 +239,9 @@ func (d *Daemon) quarantine(handle string, err error) {
 // handle carries out one assignment; it returns whether the slot may be
 // reused (false after a failed teardown).
 func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
+	if d.signatureRefusal(a) {
+		return true
+	}
 	logf := func(format string, args ...any) {
 		d.log.Printf("[%s %s] "+format, append([]any{a.Kind, a.Attempt}, args...)...)
 	}
@@ -485,7 +500,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		return
 	}
 	for _, g := range a.Grants {
-		if g.Expiry <= time.Now().Unix() {
+		if !grantCurrent(g, time.Now().Unix()) {
 			d.fail(ctx, a, "credential grant expired", logf)
 			return
 		}

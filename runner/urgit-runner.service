@@ -1,7 +1,8 @@
 # systemd unit for the urgit runner daemon (BRIEF-CI-P1 D7).
 #
 #   install -m 0755 urgit-runner /usr/local/bin/urgit-runner
-#   install -m 0600 urgit-runner.toml /etc/urgit-runner.toml
+#   install -d -m 0700 -o urgit-runner -g urgit-runner /etc/urgit-runner
+#   install -m 0600 -o urgit-runner -g urgit-runner urgit-runner.toml /etc/urgit-runner/config.toml
 #   systemctl enable --now urgit-runner
 #
 # Runs as an unprivileged user that owns the rootless Docker daemon named
@@ -17,7 +18,7 @@ Type=simple
 User=urgit-runner
 Group=urgit-runner
 EnvironmentFile=-/etc/default/urgit-runner
-ExecStart=/usr/local/bin/urgit-runner -config /etc/urgit-runner.toml
+ExecStart=/usr/local/bin/urgit-runner -config /etc/urgit-runner/config.toml
 Restart=on-failure
 RestartSec=10
 StateDirectory=urgit-runner

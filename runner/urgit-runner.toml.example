@@ -1,5 +1,5 @@
 # urgit-runner configuration (BRIEF-CI-P1 D7). Copy to
-# /etc/urgit-runner.toml, mode 0600: the enrollment token is a credential
+# /etc/urgit-runner/config.toml, mode 0600: the enrollment token is a credential
 # until the first start consumes it.
 
 # the ship's HTTP origin; the daemon reaches /apps/urgit/api/ci and /git
@@ -9,6 +9,12 @@ ship_url = "http://127.0.0.1:8080"
 # daemon enrolls with it on the first start, writes daemon_id and bearer
 # to state_file, and never writes the token anywhere
 enroll_token = "0v..."
+
+# Initialize on ship with :urgit-ci &ci-action [%rotate-ci-key ~].
+# Empty on first enrollment: the runner pins pub here and clears the
+# token atomically (the config directory must be writable by its user).
+# An existing pin is never replaced, including after CI key rotation.
+ci_pub = ""
 
 # the one sandbox backend this release ships: container isolation on a
 # dedicated rootless Docker daemon (microvm backend pending)

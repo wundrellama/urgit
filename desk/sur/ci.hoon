@@ -130,6 +130,8 @@
   [name=@t scope=credential-scope envs=(set @t) created=@da]
 +$  grant
   [name=@t value=@t expiry=@da nonce=@uv sig=@ux]
++$  signing-key
+  [pub=@ux sek=@ux cert=@ux created=@da]
 ::
 ::  one execution of a candidate on one daemon.  the event stream is not
 ::  stored; only the count, the recorded outputs, the relayed jobResult
@@ -167,6 +169,8 @@
       credentials=(map [repo=@t name=@t] credential)
       grants=(map attempt-id (list grant))
       grant-envs=(map [candidate=candidate-id workflow=@t job=@t] @t)
+      signing=(unit signing-key)
+      network-key=(unit [life=@ud key=@])
   ==
 ::
 ::  the event envelope: one `act --json` line after validation
@@ -206,6 +210,7 @@
       [%approve-candidate id=candidate-id]
       [%set-credential repo=@t name=@t value=@t scope=credential-scope envs=(set @t)]
       [%delete-credential repo=@t name=@t]
+      [%rotate-ci-key ~]
       [%materialize candidate=candidate-id]
       [%materialize-candidate repo=@t ref=@t head=oid:git base=oid:git]
       [%candidate-ready repo=@t ref=@t head=oid:git base=oid:git candidate=oid:git]

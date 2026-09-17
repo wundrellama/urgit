@@ -9,6 +9,14 @@ import json, pathlib, sys
 op, row, file = sys.argv[1:]
 snapshot = pathlib.Path(file)
 edits = {
+ 'Q12': ('runner/internal/signing/verify.go',
+         'if !ed25519.Verify(pub, message, b) {',
+         'if len(b) == 0 && !ed25519.Verify(pub, message, b) {',
+         'Q12 RED: wrong-pub daemon started signed work'),
+ 'Q13': ('runner/internal/daemon/signatures.go',
+         'return g.Expiry > now',
+         'return true',
+         'Q13 RED: expired signed grant reached act'),
  'Q10': ('desk/app/urgit-ci.hoon',
          '  ?&(=(%trusted trust) =(%job kind))\n',
          '  =(%job kind)\n',

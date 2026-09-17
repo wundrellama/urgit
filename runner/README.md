@@ -17,7 +17,7 @@ Sandbox disclosure: `sandbox: docker-rootless (container isolation; microvm back
 - A statically linked `act` 0.2.89 binary. The daemon copies it into every sandbox. The Homebrew `act` links against Homebrew's libc and cannot run inside the container. Use the release tarball from `nektos/act`.
 - Go 1.22 or later to build. The result is one static binary.
 
-## Install in three commands
+## Install
 
 Build first, on any machine with Go:
 
@@ -31,7 +31,8 @@ Then on the runner host:
 
 ```text
 install -m 0755 urgit-runner /usr/local/bin/urgit-runner
-install -m 0600 urgit-runner.toml /etc/urgit-runner.toml
+install -d -m 0700 -o urgit-runner -g urgit-runner /etc/urgit-runner
+install -m 0600 -o urgit-runner -g urgit-runner urgit-runner.toml /etc/urgit-runner/config.toml
 systemctl enable --now urgit-runner
 ```
 
@@ -45,6 +46,7 @@ Copy `urgit-runner.toml.example` and set these keys. The spec names the first fo
 |---|---|
 | `ship_url` | The ship's HTTP origin. The daemon uses `/apps/urgit/api/ci` and `/git/<repo>`. |
 | `enroll_token` | Minted on the ship with `:urgit-ci|mint-enroll-token`. Pasted once. |
+| `ci_pub` | CI public key pin, in Urbit `0x` notation. First enrollment fills an empty pin; an existing pin is never replaced automatically. |
 | `sandbox` | `docker-rootless`, the one backend in this release. |
 | `docker_host` | The rootless daemon's socket, as `unix:///run/user/<uid>/docker.sock`. |
 | `act_binary` | Path to the static `act` 0.2.89 the daemon copies into each sandbox. |
@@ -57,13 +59,16 @@ The `microvm` keys `image_path`, `cpus`, `memory_mib` and `disk_mib` parse into 
 
 ## Enrollment and the token
 
-Mint a token on the ship:
+Initialize the CI signing key on the ship first, with the owner poke
+`:urgit-ci &ci-action [%rotate-ci-key ~]`. Storing the first credential
+also initializes it. Enrollment returns 503 until the key exists. Then
+mint a token:
 
 ```text
 :urgit-ci|mint-enroll-token
 ```
 
-Put it in the config file as `enroll_token`. On the first start the daemon enrolls with it, writes `daemon_id` and the bearer to `state_file`, and forgets the token. The daemon never writes the token to the state file or the log. Remove it from the config file after the first start. A later start with the state file present polls at once and never re-enrolls.
+Put it in the config file as `enroll_token`. On the first start the daemon enrolls with it, writes `daemon_id` and the bearer to `state_file`, and forgets the token. The daemon never writes the token to the state file or the log. When it pins the enrollment public key, the daemon atomically rewrites the config with mode 0600 and clears `enroll_token`. The config directory must be writable by the runner user. If `ci_pub` was already set, remove the consumed token yourself. A later start with the state file present polls at once and never re-enrolls.
 
 The daemon reports its capacity at enrollment and again on every poll. A change to `capacity` in the config file reaches the ship at the first poll after a restart. The daemon keeps its identity across restarts.
 
@@ -84,6 +89,51 @@ The daemon destroys the sandbox after every attempt, whatever the outcome. When 
 The projection also rewrites the workflow's top-level `name:` to `<attempt id>/<original name>`. `act` names a job's container and volumes from a hash of the workflow name and the job name. It force-removes an existing container of that name. Two attempts on the same job on one Docker daemon would otherwise collide. Inside the job, `GITHUB_WORKFLOW` and `${{ github.workflow }}` read the prefixed form. No ERPit step reads them. The plan records the real workflow name, and each attempt records the name `act` ran under as `projection-name`.
 
 The assignment carries the recorded outputs of the job's prerequisites as `prereq-outputs`. The daemon passes them to `act` as `--env NEEDS_<JOB>_OUTPUTS_<NAME>=<value>`. No ERPit step reads one in this release.
+
+## Signed assignments and grants
+
+Every delivery has `recipient`, `expiry` (Unix seconds), `nonce`, and `sig`.
+The daemon verifies it with `ci_pub` before creating a work directory,
+preparing a sandbox, or checking out code. Unsigned, altered, expired, or
+wrong-recipient deliveries are logged and refused. A refusal does not
+submit a result or abandon an attempt on behalf of an unauthenticated sender.
+Assignments expire five minutes after delivery; a legitimate redelivery
+gets a fresh envelope. Credential grants keep their original 15-minute
+expiry and are checked independently, including again just before `act`.
+
+The Ed25519 message is `jam [recipient attempt operation expiry nonce]`.
+Recipient, attempt and nonce are Urbit atoms; expiry is an `@da`, converted
+exactly from the wire's Unix second. `operation` is:
+
+- Assignment: `[%assignment body]`, covering every JSON field except the
+  four envelope fields. `body` is canonical JSON as a noun: null is `~`;
+  booleans are `[%b ?]`; strings and number text are `[%s octs]` and
+  `[%n octs]`; arrays are `[%a (list body)]`; objects are
+  `[%o (list [key=octs value=body])]`, with keys sorted by UTF-8 bytes.
+  `octs` is `[byte-length atom]`. These lengths bind trailing NUL bytes.
+- Grant: `[%grant name=octs value=octs]`. Its recipient and attempt come
+  from the enclosing assignment; its expiry, nonce and signature come
+  from the grant. The assignment also binds the complete grant list.
+
+`jam` and all Ed25519 public key/signature atoms use little-endian bytes.
+Public keys and signatures decode to exactly 32 and 64 bytes; jam uses
+its exact encoded byte length. The checked-in public vectors were produced
+by the pinned ship and are verified by Go's `crypto/ed25519`.
+
+The controller subscribes to Jael's `%private-keys` on initialization and
+reload. `+nol:nu:crub:crypto` activates the network ring; `+sigh:as:crub`
+signs the CI public key with its network signing seed through `+sign:ed`,
+`+luck:ed`, and `+sign-raw:ed`. Every gift re-certifies the CI key. Session
+`GET /apps/urgit/api/ci/key` returns `pub`, `cert`, and `ship-life`; no
+read exposes either private key or the network ring. Walking the public
+certificate chain to Azimuth remains P3.
+
+`%rotate-ci-key` replaces the CI key. Stop accepting work and drain active
+attempts before rotating, then explicitly update each runner's `ci_pub`
+from the authenticated key read and restart it. Existing pins remain
+unchanged; old grants fail verification under the new key. Re-stage any
+interrupted attempt to obtain new grants. A networking-key rotation
+re-certifies the existing CI key and does not change the runner pin.
 
 ## Credentials and trust
 

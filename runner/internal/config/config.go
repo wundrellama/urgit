@@ -8,14 +8,18 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
+	CIPub       string `toml:"ci_pub"`
+	sourcePath  string
 	ShipURL     string `toml:"ship_url"`
 	EnrollToken string `toml:"enroll_token"`
 	Sandbox     string `toml:"sandbox"`
@@ -38,6 +42,7 @@ type Config struct {
 // catthehacker/ubuntu:act-latest.
 func Load(path string) (*Config, error) {
 	var c Config
+	c.sourcePath = path
 	if _, err := toml.DecodeFile(path, &c); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -76,4 +81,46 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("work_dir: %w", err)
 	}
 	return &c, nil
+}
+
+// PinCIPub persists the enrollment public key once, preserving other TOML
+// settings. Subsequent enrollments and polls never replace an operator pin.
+func (c *Config) PinCIPub(pub string) error {
+	if c.CIPub != "" {
+		return nil
+	}
+	if c.sourcePath == "" {
+		return errors.New("cannot pin CI public key without a config path")
+	}
+	var fields map[string]any
+	if _, err := toml.DecodeFile(c.sourcePath, &fields); err != nil {
+		return err
+	}
+	fields["ci_pub"] = pub
+	fields["enroll_token"] = ""
+	var data bytes.Buffer
+	if err := toml.NewEncoder(&data).Encode(fields); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(c.sourcePath), ".ci-config-*")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	defer os.Remove(name)
+	if _, err = file.Write(data.Bytes()); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err = os.Rename(name, c.sourcePath); err != nil {
+		return err
+	}
+	c.CIPub = pub
+	return nil
 }

@@ -9,14 +9,23 @@
 # come first (P12 wraps docker that way).
 source "$(dirname "$0")/env.sh"
 cmd="${1:?usage}"; name="${2:?name}"; runner_dir="$RUNNER_HOME/$name"
-pid_of() { cat "$runner_dir/pid" 2>/dev/null; }
-alive() { local p; p=$(pid_of); [ -n "$p" ] && [ -r "/proc/$p/cmdline" ] && tr '\0' ' ' < "/proc/$p/cmdline" | grep -q "urgit-runner.*$runner_dir/config.toml"; }
+pid_of() { cat "$runner_dir/pid" 2>/dev/null || true; }
+alive() { local p; p=$(pid_of); [ -n "$p" ] && [ -r "/proc/$p/cmdline" ] && { tr '\0' ' ' < "/proc/$p/cmdline"; } 2>/dev/null | grep -q "urgit-runner.*$runner_dir/config.toml"; }
 write_config() {
   local capacity="${1:-1}" token="${2:-}"
+  local pinned=""
+  if [ -z "$token" ] && [ -f "$runner_dir/config.toml" ]; then
+    pinned=$(python3 - "$runner_dir/config.toml" <<'PYCONFIG'
+import sys,tomllib
+with open(sys.argv[1],'rb') as f: print(tomllib.load(f).get('ci_pub',''))
+PYCONFIG
+    )
+  fi
   mkdir -p "$runner_dir/work"
   cat > "$runner_dir/config.toml" <<TOML
 ship_url = "$URL"
 enroll_token = "$token"
+ci_pub = "$pinned"
 sandbox = "docker-rootless"
 docker_host = "unix://$DOCKER_SOCK"
 act_binary = "$TMP/act-static/act"

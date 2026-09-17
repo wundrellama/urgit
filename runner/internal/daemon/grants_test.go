@@ -33,7 +33,7 @@ func TestGrantedSecretIsScrubbedBeforeFileRelayAndDiagnostics(t *testing.T) {
 	d.log = log.New(&diagnostics, "", 0)
 	a := *jobAssignment
 	a.Grants = []ship.Grant{{Name: "TOKEN", Value: secret, Expiry: time.Now().Add(time.Hour).Unix()}}
-	d.handle(context.Background(), &a)
+	d.handle(context.Background(), signedTestAssignment(t, &a))
 	local, err := os.ReadFile(filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -75,10 +75,22 @@ func TestUntrustedAndExpiredGrantsNeverReachAct(t *testing.T) {
 			defer srv.Close()
 			box := &fakeBox{}
 			d := newTestDaemon(t, box, srv, 1)
+			var diagnostics bytes.Buffer
+			d.log = log.New(&diagnostics, "", 0)
 			a := *jobAssignment
 			a.Trust = test.trust
 			a.Grants = []ship.Grant{{Name: "TOKEN", Value: "test-credential", Expiry: test.expiry}}
-			d.handle(context.Background(), &a)
+			d.handle(context.Background(), signedTestAssignment(t, &a))
+			reason := "credential grant expired"
+			if test.name == "untrusted" {
+				reason = "untrusted or non-job attempt received credential grants"
+			}
+			if !strings.Contains(diagnostics.String(), reason) {
+				t.Fatal("grant was not refused for its policy violation")
+			}
+			if len(box.ops) != 0 {
+				t.Fatal("refused grant prepared a sandbox")
+			}
 			for _, op := range box.ops {
 				if strings.HasPrefix(op, "run ") {
 					t.Fatal("refused grant reached act")

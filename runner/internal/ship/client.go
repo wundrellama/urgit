@@ -41,6 +41,12 @@ func New(base, bearer string) *Client {
 
 // Assignment is the ship's assignment object as delivered on the channel.
 type Assignment struct {
+	Recipient   string `json:"recipient"`
+	Expiry      int64  `json:"expiry"`
+	Nonce       string `json:"nonce"`
+	Sig         string `json:"sig"`
+	signingBody map[string]any
+
 	ID              string                       `json:"id"`
 	Attempt         string                       `json:"attempt"`
 	Candidate       string                       `json:"candidate"`
@@ -58,6 +64,29 @@ type Assignment struct {
 	Assigned        string                       `json:"assigned"`
 	Grants          []Grant                      `json:"grants"`
 }
+
+// UnmarshalJSON retains the complete unsigned body for signature verification.
+// Typed fields and the signature body are parsed together from the same bytes.
+func (a *Assignment) UnmarshalJSON(data []byte) error {
+	type plain Assignment
+	var typed plain
+	if err := json.Unmarshal(data, &typed); err != nil {
+		return err
+	}
+	var body map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&body); err != nil {
+		return err
+	}
+	for _, key := range []string{"recipient", "expiry", "nonce", "sig"} {
+		delete(body, key)
+	}
+	*a = Assignment(typed)
+	a.signingBody = body
+	return nil
+}
+func (a *Assignment) SigningBody() map[string]any { return a.signingBody }
 
 // A grant is delivered only on the authorized assignment channel.
 // Expiry is a Unix second on the wire; the ship stores it as @da.
@@ -117,26 +146,27 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 
 // Enroll consumes the token and returns the daemon id and bearer. The
 // caller forgets the token afterwards.
-func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string) (daemonID, bearer string, err error) {
+func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string) (daemonID, bearer, pub string, err error) {
 	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox})
 	resp, err := c.do(ctx, http.MethodPost, "/daemon/enroll", body)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if resp.Status != http.StatusOK {
-		return "", "", fmt.Errorf("enroll: %s", resp.Error())
+		return "", "", "", fmt.Errorf("enroll: %s", resp.Error())
 	}
 	var answer struct {
 		DaemonID string `json:"daemon-id"`
 		Bearer   string `json:"bearer"`
+		Pub      string `json:"pub"`
 	}
 	if err := json.Unmarshal(resp.Body, &answer); err != nil {
-		return "", "", fmt.Errorf("enroll: %w", err)
+		return "", "", "", fmt.Errorf("enroll: %w", err)
 	}
-	if answer.DaemonID == "" || answer.Bearer == "" {
-		return "", "", errors.New("enroll: ship answered without daemon-id and bearer")
+	if answer.DaemonID == "" || answer.Bearer == "" || answer.Pub == "" {
+		return "", "", "", errors.New("enroll: ship answered without daemon-id, bearer and pub")
 	}
-	return answer.DaemonID, answer.Bearer, nil
+	return answer.DaemonID, answer.Bearer, answer.Pub, nil
 }
 
 // Poll holds the channel open; nil, nil means the window closed with

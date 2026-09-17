@@ -146,7 +146,7 @@ jobs:
 func newTestDaemon(t *testing.T, box *fakeBox, srv *httptest.Server, capacity int) *Daemon {
 	t.Helper()
 	work := t.TempDir()
-	cfg := &config.Config{ShipURL: srv.URL, ActBinary: "/bin/sh", ActImage: "img", Capacity: capacity, WorkDir: work, StateFile: filepath.Join(work, "state.json")}
+	cfg := &config.Config{CIPub: testPub(), ShipURL: srv.URL, ActBinary: "/bin/sh", ActImage: "img", Capacity: capacity, WorkDir: work, StateFile: filepath.Join(work, "state.json")}
 	d := &Daemon{cfg: cfg, box: box, log: log.New(io.Discard, "", 0), capacity: capacity, client: ship.New(srv.URL, "0v1.bearer"), daemonID: "0v1.daemon"}
 	d.checkout = func(_ context.Context, a *ship.Assignment, dir string) error {
 		if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
@@ -175,7 +175,7 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 		`{"job":"fixture-chain/b","jobID":"b","time":"t","msg":"step"}` + "\n" +
 		`{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"}
 	d := newTestDaemon(t, box, srv, 1)
-	if keep := d.handle(context.Background(), jobAssignment); !keep {
+	if keep := d.handle(context.Background(), signedTestAssignment(t, jobAssignment)); !keep {
 		t.Fatal("slot must be kept after a clean teardown")
 	}
 	want := []string{
@@ -221,7 +221,7 @@ func TestLogOutagePreservesResult(t *testing.T) {
 	defer srv.Close()
 	box := &fakeBox{stream: `{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"}
 	d := newTestDaemon(t, box, srv, 1)
-	d.handle(context.Background(), jobAssignment)
+	d.handle(context.Background(), signedTestAssignment(t, jobAssignment))
 	if len(sh.results) != 1 || !strings.Contains(sh.results[0], `"job-result":"success"`) || !strings.Contains(sh.results[0], `"log":null`) {
 		t.Fatalf("a failed upload changed the result or named a missing object: %v", sh.results)
 	}
@@ -236,7 +236,7 @@ func TestJobWithoutJobResultAbandons(t *testing.T) {
 	box := &fakeBox{exit: 137, stream: `{"job":"fixture-chain/a","jobID":"a","jobResult":"success","time":"t","msg":"a leaked"}` + "\n" +
 		`{"job":"fixture-chain/b","jobID":"b","time":"t","msg":"step"}` + "\n"}
 	d := newTestDaemon(t, box, srv, 1)
-	d.handle(context.Background(), jobAssignment)
+	d.handle(context.Background(), signedTestAssignment(t, jobAssignment))
 	if len(sh.results) != 0 || len(sh.abandons) != 1 || !strings.Contains(sh.abandons[0], "exited 137 without a jobResult") {
 		t.Fatalf("results=%v abandons=%v", sh.results, sh.abandons)
 	}
@@ -250,7 +250,7 @@ func TestDestroyFailureQuarantines(t *testing.T) {
 	defer srv.Close()
 	box := &fakeBox{stream: `{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n", destroyErr: io.ErrUnexpectedEOF}
 	d := newTestDaemon(t, box, srv, 2)
-	if keep := d.handle(context.Background(), jobAssignment); keep {
+	if keep := d.handle(context.Background(), signedTestAssignment(t, jobAssignment)); keep {
 		t.Fatal("slot must not be reused after a failed teardown")
 	}
 	if d.remainingCapacity() != 1 || len(d.quarantined) != 1 || d.quarantined[0] != "ci-0v1.att" {
@@ -266,7 +266,7 @@ func TestPlanAssignment(t *testing.T) {
 	defer srv.Close()
 	box := &fakeBox{stream: "Stage  Job ID  Job name  Workflow name  Workflow file      Events\n0      a       a         fixture-chain  fixture-chain.yml  push  \n1      b       b         fixture-chain  fixture-chain.yml  push  \n"}
 	d := newTestDaemon(t, box, srv, 1)
-	d.handle(context.Background(), &ship.Assignment{ID: "0v2", Attempt: "0v2.att", Candidate: "0v1.cand", Repo: "r", OID: "0000000000000000000000000000000000000001", Kind: "plan", DeadlineSeconds: 300})
+	d.handle(context.Background(), signedTestAssignment(t, &ship.Assignment{ID: "0v2", Attempt: "0v2.att", Candidate: "0v1.cand", Repo: "r", OID: "0000000000000000000000000000000000000001", Kind: "plan", DeadlineSeconds: 300}))
 	if len(sh.plans) != 1 {
 		t.Fatalf("plans=%v abandons=%v", sh.plans, sh.abandons)
 	}

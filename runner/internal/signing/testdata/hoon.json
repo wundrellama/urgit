@@ -1,0 +1,32 @@
+{
+  "json": {
+    "z": [
+      0,
+      0,
+      true,
+      false,
+      null
+    ],
+    "a": "repeat",
+    "b": "repeat",
+    "nested": {
+      "x": "é",
+      "empty": ""
+    }
+  },
+  "recipient": "0v1",
+  "attempt": "0v2",
+  "expiry": 1767225600,
+  "nonce": "0v3",
+  "jam": [
+    "0x29",
+    "0x331",
+    "0x49.c8c5"
+  ],
+  "pub": "0xcc57.b876.bb40.f9cd.547d.78f2.6b66.5aa3.22f1.10cc.a431.ea63.b702.dbbe.a420.88dc",
+  "message": "0x1a.2000.0003.4dfc.f1a0.0000.0000.0000.0000.0040.0dc5.30f3.1705.b170.590d.4370.a18e.ee0b.8783.eb86.2b54.e184.090f.3e0f.8e18.ad3c.f83e.5d1c.1b59.4f01.70ae.fe0e.4657.4736.56e7.c06c.2b32.21e2.e18a.f461.6570.6572.7c06.c3cf.8387.862b.bf83.d1b9.95b5.b99d.a5cd.cd84.f802.c871",
+  "sig": "0x657.473e.e1dd.55e1.5609.b5b6.8b92.53aa.e3db.9ec5.25d2.73de.9012.98d2.2572.9bc4.40d0.7397.4eb7.64ef.ff3d.0d33.3112.db25.5845.646b.cbab.8990.8597.e854.9f53.b0da",
+  "networkPub": "0xaf28.c59f.b88d.f53d.0c5d.b738.2b54.1200.0424.0f44.2aa6.fd11.aca6.3fb9.0000.415a",
+  "ciPub": "0x80d4.5ca3.0fb7.3355.e8c3.5460.eab6.30c5.08cb.20f8.88af.553f.39b8.2575.2a09.eca4",
+  "cert": "0x639.0e64.8cac.b909.1855.fcf4.65c2.99d4.6bbe.b320.b94c.680c.95c7.2c33.c370.245e.3a0c.b2b5.f330.ad59.cf88.fe34.c579.d373.f93f.5f23.1127.ffb0.4307.32bd.52cf.3363"
+}
