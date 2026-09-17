@@ -330,7 +330,7 @@ values. Do not guess past any of them.
 
 ## Launch footer — astra
 
-- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-astra`, branch `ci/p2-astra`, base `master` at `f7391cb` (re-freeze 3).
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-astra`, branch `ci/p2-astra`, base `master` at `46e9616` (re-freeze 4).
 - **First ship** `~lup`, HTTP port `8352`, pier `/var/home/michael/piers/urgit-ci-p2-lup`.
   **Second ship** (Q5–Q8, the non-writer PR author) `~dys`, HTTP port `8354`, pier
   `/var/home/michael/piers/urgit-ci-p2-dys`. Neither pier may exist before your first boot.
@@ -343,7 +343,7 @@ values. Do not guess past any of them.
   (+ `SHIP2/PORT2/PIER2`) and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` inside S1, before your
   first boot — S0 stays spec-only (D7).
 - Do NOT boot `~zod ~nec ~bud ~wes ~bel ~bus ~syt ~dur ~wep ~ser ~ryx ~wyd ~tem ~mul ~dev ~sev
-  ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chair's `~dep` / `~put`.
+  ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chairs' `~dep ~put ~lug ~hec`.
 - ERPit workload: clone `/var/home/michael/workspace/urbit/erpit` (read-only source) into your
   fixture repo as P1's harness does; never push to it.
 - `act` 0.2.89 via `.scratch/ci-p1/act-static.sh`, `go` 1.27, `zig` 0.15.2 on PATH
