@@ -229,7 +229,22 @@ only, first in your sequence — it is already the code's behavior.
   `sur/git.hoon` is NOT touched (a pull's pending candidate lives on the candidate,
   keyed by pull number, not on the pull); `%urgit` state is NOT touched.
 - `runner/`: the upload step (D1/D2), grant handling + scrub (D4), signature verification
-  (D5). No change to the sandbox interface, projection, or poll loop.
+  (D5), **and one execution fix (re-freeze 4, astra §8 — CI-SANDBOX-1.1):** stock act
+  0.2.89 binds `/var/run/docker.sock` — the HOST's rootful daemon socket — into every job
+  container (`run_context.go` `GetBindsAndMounts` :127–184 defaults the child mount source
+  to `/var/run/docker.sock`, a host path the daemon resolves) because the daemon never
+  passes `--container-daemon-socket`. Measured on a live attempt: `Binds=["/var/run/
+  docker.sock:/var/run/docker.sock"]`, host socket `root:docker` 660, `permission denied`
+  from the job's root user. CI-SANDBOX-1-B's "the socket act mounts belongs to the sandbox
+  daemon, never the host" was being met by file permissions, not by construction — that is
+  not compliance. Fix: the daemon passes `--container-daemon-socket=<the configured
+  rootless socket>` on every `act` invocation while keeping `DOCKER_HOST` for act's own
+  connection. No sandbox interface, projection, scheduler, or poll-loop change. **Rows
+  (Q19, in the P1 regression from now on):** RED — the wrong bind on a live job container
+  from `docker inspect`; GREEN — the child's mount source equals the configured rootless
+  socket AND `docker info` from inside the job reports `name=rootless`; a one-line
+  sabotage that drops the flag is the mutant. This shipped in P1; both P1 batteries passed
+  because no row ever inspected the child's mounts.
 - `fe/`: the CI tab, the settings additions, `api.js` helpers, tests.
 - `specs/native-ci.md`: D7 only.
 - Not in P2: microvm, linked-desk, environments beyond the `envs` set, cache signing
@@ -261,8 +276,9 @@ Extend `.scratch/ci-p1/` (P1's harness) — same env, boot, rootless, drivers. R
 | Q16 | Session fence: every `ci/*` read and `POST ci/action` without a session → 401; with a session → 200 |
 | Q17 | P1 regression: `.scratch/ci-p1/battery.sh` (P1–P20) still 20/20 on this tree; mutants 13/13 both ways |
 | Q18 | Full ERPit: push a real ERPit revision as a writer → 8/8 jobs, 8 logs in the bucket under `/trusted/`, lands |
+| Q19 | **Sandbox socket boundary (P1 gap):** `docker inspect` of a live job container shows the docker.sock mount source is the configured ROOTLESS socket, never `/var/run/docker.sock`; `docker info` from inside the job reports `name=rootless`. RED first on the unfixed daemon (host bind present) |
 
-Negatives (Q4, Q5a's `master` unmoved, Q5, Q6's cannot-land, Q8, Q10, Q11, Q12's wrong-pub, Q13, Q16) must be
+Negatives (Q4, Q5a's `master` unmoved, Q5, Q6's cannot-land, Q8, Q10, Q11, Q12's wrong-pub, Q13, Q16, Q19) must be
 shown RED against a one-line sabotage first, with the tripwire string named per row
 (P1's `mutants.sh` shape). A GREEN without its RED is not a row.
 
