@@ -97,7 +97,8 @@ for r in "${ROWS[@]}"; do
     Q6)  run_row Q6  "$P2/q5-8.sh" q6 ;;
     Q8)  run_row Q8  "$P2/q5-8.sh" q8 ;;
     Q10) run_row Q10 "$P2/q9-11.sh" q10 ;;
-    Q11) run_row Q11 "$P2/q9-11.sh" q11 ;;
+    Q11) "$P2/q9-11.sh" q9 > "$TMP/qneg-$phase-prep-q9.log" 2>&1; echo "-- prep (Q9 push): $(grep -E '^Q9: (PASS|FAIL)$' "$TMP/qneg-$phase-prep-q9.log")"
+         run_row Q11 "$P2/q9-11.sh" q11 ;;
     Q12) run_row Q12 "$P2/q12-13.sh" q12 ;;
     Q13) run_row Q13 "$P2/q12-13.sh" q13 ;;
     Q16) run_row Q16 "$P2/q14-16.sh" q16 ;;

@@ -225,4 +225,20 @@
 ?>  =(65.536 max-line:ci-event)
 ?>  =(4.096 max-msg:ci-event)
 ?>  =(50.000 max-events:ci-event)
+::  the credential scrub (D4): every occurrence of every released value
+::  in the message, a set-output value and a summary body becomes ***;
+::  nothing else changes, and no value means no change
+::
+?>  =('token is ***, again ***' (replace-all:ci-event 'token is s3cr3t, again s3cr3t' 's3cr3t'))
+?>  =('untouched' (replace-all:ci-event 'untouched' 's3cr3t'))
+?>  =('untouched' (replace-all:ci-event 'untouched' ''))
+?>  =('*** and ***' (scrub-text:ci-event 'one and two' ~['one' 'two']))
+=/  leaky=(each event:ci refusal:ci-event)
+  (parse '{"job":"w/j","jobID":"j","time":"2026-09-16T12:00:00Z","msg":"leak=s3cr3t","command":"set-output","name":"leak","arg":"s3cr3t"}')
+?>  ?=(%& -.leaky)
+=/  scrubbed=event:ci  (scrub:ci-event p.leaky ~['s3cr3t'])
+?>  =('leak=***' msg.scrubbed)
+?>  =(`[%set-output 'leak' '***'] command.scrubbed)
+?>  =(p.leaky (scrub:ci-event p.leaky ~))
+?>  =((~(put by *(map @t @t)) 'leak' '***') (record-output:ci-event ~ scrubbed))
 %.y

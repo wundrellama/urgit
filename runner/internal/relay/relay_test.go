@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -78,5 +79,23 @@ func TestRelayRefusals(t *testing.T) {
 	}, nil)
 	if summary.JobResult != "" {
 		t.Fatalf("a refused jobResult must not be claimed: %+v", summary)
+	}
+}
+
+// the scrub replaces every released value on every line before the tee,
+// leaves other lines byte-identical, and is a no-op with no values
+func TestScrub(t *testing.T) {
+	in := "{\"msg\":\"token is s3cr3t and s3cr3t\"}\n{\"msg\":\"other\",\"arg\":\"hunter2\"}\n{\"msg\":\"clean\"}\n"
+	out, err := io.ReadAll(Scrub(strings.NewReader(in), []string{"s3cr3t", "hunter2", ""}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "{\"msg\":\"token is *** and ***\"}\n{\"msg\":\"other\",\"arg\":\"***\"}\n{\"msg\":\"clean\"}\n"
+	if string(out) != want {
+		t.Fatalf("got %q", out)
+	}
+	same, _ := io.ReadAll(Scrub(strings.NewReader(in), nil))
+	if string(same) != in {
+		t.Fatalf("no values must mean no change: %q", same)
 	}
 }

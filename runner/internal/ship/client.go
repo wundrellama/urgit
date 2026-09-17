@@ -40,6 +40,17 @@ func New(base, bearer string) *Client {
 	}
 }
 
+// Grant is a credential released to one attempt (D4): the value the
+// daemon hands act as a secret, the expiry after which it must not, and
+// the ship's signature over the grant (D5).
+type Grant struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Expiry int64  `json:"expiry"` // unix seconds
+	Nonce  string `json:"nonce"`
+	Sig    string `json:"sig"`
+}
+
 // Assignment is the ship's assignment object as delivered on the channel.
 type Assignment struct {
 	ID              string                       `json:"id"`
@@ -58,6 +69,7 @@ type Assignment struct {
 	PrereqOutputs   map[string]map[string]string `json:"prereq-outputs"`
 	DeadlineSeconds int                          `json:"deadline-seconds"`
 	Assigned        string                       `json:"assigned"`
+	Grants          []Grant                      `json:"grants"`
 }
 
 type Response struct {

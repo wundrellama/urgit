@@ -524,7 +524,18 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
 		argv = append(argv, "--env", e)
 	}
-	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow), strings.Join(argv, " "))
+	// the credentials the ship released (D4): each becomes an act secret,
+	// never an argument in the log; a grant past its expiry is refused
+	// here and the job runs without it. the values are scrubbed from
+	// every line before the relay and before the saved stream.
+	shown := append([]string(nil), argv...)
+	var values []string
+	for _, g := range d.usableGrants(a, logf) {
+		argv = append(argv, "--secret", g.Name+"="+g.Value)
+		shown = append(shown, "--secret", g.Name+"=***")
+		values = append(values, g.Value)
+	}
+	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow), strings.Join(shown, " "))
 	stream, done, err := d.box.Run(ctx, h, "/work/src", argv, nil)
 	if err != nil {
 		d.fail(ctx, a, "act start: "+err.Error(), logf)
@@ -532,7 +543,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	}
 	streamPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
 	streamLog, _ := os.Create(streamPath)
-	tee := io.TeeReader(stream, streamLog)
+	tee := io.TeeReader(relay.Scrub(stream, values), streamLog)
 	summary, relayErr := relay.Relay(ctx, tee, func(ctx context.Context, line []byte) (int, []byte, error) {
 		resp, err := d.client.Event(ctx, a.Attempt, line)
 		return resp.Status, resp.Body, err
@@ -563,6 +574,26 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		return
 	}
 	logf("result %s POST -> %s", summary.JobResult, resp.Error())
+}
+
+// usableGrants is the assignment's grants minus the ones the daemon
+// refuses: an expired grant is never passed to act (D4).
+func (d *Daemon) usableGrants(a *ship.Assignment, logf func(string, ...any)) []ship.Grant {
+	var out []ship.Grant
+	now := time.Now().Unix()
+	for _, g := range a.Grants {
+		if g.Expiry <= now {
+			logf("grant %s refused: expired at %s (now %s); not passed to act", g.Name, time.Unix(g.Expiry, 0).UTC().Format(time.RFC3339), time.Unix(now, 0).UTC().Format(time.RFC3339))
+			continue
+		}
+		out = append(out, g)
+	}
+	names := make([]string, 0, len(out))
+	for _, g := range out {
+		names = append(names, g.Name)
+	}
+	logf("grants %d (%s) of %d offered", len(out), strings.Join(names, " "), len(a.Grants))
+	return out
 }
 
 // uploadLog puts the saved act stream in the store under the attempt's

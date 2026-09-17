@@ -138,6 +138,46 @@
     [%& endgroup]
   ==
 ::
+::  a credential value never enters state or a reply (D4): every text the
+::  ship keeps from an event (a set-output value, a summary, the message)
+::  is scrubbed of every released value first.  act masks its own output
+::  and the daemon scrubs the relay; this is the ship's own fence, so a
+::  value that slipped both is still not recorded.
+::
+++  mask  '***'
+::
+++  replace-all
+  |=  [text=@t needle=@t]
+  ^-  @t
+  ?:  =('' needle)  text
+  =/  hay=tape  (trip text)
+  =/  pin=tape  (trip needle)
+  =/  width=@ud  (lent pin)
+  =/  out=tape  ~
+  |-
+  ?~  hay  (crip (flop out))
+  ::  the wet gates see the list's full type, not the refined cell
+  ?:  =(pin (scag width `tape`hay))
+    $(hay (slag width `tape`hay), out (weld (flop (trip mask)) out))
+  $(hay t.hay, out [i.hay out])
+::
+++  scrub-text
+  |=  [text=@t values=(list @t)]
+  ^-  @t
+  ?~  values  text
+  $(text (replace-all text i.values), values t.values)
+::
+++  scrub
+  |=  [=event:ci values=(list @t)]
+  ^-  event:ci
+  ?~  values  event
+  =.  msg.event  (scrub-text msg.event values)
+  =?  command.event  ?=([~ %set-output *] command.event)
+    command.event(value.u (scrub-text value.u.command.event values))
+  =?  command.event  ?=([~ %summary *] command.event)
+    command.event(body.u (scrub-text body.u.command.event values))
+  event
+::
 ::  the one per-event effect that persists: a set-output lands in the
 ::  attempt's outputs.  everything else is relayed and forgotten.
 ::

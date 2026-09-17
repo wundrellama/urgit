@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"urgit/runner/internal/config"
 	"urgit/runner/internal/sandbox"
@@ -351,5 +353,52 @@ func TestClaimIgnoresInFlight(t *testing.T) {
 	d.release("0v1.att")
 	if !d.claim("0v1.att") {
 		t.Fatal("after release the attempt may be claimed again")
+	}
+}
+
+// grants (D4): an unexpired grant becomes an act secret; an expired one
+// never reaches act; the daemon's own log redacts the value; the relayed
+// lines and the saved stream carry *** where act printed the value
+func TestGrantsToActSecretsAndScrub(t *testing.T) {
+	sh := &fakeShip{}
+	srv := httptest.NewServer(sh.handler(t))
+	defer srv.Close()
+	box := &fakeBox{stream: `{"job":"fixture-chain/b","jobID":"b","time":"t","msg":"token is hunter2hunter2 twice hunter2hunter2"}` + "\n" +
+		`{"job":"fixture-chain/b","jobID":"b","jobResult":"success","time":"t","msg":"done"}` + "\n"}
+	var logged bytes.Buffer
+	d := newTestDaemon(t, box, srv, 1)
+	d.log = log.New(&logged, "", 0)
+	now := time.Now().Unix()
+	a := *jobAssignment
+	a.Grants = []ship.Grant{
+		{Name: "TOKEN", Value: "hunter2hunter2", Expiry: now + 600},
+		{Name: "STALE", Value: "stalevalue1234", Expiry: now - 1},
+	}
+	d.handle(context.Background(), &a)
+	run := ""
+	for _, op := range box.ops {
+		if strings.HasPrefix(op, "run ") {
+			run = op
+		}
+	}
+	if !strings.Contains(run, "--secret TOKEN=hunter2hunter2") || strings.Contains(run, "STALE") {
+		t.Fatalf("act argv: %s", run)
+	}
+	text := logged.String()
+	if strings.Contains(text, "hunter2hunter2") || !strings.Contains(text, "--secret TOKEN=***") {
+		t.Fatalf("the daemon log must redact the secret: %s", text)
+	}
+	if !strings.Contains(text, "grant STALE refused: expired") || !strings.Contains(text, "grants 1 (TOKEN) of 2 offered") {
+		t.Fatalf("refusals must be logged: %s", text)
+	}
+	if len(sh.events) != 2 || !strings.Contains(sh.events[0], "token is *** twice ***") {
+		t.Fatalf("relayed lines must be scrubbed: %v", sh.events)
+	}
+	saved, err := os.ReadFile(filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "hunter2hunter2") || !strings.Contains(string(saved), "token is *** twice ***") {
+		t.Fatalf("the saved stream must be scrubbed: %s", saved)
 	}
 }

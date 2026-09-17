@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 )
 
 // Sender posts one line and answers with the ship's HTTP status.
@@ -77,4 +78,39 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// Mask replaces a released credential value in act's output (D4).
+const Mask = "***"
+
+// Scrub returns a reader over the stream with every occurrence of every
+// value replaced by Mask, line by line, so neither the relay nor the
+// saved stream ever carries a released credential value. act masks its
+// own output; this is the daemon's fence, applied before the tee.
+func Scrub(stream io.Reader, values []string) io.Reader {
+	var live []string
+	for _, v := range values {
+		if v != "" {
+			live = append(live, v)
+		}
+	}
+	if len(live) == 0 {
+		return stream
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		scanner := bufio.NewScanner(stream)
+		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			for _, v := range live {
+				line = strings.ReplaceAll(line, v, Mask)
+			}
+			if _, err := io.WriteString(pw, line+"\n"); err != nil {
+				return
+			}
+		}
+		pw.CloseWithError(scanner.Err())
+	}()
+	return pr
 }

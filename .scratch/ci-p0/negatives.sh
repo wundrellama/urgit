@@ -235,7 +235,10 @@ echo "-- attempt $aid trust=$(att_trust "$aid")"
 u=$(sign_get "$aid" untrusted); echo "sign-get untrusted -> $u"
 check "cross-class" '~' "$u"
 t=$(sign_get "$aid" trusted); echo "sign-get trusted -> $t"
-check_prefix "same-class URL" "[~ 'http://127.0.0.1:1/ci-bucket/ci/ci-fixture/" "$t"
+# the endpoint is the store fixture's when P2's store.sh started it (H2
+# pointed %storage at it), else the P0 fixture value
+endpoint="http://127.0.0.1:1"; [ -s "$TMP/store.env" ] && endpoint="http://127.0.0.1:${STORE_PORT:-8363}"
+check_prefix "same-class URL" "[~ '$endpoint/ci-bucket/ci/ci-fixture/" "$t"
 end_row H15
 fi
 

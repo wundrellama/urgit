@@ -43,6 +43,13 @@
 ::
 +$  credential        [value=@t scope=?(%job %env) envs=(set @t) created=@da]
 ::
+::  a released credential on the wire (D4/D5): the name, the value, the
+::  expiry the attempt's deadline sets, a nonce, and the CI key's
+::  signature over the jam of [recipient attempt 'grant:<name>' expiry
+::  nonce].  never stored; built for one assignment answer.
+::
++$  grant             [name=@t expiry=@da nonce=@uv sig=@ux]
+::
 ::  the CI signing key (D5): an ed25519 pair from eny, and the ship's
 ::  certificate over the public key, signed with the ship's own networking
 ::  signing key.  .sek never leaves the ship.

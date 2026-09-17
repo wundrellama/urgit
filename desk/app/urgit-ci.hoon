@@ -39,6 +39,9 @@
 ++  linked-refusal  'CI protection is not available for desk-linked repositories in this release'
 ::  a viewer's download link lives five minutes (D2: at most fifteen)
 ++  log-link-expiry  ~m5
+::  a credential value is scrubbed from every text the ship keeps, so a
+::  value short enough to occur by accident is refused at storage
+++  min-credential  8
 --
 =|  state-0:ci
 =*  state  -
@@ -123,6 +126,13 @@
   ::
       [%x %polls ~]        ``noun+!>(polls)
       [%x %policies ~]     ``noun+!>(policies)
+  ::
+      ::  the credentials of a repository by name, scope, environments
+      ::  and creation time: the value is never read out (D4)
+      ::
+      [%x %credential-names @ ~]
+    =/  repo=@t  (decode-segment:hc i.t.t.path)
+    ``noun+!>((credential-names:hc repo))
   ::
       [%x %policy @ ~]
     =/  repo=@t  (decode-segment:hc i.t.t.path)
@@ -540,13 +550,32 @@
     %+  urgit-poke  /materialize/(scot %uv new-id)
     [%materialize-candidate repo.old ref.old head.old base.old]
   ::
+      ::  a stored credential (D4): the value sits in state and is released
+      ::  only as a grant to a trusted attempt; it never leaves through a
+      ::  scry, a reply, a log line or an event.  a short value would be
+      ::  scrubbed out of ordinary text, so it is refused.
+      ::
       %set-credential
-    ~|  'credentials arrive with the credential stage'
-    !!
+    ?:  =('' name.act)  ~|('credential name is required' !!)
+    ?:  (gth (met 3 name.act) 64)  ~|('credential name is at most 64 characters' !!)
+    ?:  (lth (met 3 value.act) min-credential)
+      ~|  'credential values must be at least 8 characters'
+      !!
+    ::  act masks a secret only where the whole value appears on one
+    ::  output line (measured on 0.2.89: a two-line secret printed line by
+    ::  line is not masked), so a value with a newline is refused until
+    ::  the operator rules on per-line scrubbing (QUESTIONS-CI-P2 §2)
+    ::
+    ?:  (lien (trip value.act) |=(c=@tD =('\0a' c)))
+      ~|  'credential values must be a single line'
+      !!
+    =.  credentials
+      (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
+    (emit ~)
   ::
       %delete-credential
-    ~|  'credentials arrive with the credential stage'
-    !!
+    =.  credentials  (~(del by credentials) [repo.act name.act])
+    (emit ~)
   ::
       %rotate-ci-key
     ~|  'the signing key arrives with the signing stage'
@@ -1104,6 +1133,45 @@
     %-  pairs:enjs:format
     %+  turn  ~(tap by (~(gut by outputs.known) [u.workflow.assignment need] ~))
     |=([name=@t value=@t] [name s+value])
+  ::  the credentials released to this attempt (D4): a trusted job gets
+  ::  every %job-scoped credential of its repository and every %env one
+  ::  naming the job's environment, each as a grant bounded by the
+  ::  attempt's deadline; an untrusted attempt and a plan get none
+  ::
+  =/  grants=(list [name=@t value=@t])
+    ?.  ?&(?=(%job kind.assignment) =(%trusted trust.assignment))  ~
+    =/  environment=(unit @t)
+      ?~  workflow.assignment  ~
+      ?~  job.assignment  ~
+      ?~  plan.candidate  ~
+      =/  wf=@t  u.workflow.assignment
+      =/  id=@t  u.job.assignment
+      |-
+      ?~  u.plan.candidate  ~
+      ?:  &(=(wf workflow.i.u.plan.candidate) =(id id.i.u.plan.candidate))
+        environment.i.u.plan.candidate
+      $(u.plan.candidate t.u.plan.candidate)
+    %+  murn  ~(tap by credentials)
+    |=  [[repo=@t name=@t] =credential:ci]
+    ^-  (unit [@t @t])
+    ?.  =(repo repo.candidate)  ~
+    ?-  scope.credential
+      %job  `[name value.credential]
+      %env  ?~(environment ~ ?:((~(has in envs.credential) u.environment) `[name value.credential] ~))
+    ==
+  =/  expiry=@da  (add assigned.assignment deadline.assignment)
+  =/  grants-json=json
+    :-  %a
+    %+  turn  grants
+    |=  [name=@t value=@t]
+    =/  =grant:ci  (sign-grant daemon.assignment attempt.assignment name expiry)
+    %-  pairs:enjs:format
+    :~  ['name' s+name]
+        ['value' s+value]
+        ['expiry' (numb:enjs:format (unix-seconds expiry))]
+        ['nonce' s+(scot %uv nonce.grant)]
+        ['sig' s+(hex-bytes sig.grant 64)]
+    ==
   %-  pairs:enjs:format
   :_  ~
   :-  'assignment'
@@ -1124,7 +1192,62 @@
       ['prereq-outputs' prereq-outputs]
       ['deadline-seconds' (numb:enjs:format (div deadline.assignment ~s1))]
       ['assigned' s+(scot %da assigned.assignment)]
+      ['grants' grants-json]
   ==
+::
+::  unix seconds of a time, for the wire (a @da is not a JSON number)
+::
+++  unix-seconds
+  |=  at=@da
+  ^-  @ud
+  ?:  (lth at ~1970.1.1)  0
+  (div (sub at ~1970.1.1) ~s1)
+::
+::  an atom's low .count bytes as lowercase hex, least significant byte
+::  first: the standard wire encoding of an ed25519 key or signature
+::
+++  hex-bytes
+  |=  [value=@ count=@ud]
+  ^-  @t
+  =/  alphabet=@t  '0123456789abcdef'
+  =/  index=@ud  0
+  =/  out=tape  ~
+  |-
+  ?:  =(index count)  (crip (flop out))
+  =/  byte=@ud  (cut 3 [index 1] value)
+  =/  high=@tD  (cut 3 [(div byte 16) 1] alphabet)
+  =/  low=@tD   (cut 3 [(mod byte 16) 1] alphabet)
+  $(index +(index), out [low high out])
+::
+::  a grant's signature (D5): over the jam of the recipient, the attempt,
+::  the operation 'grant:<name>', the expiry in unix seconds and a
+::  nonce.  until the signing key exists (the signing stage) the
+::  signature is 0; the daemon starts verifying when the key does.
+::
+++  sign-grant
+  |=  [recipient=daemon-id:ci attempt=attempt-id:ci name=@t expiry=@da]
+  ^-  grant:ci
+  =/  nonce=@uv  (end [3 16] (shas %ci-grant-nonce (jam [recipient attempt name expiry eny.bowl])))
+  [name expiry nonce 0x0]
+::
+++  credential-names
+  |=  repo=@t
+  ^-  (list [name=@t scope=?(%job %env) envs=(set @t) created=@da])
+  %+  murn  ~(tap by credentials)
+  |=  [[r=@t name=@t] c=credential:ci]
+  ?.  =(r repo)  ~
+  `[name scope.c envs.c created.c]
+::
+::  the values released for a repository: what the ship scrubs from
+::  every event text it keeps
+::
+++  credential-values
+  |=  repo=@t
+  ^-  (list @t)
+  %+  murn  ~(tap by credentials)
+  |=  [[r=@t name=@t] c=credential:ci]
+  ?.  =(r repo)  ~
+  `value.c
 ::
 ++  attempt-json
   |=  =attempt:ci
@@ -1414,7 +1537,11 @@
   =/  parsed=(each event:ci refusal:ci-event)  (parse:ci-event body)
   ?:  ?=(%| -.parsed)
     (emit (give-error eyre-id status.p.parsed message.p.parsed))
-  =/  =event:ci  p.parsed
+  ::  the ship's own credential fence (D4): the message, a set-output value
+  ::  and a summary body are scrubbed of every released value before
+  ::  anything of the event is kept
+  ::
+  =/  =event:ci  (scrub:ci-event p.parsed (credential-values (candidate-repo candidate.u.found)))
   ::  the tripwire for the daemon's single-job projection (CI-PROJECT-1):
   ::  a line from any job but the assigned one means act ran more than
   ::  the ship admitted
