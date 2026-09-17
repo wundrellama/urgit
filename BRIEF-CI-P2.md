@@ -330,7 +330,7 @@ values. Do not guess past any of them.
 
 ## Launch footer — astra
 
-- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-astra`, branch `ci/p2-astra`, base `master` at `682c8cf` (re-freeze 2).
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-astra`, branch `ci/p2-astra`, base `master` at `f7391cb` (re-freeze 3).
 - **First ship** `~lup`, HTTP port `8352`, pier `/var/home/michael/piers/urgit-ci-p2-lup`.
   **Second ship** (Q5–Q8, the non-writer PR author) `~dys`, HTTP port `8354`, pier
   `/var/home/michael/piers/urgit-ci-p2-dys`. Neither pier may exist before your first boot.
