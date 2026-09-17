@@ -8,6 +8,8 @@ import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
 import Readme from './Readme'
 import MarkdownDocument from './MarkdownDocument'
+import CIView from './CIView'
+import CISettings from './CISettings'
 import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
 import { describeGroup, describeHost, describeRole, findGroup, policyFlag, roleOptions } from '../groupPolicy'
 
@@ -39,7 +41,7 @@ const groupRoleRows = (policy) => Object.entries(policy?.roles || {}).map(([role
 function CopyableHash({ value }) {
   return <span className="tako-chip"><code title={value}>{value}</code><button type="button" className="hash-copy" title="Copy revision hash" aria-label="Copy revision hash" onClick={() => navigator.clipboard.writeText(value)}><CopyIcon /></button></span>
 }
-const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'releases', 'commits', 'webhooks', 'settings'])
+const validTabs = new Set(['code', 'issues', 'pulls', 'branches', 'tags', 'releases', 'commits', 'ci', 'webhooks', 'settings'])
 
 function parseLineRange(value) {
   const match = /^(\d+)(?:-(\d+))?$/.exec(value || '')
@@ -64,6 +66,8 @@ function routeForRepository(repo) {
     searchQuery: name === repo.name && tab === 'code' ? params.get('search') || '' : '',
     ...lines,
     commitOid: name === repo.name && tab === 'commits' ? params.get('commit') || '' : '',
+    ciCandidate: name === repo.name && tab === 'ci' ? params.get('candidate') || '' : '',
+    ciLog: name === repo.name && tab === 'ci' ? params.get('log') || '' : '',
     branchCreate: name === repo.name && tab === 'branches' && params.get('new') === 'branch',
     tagTarget: name === repo.name && tab === 'tags' ? params.get('target') || '' : '',
     tagKind: name === repo.name && tab === 'tags' ? params.get('targetKind') || '' : '',
@@ -78,6 +82,8 @@ function repositoryHash(repo, route) {
   if (route.searchQuery) params.set('search', route.searchQuery)
   if (route.filePath && route.lineStart) params.set('line', route.lineEnd && route.lineEnd !== route.lineStart ? `${route.lineStart}-${route.lineEnd}` : String(route.lineStart))
   if (route.commitOid) params.set('commit', route.commitOid)
+  if (route.tab === 'ci' && route.ciCandidate) params.set('candidate', route.ciCandidate)
+  if (route.tab === 'ci' && route.ciCandidate && route.ciLog) params.set('log', route.ciLog)
   if (route.tab === 'branches' && route.branchCreate) params.set('new', 'branch')
   if (route.tab === 'tags' && route.tagTarget) params.set('target', route.tagTarget)
   if (route.tab === 'tags' && route.tagKind) params.set('targetKind', route.tagKind)
@@ -1340,6 +1346,7 @@ function Settings({ repo, onMutate }) {
             })}
             {!(repo.refs || []).some((entry) => entry.name.startsWith('refs/heads/')) && <small className="quiet">No branches yet.</small>}
           </div>
+          <CISettings key={repo.name} repo={repo} />
         </div>
       </section>
       <section className="panel">
@@ -1363,6 +1370,8 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const [lineEnd, setLineEnd] = useState(initialRoute.lineEnd)
   const [branch, setBranch] = useState(initialRoute.branch)
   const [commitOid, setCommitOid] = useState(initialRoute.commitOid)
+  const [ciCandidate, setCICandidate] = useState(initialRoute.ciCandidate)
+  const [ciLog, setCILog] = useState(initialRoute.ciLog)
   const [branchCreate, setBranchCreate] = useState(initialRoute.branchCreate)
   const [tagTarget, setTagTarget] = useState(initialRoute.tagTarget)
   const [tagKind, setTagKind] = useState(initialRoute.tagKind)
@@ -1390,6 +1399,8 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setLineStart(route.lineStart)
     setLineEnd(route.lineEnd)
     setCommitOid(route.commitOid)
+    setCICandidate(route.ciCandidate)
+    setCILog(route.ciLog)
     setBranchCreate(route.branchCreate)
     setTagTarget(route.tagTarget)
     setTagKind(route.tagKind)
@@ -1398,11 +1409,13 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, branchCreate, tagTarget, tagKind, searchQuery, ...changes }
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, ciCandidate, ciLog, branchCreate, tagTarget, tagKind, searchQuery, ...changes }
     if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null; route.searchQuery = '' }
     if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
+    if (route.tab !== 'ci') { route.ciCandidate = ''; route.ciLog = '' }
+    if (!route.ciCandidate) route.ciLog = ''
     if (route.tab !== 'branches') route.branchCreate = false
     if (route.tab !== 'tags') { route.tagTarget = ''; route.tagKind = '' }
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
@@ -1502,7 +1515,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
       </div>
       {!publicMode && (repo.upstreamUpdates || []).length > 0 && <button className="upstream-banner" onClick={() => navigate({ tab: 'webhooks', filePath: '', commitOid: '' })}><span className="activity-dot active" /><span><strong>Upstream has new commits</strong><small>{repo.upstreamUpdates[0].source} pushed {repo.upstreamUpdates[0].ref}</small></span><b>Review and pull →</b></button>}
       <nav className="tabs">
-        {(publicMode ? [['code', 'Code'], ['issues', 'Issues', repo.nativeIssues?.length], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', (repo.nativeIssues?.length || 0) + (repo.githubIssues?.length || 0)], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['webhooks', 'Webhooks', (repo.upstreamUpdates?.length || 0)], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
+        {(publicMode ? [['code', 'Code'], ['issues', 'Issues', repo.nativeIssues?.length], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits']] : [['code', 'Code'], ['issues', 'Issues', (repo.nativeIssues?.length || 0) + (repo.githubIssues?.length || 0)], ['pulls', 'Pull requests', (repo.pullRequests?.length || 0) + (repo.githubPulls?.length || 0)], ['branches', 'Branches', (repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).length], ['tags', 'Tags', repo.tagCount], ['releases', 'Releases', repo.releases?.length], ['commits', clayHistory ? 'Revisions' : 'Commits'], ['ci', 'CI'], ['webhooks', 'Webhooks', (repo.upstreamUpdates?.length || 0)], ['settings', 'Settings']]).map(([name, label, count]) => <button key={name} className={tab === name ? 'active' : ''} onClick={() => navigate({ tab: name, filePath: '', commitOid: '' })}><span>{label}</span>{count > 0 && <b className="tab-count">{count}</b>}</button>)}
       </nav>
       <section className="repo-body">
         {tab === 'code' && <div className="branch-context"><select value={branch} onChange={(event) => browseBranch(event.target.value)}>{(repo.refs || []).filter((ref) => ref.name.startsWith('refs/heads/')).map((ref) => <option key={ref.name} value={ref.name}>{ref.name.replace('refs/heads/', '')}</option>)}</select><span>{detail?.files?.files?.length || 0} files</span>{branch !== repo.head && <button className="text-button" onClick={() => browseBranch(repo.head)}>Default branch</button>}{!publicMode && !filePath && !creatingFile && <><button className="button" onClick={() => navigate({ tab: 'branches', filePath: '', branchCreate: true })}>New branch</button><button className="button new-file-button" onClick={() => { setCreatingFile(true); navigate({ searchQuery: '' }, true) }}>New file</button></>}<form className="code-search" onSubmit={(event) => { event.preventDefault(); const query = searchDraft.trim(); if (!query || query.length >= 2) { setCreatingFile(false); navigate({ filePath: '', lineStart: null, lineEnd: null, searchQuery: query }) } }}><input value={searchDraft} maxLength={200} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Search code" aria-label="Search repository code" />{searchQuery && <button type="button" className="text-button" onClick={() => navigate({ searchQuery: '', filePath: '' })}>Clear</button>}</form></div>}
@@ -1518,6 +1531,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         {tab === 'releases' && <Releases repo={repo} publicMode={publicMode} onMutate={mutate} client={client} />}
         {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} onOpenGit={(oid) => navigate({ commitOid: oid })} onCreateTag={!publicMode ? createTagFrom : null} /> : <Commits data={detail} loading={loading} loadingMore={historyLoadingMore} onLoadMore={loadMoreHistory} onSelect={openCommit} onCreateTag={!publicMode ? createTagFrom : null} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
+        {tab === 'ci' && !publicMode && <CIView key={repo.name} repository={repo.name} candidateId={ciCandidate} logId={ciLog} onNavigate={navigate} />}
         {tab === 'webhooks' && <Webhooks repo={repo} onMutate={mutate} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>

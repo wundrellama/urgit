@@ -1,4 +1,5 @@
 import { normalizeGroups } from './groupPolicy.js'
+import { validateCredentialValue } from './ci.js'
 
 const BASE = '/apps/urgit/api'
 const GROUPS_SCRY = '/~/scry/groups/groups/light.json'
@@ -49,6 +50,19 @@ export const publicApi = {
 }
 
 export const api = {
+  ciCandidates: (name, before) => request(`/ci/repository/${encodeURIComponent(name)}/candidates${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+  ciCandidate: (id) => request(`/ci/candidate/${encodeURIComponent(id)}`),
+  ciPolicy: (name) => request(`/ci/repository/${encodeURIComponent(name)}/policy`),
+  ciAction: (body) => {
+    if (body.action === 'set-credential') validateCredentialValue(body.value)
+    return request('/ci/action', { method: 'POST', body: JSON.stringify(body) })
+  },
+  ciLogUrl: (id) => `${BASE}/ci/attempt/${encodeURIComponent(id)}/log`,
+  ciLog: async (id, signal) => {
+    const response = await fetch(`${BASE}/ci/attempt/${encodeURIComponent(id)}/log`, { credentials: 'same-origin', signal })
+    if (!response.ok) throw new Error(response.status === 404 ? 'Log is unavailable.' : `Unable to load log (HTTP ${response.status}).`)
+    return response.text()
+  },
   repositories: () => request('/repositories'),
   desks: () => request('/desks'),
   peerActivity: () => request('/peer/activity'),

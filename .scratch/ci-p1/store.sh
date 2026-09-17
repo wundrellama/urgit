@@ -45,6 +45,28 @@ configure_ship() {
   echo "ship %storage configured: $STORE_URL/$STORE_BUCKET (scoped CI key)"
 }
 
+configure_cors() {
+  # A session-authorized 302 is followed by fetch from the ship's origin.
+  # CORS permits that viewer; the bucket still requires a valid signature.
+  # https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketCors.html
+  python3 - "$CONFIG/cors.xml" "$URL" <<'PY'
+import pathlib, sys, xml.etree.ElementTree as E
+root = E.Element('CORSConfiguration', xmlns='http://s3.amazonaws.com/doc/2006-03-01/')
+rule = E.SubElement(root, 'CORSRule')
+for tag, value in [('AllowedOrigin', sys.argv[2]), ('AllowedMethod', 'GET'), ('AllowedMethod', 'HEAD')]:
+    E.SubElement(rule, tag).text = value
+pathlib.Path(sys.argv[1]).write_bytes(E.tostring(root))
+PY
+  local digest status
+  digest=$(openssl dgst -md5 -binary "$CONFIG/cors.xml" | openssl base64 -A)
+  status=$(curl --silent --show-error --config "$CONFIG/root.curl" --request PUT \
+    --header 'content-type: application/xml' --header "content-md5: $digest" \
+    --data-binary "@$CONFIG/cors.xml" --output "$TMP/store-cors-response.xml" \
+    --write-out '%{http_code}' "$STORE_URL/$STORE_BUCKET?cors")
+  [ "$status" = 200 ] || { cat "$TMP/store-cors-response.xml" >&2; return 1; }
+  echo "RustFS log CORS: GET/HEAD from $URL"
+}
+
 case "${1:-status}" in
   start)
     security=$("${dock[@]}" info --format '{{.SecurityOptions}}')
@@ -90,6 +112,7 @@ PY
     done
     $ready || { echo 'store.sh: RustFS never became healthy' >&2; "${dock[@]}" logs --tail 30 "$NAME"; exit 1; }
     request root PUT "/$STORE_BUCKET"
+    configure_cors
     request root PUT '/rustfs/admin/v3/add-canned-policy?name=urgit-ci' "$CONFIG/policy.json"
     request root PUT "/rustfs/admin/v3/add-user?accessKey=$STORE_ACCESS_KEY" "$CONFIG/user.json"
     request root PUT "/rustfs/admin/v3/set-user-or-group-policy?policyName=urgit-ci&userOrGroup=$STORE_ACCESS_KEY&isGroup=false"
@@ -117,5 +140,6 @@ PY
   status)
     "${dock[@]}" inspect --format '{{.Name}} running={{.State.Running}} image={{.Config.Image}}' "$NAME"
     ;;
-  *) echo 'usage: store.sh start|stop|status' >&2; exit 2 ;;
+  cors) configure_cors ;;
+  *) echo 'usage: store.sh start|stop|status|cors' >&2; exit 2 ;;
 esac

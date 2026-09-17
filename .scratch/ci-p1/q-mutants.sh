@@ -9,6 +9,14 @@ import json, pathlib, sys
 op, row, file = sys.argv[1:]
 snapshot = pathlib.Path(file)
 edits = {
+ 'Q19': ('runner/internal/daemon/daemon.go',
+         '\t\t"--container-daemon-socket=" + d.cfg.DockerHost,\n',
+         '',
+         'Q19 RED: act child binds the host rootful socket'),
+ 'Q16': ('desk/app/urgit-ci.hoon',
+         '++  web-authorized\n  |=  req=inbound-request:eyre\n  ^-  ?\n  authenticated.req\n',
+         '++  web-authorized\n  |=  req=inbound-request:eyre\n  ^-  ?\n  %.y\n',
+         'Q16 RED: anonymous CI reads and action accepted'),
  'Q12': ('runner/internal/signing/verify.go',
          'if !ed25519.Verify(pub, message, b) {',
          'if len(b) == 0 && !ed25519.Verify(pub, message, b) {',

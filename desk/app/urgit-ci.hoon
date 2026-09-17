@@ -505,6 +505,14 @@
       %approve-candidate
     (approve-candidate id.act src.bowl)
   ::
+      %rerun-candidate
+    =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
+    ?~  found  ~|('no such candidate' !!)
+    =/  refusal=(unit @t)  (writer-refusal repo.u.found src.bowl)
+    ?^  refusal  ~|(u.refusal !!)
+    ?:  =(%skipped status.u.found)  ~|('candidate is superseded' !!)
+    (restage u.found trust.u.found 'superseded by rerun')
+  ::
       %set-credential
     =/  refusal=(unit @t)  (writer-refusal repo.act src.bowl)
     ?^  refusal  ~|(u.refusal !!)
@@ -1268,6 +1276,11 @@
   :~  ['attempt' s+(scot %uv id.attempt)]
       ['status' s+status.attempt]
       ['kind' s+kind.attempt]
+      ['daemon' s+(scot %uv daemon.attempt)]
+      ['trust' s+trust.attempt]
+      ['started' (time-json started.attempt)]
+      ['finished' ?~(finished.attempt ~ (time-json u.finished.attempt))]
+      ['duration' (numb:enjs:format (div (sub (fall finished.attempt now.bowl) started.attempt) ~s1))]
       ['workflow' ?~(workflow.attempt ~ s+u.workflow.attempt)]
       ['job' ?~(job.attempt ~ s+u.job.attempt)]
       ['events' (numb:enjs:format events.attempt)]
@@ -1289,14 +1302,259 @@
       ['sha256' s+sha256.u.log]
   ==
 ::
+++  web-authorized
+  |=  req=inbound-request:eyre
+  ^-  ?
+  authenticated.req
+::
+++  time-json
+  |=  at=@da
+  ^-  json
+  (numb:enjs:format (div (sub at (from-unix:chrono:userlib 0)) ~s1))
+::
+++  candidate-json
+  |=  c=candidate:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.c)]
+      ['repository' s+repo.c]
+      ['ref' s+ref.c]
+      ['head' s+(oid-text:git-codec head.c)]
+      ['base' s+(oid-text:git-codec base.c)]
+      ['candidate' ?~(candidate.c ~ s+(oid-text:git-codec u.candidate.c))]
+      ['actor' s+(scot %p actor.c)]
+      ['via' s+via.c]
+      ['trust' s+trust.c]
+      ['status' s+status.c]
+      ['conflict' b+conflict.c]
+      ['pull' ?~(pull.c ~ (numb:enjs:format u.pull.c))]
+      ['created' (time-json created.c)]
+      ['updated' (time-json updated.c)]
+      ['verdictReason' ?~(verdict-reason.c ~ s+u.verdict-reason.c)]
+      ['landed' b+=(`'landed' verdict-reason.c)]
+      :-  'plan'
+      ?~  plan.c  ~
+      :-  %a
+      %+  turn  u.plan.c
+      |=  j=job:ci
+      %-  pairs:enjs:format
+      :~  ['id' s+id.j]  ['workflow' s+workflow.j]  ['name' s+name.j]
+          ['stage' (numb:enjs:format stage.j)]
+          ['needs' [%a (turn needs.j |=(name=@t s+name))]]
+      ==
+      :-  'attempts'
+      :-  %a
+      %+  murn  (flop attempts.c)
+      |=  id=attempt-id:ci
+      =/  found=(unit attempt:ci)  (~(get by attempts) id)
+      ?~(found ~ `(attempt-json u.found))
+  ==
+::
+++  policy-json
+  |=  repo=@t
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['repository' s+repo]
+      ['untrusted' s+(policy repo)]
+      :-  'protectedRefs'
+      :-  %a
+      %+  murn  ~(tap in ci-protected)
+      |=  entry=[repo=@t ref=@t]
+      ?.(=(repo repo.entry) ~ `s+ref.entry)
+      :-  'credentials'
+      :-  %a
+      %+  turn  (credential-infos repo)
+      |=  info=credential-info:ci
+      %-  pairs:enjs:format
+      :~  ['name' s+name.info]  ['scope' s+scope.info]
+          ['envs' [%a (turn ~(tap in envs.info) |=(env=@t s+env))]]
+          ['created' (time-json created.info)]
+      ==
+  ==
+::
+++  query-value
+  |=  [key=@t args=(list [key=@t value=@t])]
+  ^-  (unit @t)
+  ?~  args  ~
+  ?:  =(key key.i.args)  `value.i.args
+  $(args t.args)
+::
+++  handle-candidates-read
+  |=  [eyre-id=@ta repo=@t args=(list [key=@t value=@t])]
+  ^-  out
+  =/  allowed=(unit ?)  (can-write repo our.bowl)
+  ?~  allowed  (emit (give-error eyre-id 503 'ci: %urgit writer read is unavailable'))
+  ?.  u.allowed  (emit (give-error eyre-id 404 'no such repository'))
+  =/  rows=(list candidate:ci)
+    %+  sort
+      (skim ~(val by candidates) |=(c=candidate:ci =(repo repo.c)))
+    |=  [a=candidate:ci b=candidate:ci]
+    ?:  =(created.a created.b)  (gth id.a id.b)
+    (gth created.a created.b)
+  =/  before=(unit @t)  (query-value 'before' args)
+  =/  cursor=(unit @uv)  ?~(before ~ (slaw %uv u.before))
+  ?:  ?&(?=(^ before) ?=(~ cursor))
+    (emit (give-error eyre-id 400 'invalid candidate cursor'))
+  =/  start=(unit (list candidate:ci))
+    ?~  cursor  `rows
+    |-
+    ?~  rows  ~
+    ?:  =(u.cursor id.i.rows)  `t.rows
+    $(rows t.rows)
+  ?~  start  (emit (give-error eyre-id 404 'candidate cursor not found in repository'))
+  =/  page=(list candidate:ci)  (scag 50 u.start)
+  =/  more=?  (gth (lent u.start) 50)
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['candidates' [%a (turn page candidate-json)]]
+      ['next' ?:(more s+(scot %uv id:(rear page)) ~)]
+  ==
+::
+++  strings-at
+  |=  [key=@t jon=json]
+  ^-  (unit (list @t))
+  ?.  ?=([%o *] jon)  ~
+  =/  value=(unit json)  (~(get by p.jon) key)
+  ?~  value  ~
+  ?.  ?=([%a *] u.value)  ~
+  =/  items=(list json)  p.u.value
+  =|  result=(list @t)
+  |-
+  ?~  items  `(flop result)
+  ?.  ?=([%s *] i.items)  ~
+  $(items t.items, result [p.i.items result])
+::
+::  The web exposes only operator actions; actor is always the session's
+::  ship. Incoming JSON cannot impersonate a PR actor or a native callback.
+::
+++  parse-web-action
+  |=  jon=json
+  ^-  (each action:ci @t)
+  =/  action=(unit @t)  (string-at 'action' jon)
+  ?~  action  [%| 'action is required']
+  ?:  |(=('approve-candidate' u.action) =('rerun-candidate' u.action))
+    =/  text=(unit @t)  (string-at 'id' jon)
+    =/  id=(unit @uv)  ?~(text ~ (slaw %uv u.text))
+    ?~  id  [%| 'candidate id is required']
+    [%& ?:(=('approve-candidate' u.action) [%approve-candidate u.id] [%rerun-candidate u.id])]
+  =/  repo=(unit @t)  (string-at 'repo' jon)
+  ?~  repo  [%| 'repo is required']
+  ?:  =('set-ci-protected' u.action)
+    =/  ref=(unit @t)  (string-at 'ref' jon)
+    =/  protected=(unit json)  ?:(?=([%o *] jon) (~(get by p.jon) 'protected') ~)
+    ?.  ?&(?=(^ ref) ?=(^ protected) ?=([%b *] u.protected))
+      [%| 'ref and protected boolean are required']
+    [%& [%set-ci-protected u.repo u.ref p.u.protected]]
+  ?:  =('set-untrusted-policy' u.action)
+    =/  policy=(unit @t)  (string-at 'policy' jon)
+    ?.  ?&(?=(^ policy) ?=(?(%approval %restricted) u.policy))
+      [%| 'policy must be approval or restricted']
+    [%& [%set-untrusted-policy u.repo u.policy]]
+  ?.  |(=('set-credential' u.action) =('delete-credential' u.action))
+    [%| 'unknown CI action']
+  =/  name=(unit @t)  (string-at 'name' jon)
+  ?.  ?&(?=(^ name) (credential-name u.name))
+    [%| 'credential name must be an identifier']
+  ?:  =('delete-credential' u.action)
+    [%& [%delete-credential u.repo u.name]]
+  =/  value=(unit @t)  (string-at 'value' jon)
+  =/  scope=(unit @t)  (string-at 'scope' jon)
+  =/  envs=(unit (list @t))  (strings-at 'envs' jon)
+  ?.  ?&(?=(^ value) ?=(^ scope) ?=(?(%job %env) u.scope) ?=(^ envs))
+    [%| 'value, scope (job or env) and envs array are required']
+  ?:  (lien (trip u.value) |=(c=@tD |(=(c 10) =(c 13))))
+    [%| 'credential values must be a single line']
+  [%& [%set-credential u.repo u.name u.value u.scope (silt u.envs)]]
+::
+++  handle-web-action
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon  (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  parsed=(each action:ci @t)  (parse-web-action u.jon)
+  ?:  ?=(%| -.parsed)  (emit (give-error eyre-id 400 p.parsed))
+  =/  act=action:ci  p.parsed
+  =/  repo=(unit @t)
+    ?+  -.act  ~
+      ?(%approve-candidate %rerun-candidate)
+    =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
+    ?~(found ~ `repo.u.found)
+      ?(%set-ci-protected %set-untrusted-policy %set-credential %delete-credential)
+    `repo.act
+    ==
+  ?~  repo  (emit (give-error eyre-id 404 'no such candidate'))
+  =/  refusal=(unit @t)  (writer-refusal u.repo our.bowl)
+  ?^  refusal  (emit (give-error eyre-id 403 u.refusal))
+  =/  refusal=(unit @t)
+    ?:  ?=(?(%approve-candidate %rerun-candidate) -.act)
+      =/  found=candidate:ci  (~(got by candidates) id.act)
+      ?:  =(%skipped status.found)  `'candidate is superseded'
+      ?:  ?&(=(%approve-candidate -.act) =(%trusted trust.found))
+        `'candidate is already trusted'
+      ~
+    ?:  ?=(%set-ci-protected -.act)
+      ?.  protected.act  ~
+      ?~  (read-settings:ci-storage our.bowl now.bowl)  `storage-refusal
+      ?:  =('refs/ci/' (end [3 8] ref.act))  `'refs/ci/* are scratch refs and cannot be CI-protected'
+      =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo.act ref.act)
+      ?~  tip  `'ci: %urgit is not running; the ref cannot be checked'
+      ?~  u.tip  `no-tip-refusal
+      ?:  linked.u.u.tip  `linked-refusal
+      ~
+    ~
+  ?^  refusal  (emit (give-error eyre-id 409 u.refusal))
+  =/  previous=(set candidate-id:ci)  ~(key by candidates)
+  =.  bowl  bowl(src our.bowl)
+  =/  changed=(each out tang)
+    %-  mule  |.
+    (handle-action act)
+  ?:  ?=(%| -.changed)
+    (emit (give-error eyre-id 409 'CI action could not be applied'))
+  =.  state  state.p.changed
+  =.  polls  polls.p.changed
+  =/  created=(list candidate-id:ci)
+    (skip ~(tap in ~(key by candidates)) |=(id=candidate-id:ci (~(has in previous) id)))
+  =/  response=json
+    %-  pairs:enjs:format
+    :~  ['ok' b+%.y]
+        ['candidate' ?~(created ~ s+(scot %uv i.created))]
+    ==
+  (emit (weld cards.p.changed (give-json eyre-id ?~(created 200 202) response)))
+::
 ++  handle-http
   |=  [eyre-id=@ta req=inbound-request:eyre]
   ^-  out
   =/  line=request-line:server  (parse-request-line:server url.request.req)
   =/  site=(list @t)  site.line
   =/  method=@tas  method.request.req
+  ?:  ?=([%apps %urgit %api %ci %action ~] site)
+    ?.  (web-authorized req)  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  =(%'POST' method)  (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-web-action eyre-id req)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %candidates ~] site)
+    ?.  (web-authorized req)  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  =(%'GET' method)  (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-candidates-read eyre-id i.t.t.t.t.t.site args.line)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %policy ~] site)
+    ?.  (web-authorized req)  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  =(%'GET' method)  (emit (give-error eyre-id 405 'method not allowed'))
+    =/  repo=@t  i.t.t.t.t.t.site
+    =/  allowed=(unit ?)  (can-write repo our.bowl)
+    ?~  allowed  (emit (give-error eyre-id 503 'ci: %urgit writer read is unavailable'))
+    ?.  u.allowed  (emit (give-error eyre-id 404 'no such repository'))
+    (emit (give-json eyre-id 200 (policy-json repo)))
+  ?:  ?=([%apps %urgit %api %ci %candidate @ ~] site)
+    ?.  (web-authorized req)  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  =(%'GET' method)  (emit (give-error eyre-id 405 'method not allowed'))
+    =/  segment=@t
+      ?~(ext.line i.t.t.t.t.t.site (rap 3 ~[i.t.t.t.t.t.site '.' u.ext.line]))
+    =/  id=(unit @uv)  (slaw %uv segment)
+    =/  found=(unit candidate:ci)  ?~(id ~ (~(get by candidates) u.id))
+    ?~  found  (emit (give-error eyre-id 404 'no such candidate'))
+    (emit (give-json eyre-id 200 (candidate-json u.found)))
   ?:  ?=([%apps %urgit %api %ci %key ~] site)
-    ?.  authenticated.req  (emit (give-error eyre-id 401 'ship session required'))
+    ?.  (web-authorized req)  (emit (give-error eyre-id 401 'ship session required'))
     ?.  =(%'GET' method)  (emit (give-error eyre-id 405 'method not allowed'))
     ?~  signing  (emit (give-error eyre-id 503 'CI key is not initialized; rotate-ci-key first'))
     (emit (give-json eyre-id 200 key-json))
@@ -1410,7 +1668,7 @@
 ++  handle-log-read
   |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
   ^-  out
-  ?.  authenticated.req
+  ?.  (web-authorized req)
     (emit (give-error eyre-id 401 'ship session required'))
   =/  id=(unit @uv)  (slaw %uv segment)
   =/  found=(unit attempt:ci)  ?~(id ~ (~(get by attempts) u.id))

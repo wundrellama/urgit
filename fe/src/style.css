@@ -28,6 +28,39 @@
 :root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
+.ci-view { min-width: 0; }
+.ci-view > .panel + .panel { margin-top: 16px; }
+.ci-candidate { display: flex; align-items: center; gap: 18px; width: 100%; padding: 16px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.ci-candidate:hover { background: var(--soft); }
+.ci-candidate > span:first-child { flex: 1; }
+.ci-candidate small, .ci-credentials small, .ci-jobs small, .ci-settings small { display: block; color: var(--muted); margin-top: 4px; }
+.ci-status { display: inline-block; border: 1px solid currentColor; border-radius: 20px; padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+.ci-status-passed { color: #23834a; }
+.ci-status-failed, .ci-status-infrastructure-error { color: #d34646; }
+.ci-status-running, .ci-status-pending { color: var(--accent); }
+.ci-status-unknown { color: #a77519; }
+.ci-status-skipped { color: var(--muted); }
+.ci-pips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 150px; }
+.ci-pip { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.ci-planner { display: flex; align-items: center; gap: 10px; }
+.ci-table-scroll { overflow-x: auto; }
+.ci-jobs { width: 100%; border-collapse: collapse; margin-top: 18px; }
+.ci-jobs th, .ci-jobs td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ci-jobs th { color: var(--muted); font-size: 12px; font-weight: 500; }
+.ci-jobs td code { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.ci-verdict { font-weight: 600; }
+.ci-log { font: 12px/1.7 ui-monospace, SFMono-Regular, monospace; background: var(--soft); padding: 14px; overflow: auto; max-height: 70vh; }
+.ci-log-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ci-log-group { margin: 4px 0; padding-left: 14px; }
+.ci-log-group > summary { cursor: pointer; font-weight: 600; }
+.ci-settings { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.ci-settings > h3 { margin-top: 26px; }
+.ci-policy { border: 0; padding: 0; margin: 22px 0; }
+.ci-policy legend { font-weight: 600; margin-bottom: 10px; }
+.ci-credentials > div { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 12px 0; }
+.ci-credential-form { display: grid; gap: 12px; max-width: 520px; margin-top: 18px; }
+.ci-credential-form > label { display: grid; gap: 6px; }
+.ci-credential-form > button { justify-self: start; }
 html, body, #root { margin: 0; min-height: 100%; }
 body { background: var(--bg); color: var(--text); font-size: 14px; }
 button, input, textarea, select { font: inherit; }

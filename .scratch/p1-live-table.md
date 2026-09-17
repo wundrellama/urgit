@@ -294,3 +294,21 @@ vet ok, gofmt clean
 {"id":"cli:pane:close","result":{"type":"ok"}}
 pier retained: /var/home/michael/piers/urgit-ci-p1-peg (514M)
 ```
+
+
+## P2 regression addition — CI-SANDBOX-1.1
+
+Rider 5 of CI P2 adds **Q19** to every subsequent P1 battery. The earlier
+P1 results above did not inspect act's child mounts and therefore did not
+prove this boundary. Stock act bound the host's rootful
+`/var/run/docker.sock`; file permissions blocked access in the observed job.
+The P2 fix passes `--container-daemon-socket=<configured rootless socket>`
+while preserving act's own `DOCKER_HOST`.
+
+`p2-socket-regression.sh` drops that flag for RED and restores it for GREEN.
+Its oracle inspects a live act child and runs `docker info` inside it:
+RED must expose the host bind; GREEN requires the configured rootless bind
+source and `name=rootless`. It runs after the original 13 P1 mutants.
+S5's original, mutant, and restored observations are in
+[p2-live-table.md](p2-live-table.md); the S6 composed run records its own
+results there without revising this historical P1 table.

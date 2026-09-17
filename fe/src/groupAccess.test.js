@@ -31,11 +31,11 @@ const groupPeek = backend.slice(
 )
 const groupSeat = backend.slice(
   backend.indexOf('++  group-seat'),
-  backend.indexOf('++  group-members'),
+  backend.indexOf('++  repository-group-capability', backend.indexOf('++  group-seat')),
 )
 const groupMembers = backend.slice(
   backend.indexOf('++  group-members'),
-  backend.indexOf('++  repository-group-capability'),
+  backend.indexOf('++  repository-readable', backend.indexOf('++  group-members')),
 )
 const repositoryJson = backend.slice(
   backend.indexOf('++  repository-json-up-to'),

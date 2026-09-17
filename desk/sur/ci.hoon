@@ -208,6 +208,7 @@
       [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via pull=(unit @ud)]
       [%set-untrusted-policy repo=@t policy=untrusted-policy]
       [%approve-candidate id=candidate-id]
+      [%rerun-candidate id=candidate-id]
       [%set-credential repo=@t name=@t value=@t scope=credential-scope envs=(set @t)]
       [%delete-credential repo=@t name=@t]
       [%rotate-ci-key ~]

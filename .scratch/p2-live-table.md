@@ -1,10 +1,18 @@
 # CI P2 live table — astra
 
 Worktree `urgit-ci-p2-astra`, branch `ci/p2-astra`. The current brief body
-is re-freeze 3, `f7391cb` (SHA-256 prefix `947595909726`), with launch
-footer `c703034`. Riders 1–3 resolve the original six boxes. Earlier
-shutdowns and their evidence below are historical; the current pass
-resumes the retained piers and continues from S2.
+is re-freeze 4, `46e9616` (SHA-256
+`53939bc5e0a30aa65c370773ac1b41a0cdbe738d0c3164460a64daf2dacde0cf`),
+with launch footer `946ae24`. Riders 1–5 resolve all eight boxes. S5 is
+complete: the web surface and rootless child-socket fix have Q14–Q16 and
+Q19 evidence below. The following S6 commit records the completed cold
+regression and verified shutdown.
+
+Historical S1–S5 transcripts named under `.scratch/tmp/` are preserved
+under `.scratch/tmp/before-cold-1789645582952093920/` with the same
+filenames. Use that archive for the earlier candidate IDs and verdicts
+when a cold row reuses a transcript filename. Cold transcripts use the
+`s6-` prefix at the current `.scratch/tmp/` root.
 
 Ship `~lup`, HTTP 8352, pier `/var/home/michael/piers/urgit-ci-p2-lup`.
 The pier did not exist before boot. `.scratch/ci-p0/boot.sh` split herdr
@@ -15,7 +23,8 @@ Boot transcript: `.scratch/boot-p2.log`.
 Rootless Docker: `/run/user/1000/ci-p2-astra/docker.sock`, Docker 29.7.2,
 data root `.scratch/tmp/docker-data`; security options contain `name=rootless`.
 The runner uses the harness-built static `act` 0.2.89 and the P1 image
-`catthehacker/ubuntu:act-latest`. No sandbox or projection code was changed.
+`catthehacker/ubuntu:act-latest`. Rider 5 adds only the configured child-socket flag to act; the sandbox
+interface and projection are unchanged.
 
 RustFS: port 8362, private bucket `ci-bucket`, region `us-east-1`, data
 `.scratch/tmp/store-data`, image
@@ -30,11 +39,13 @@ owned by the invoking host user. The server's console port is not published.
 
 | Stage | Commit | Gate |
 |---|---|---|
-| S0 | `1acf739` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
-| S1 | `854237b` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
-| S2 | `84beb05` | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
-| S3 | `2835fbc` | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
-| S4 | This stage commit | CI key and network certificate, signed assignment/grant bodies, config pin, Q12/Q13 RED → GREEN |
+| S0 | `2a93744` | D7 added under Execution; answered boxes removed as Rider 1 directs; no implementation files changed |
+| S1 | `7b6b65c` | Q2–Q4 on `~lup`; Go tests; P0 storage vector; footer environment, RustFS, log metadata/routes, presign and upload |
+| S2 | `c2bc6b3` | Web merge gate, shared authoritative writer peek, trust policy, and approval. Q5a/Q5/Q6/Q8 RED → GREEN; Q7 actual owner approval and landing. Answered §4–§6 deleted as the riders request. |
+| S3 | `6f4a286` | Credential store, job/environment grants, runner and ship scrub; Q9, Q10 RED → GREEN, Q11 RED → GREEN |
+| S4 | `f78b1a8` | CI key and network certificate, signed assignment/grant bodies, config pin, Q12/Q13 RED → GREEN |
+| S5 | This stage commit | CI web surface, Q14–Q16 and Q19, browser actions/pagination |
+| S6 | Following stage commit | Cold regression and shutdown evidence recorded separately |
 
 ## Observations
 
@@ -55,7 +66,10 @@ owned by the invoking host user. The server's console port is not published.
 | Q11 | RED → GREEN | One-line metadata sabotage returned the value in place of its name; both the read and complete-noun probe detected it (tripwire `Q11 RED: credential value appeared in a read`). Restored controller: **16 peek variants × 3 credential values**, plus attempt and repository JSON, contain none. Delete all three credentials → metadata `~`; actual `%assign` job rerun `0v1.ul8vh.ukfdn.mt5j6.1mgqc.qevgp` receives **`grants=[]`**, then passes. `.scratch/tmp/q11-red.log`, `.scratch/tmp/q11-green-final.log`; enumerated paths in ignored `p2-q11.json`. |
 | Q12 | RED → GREEN | One-line Ed25519 verification bypass: daemon `0v6.65b0j.c0tgk.7mo2v.ncpaj.f958u`, explicitly pinned to wrong `0x1`, started plan `0v1.rmtpr.i3eap.nq14p.jt9bc.9467a` (tripwire `Q12 RED: wrong-pub daemon started signed work`). Restored verifier: the pending job `0v2.1poaq.mn0e8.f12ja.q9hma.i5d0j` is refused **`signature does not verify with pinned CI public key`**, before work directory, checkout or sandbox. GREEN repeated after final canonical-string encoding. Session key GET returns exactly `pub`, `cert`, `ship-life=1`. `.scratch/tmp/q12-red.log`, `.scratch/tmp/q12-green-final.log`. |
 | Q13 | RED → GREEN | Held job `0v3.ah1qo.1oj4l.qvq01.v1ls1.40rdn` from candidate `0v1.9mvno.q5utt.6n2pa.vuav3.q04lr`, recipient `0v3.oisea.70c70.2but2.8colp.hs1h2`, until its original grant expired at Unix **1789617951** (04:05:51 UTC). One-line `grantCurrent` bypass: actual job ran with `--secret TOKEN=***`, 15 accepted events, passed at **04:06:01**, log uploaded (tripwire `Q13 RED: expired signed grant reached act`). Restored guard: replay the authentic redelivery while its outer signature is still current; **04:06:28**, **`credential grant expired`**, no work directory/sandbox/act. `.scratch/tmp/q13-hold-final.log`, `.scratch/tmp/q13-{red,green}.log`. |
-| Q14–Q18 | Pending | S5–S6 remain |
+| Q14–Q16 | PASS | S5 browser and session checks below |
+| Q17 | Recorded in S6 | Full P1 regression evidence belongs to the following stage commit |
+| Q18 | PASS | Rider 4 accepted retry below; retained by Rider 5 |
+| Q19 | RED → GREEN | Wrong child mount on the unfixed runner and flag-drop mutant; restored rootless mount and in-job daemon identity below |
 
 The fixture's independent curl-signed PUT/GET succeeded and its anonymous
 object GET returned **403**, before any product signing test. All seven
@@ -378,3 +392,109 @@ string encoding was tightened; `q13-hold-final.log` is the actual
 `f5d7d6ffc244dd30d67540a959237f57d1ac655f4e4b9347f5b935c8cd591aa8`.
 Both runners are stopped; the ships and RustFS remain up for S5. The final
 runner binary is static and neither Q12 nor Q13 sabotage remains applied.
+
+## S5 investigation — Rider 4
+
+At this historical checkpoint S4's pre-rebase stage commit was `f6555fc`.
+S5 was still in progress; this investigation did not claim Q14–Q16 GREEN.
+
+| Observation | Result | Evidence |
+|---|---|---|
+| ERPit failed run, retained independently of acceptance | Failed; did not land | `a6d15eddefa898250bf5f656441a55a80273f751` plus README-only commit `8e0bbe3e2b6570896172537880719be3779b0e42`; candidate `0v2.j267u.99k0l.k7fin.smul4.8u9n8`; erasure attempt `0v3.o726k.08jf8.imcoa.90gc5.uacep`; verdict reason `job erasure in fixtures.yml failed`; master remained `a6d15ed…`. Six jobs passed; erasure failed; the unfinished suite was abandoned only after that failed verdict was captured. |
+| Failed erasure's preserved log | Private store read and hash match | 67,561 bytes, SHA-256 `59937e7423b448aeadeb7c05d54866fd87b6c0343c8a3e685b204775a957eb80`. Plain session `curl -L` followed the query-presigned URL. S5 WIZATTR had hits at offset 325078804 (`fwd:1`); S8 SEAMVAL at 408810124 (`fwd:0`), each in `0i139/image.bin`, `0i158/image.bin`, and `chk/image.bin`. `.scratch/tmp/p2-erasure-box.jsonl`, `p2-web-candidate-box-response.txt`, `p2-web-erpit.log`. |
+| Rider 4 pre-retry `/tmp` inspection | No shared `/tmp` found | Failed attempt ran on daemon `a`, using `unix:///run/user/1000/ci-p2-astra/docker.sock`. Throwaway image `sha256:32efe3fa4d225b18c624afc5826e1d3b348087af6906b64f3c3762fd6182eafa` has no declared volumes. `/tmp/erasewes` absent; `findmnt -T /tmp` = `/ overlay overlay`. Deliberately created `/tmp/erasewes/marker`, removed the container, recreated it with the SAME `/work` volume: `/tmp/erasewes` absent again. `.scratch/ci-p1/p2-sandbox-inspect.sh`, `.scratch/tmp/p2-sandbox-inspect.log`. |
+| Actual retry erasure child container | `/tmp` clean before fixture | Candidate `0vdm40u.i3bb4.1cd5s.ivm60.4r5ml`, erasure attempt `0vseick.vfrio.3fong.495l5.nmvmm`; inspected the actual act child before `erasure-test.sh` began. `/tmp/erasewes` absent; no mount at/below `/tmp`; overlay filesystem. `.scratch/ci-p1/p2-sandbox-watch.py`, `.scratch/tmp/p2-sandbox-retry-mounts.log`. |
+
+The exact `Prepare` mount lines in `runner/internal/sandbox/docker.go`
+(81–83 at this stage) are:
+
+```go
+"-v", h.Volume + ":/work",
+"-v", d.socketPath() + ":/var/run/docker.sock",
+"-e", "DOCKER_HOST=unix:///var/run/docker.sock",
+```
+
+`h.Volume` is `spec.Network + "-work"`, with network `ci-<attempt>`.
+`Destroy` removes every container attached to that network, its own
+runner container, the work volume, and the network (docker.go 171–185).
+There is no `/tmp` bind or tmpfs. `plan.Project` changes the workflow
+name, selects one job and removes its `needs`/`if`; it adds no mounts.
+The daemon's actual `act push` command contains neither `--bind` nor
+`--container-options` (daemon.go 545–566).
+
+Pinned act 0.2.89's `GetBindsAndMounts` is also relevant: it creates
+attempt-named volumes for `/work/src` and `/var/run/act`, and a shared
+`act-toolcache` volume at `/opt/hostedtoolcache`. None is mounted at
+`/tmp`. The actual child inspection confirms those destinations.
+Its socket bind is `/var/run/docker.sock:/var/run/docker.sock`.
+The host-side socket is rootful (`SecurityOptions` lacks `rootless`,
+`DockerRootDir=/var/lib/docker`); the child sees it owned by
+`nobody:nogroup`, mode 660. A read-only `docker info` in the child fails
+with permission denied. This distinct socket-boundary finding was
+reported to the operator before changing runner behavior.
+
+The failed log records the cadence creating epochs **139** and **158**
+during this run, then chopping epoch **0**. Vere 4.6 names the epoch from
+the last event number (`u3_disk_roll` passes `eve_d` to `_disk_epoc_roll`),
+not a count of prior boots: [pinned disk.c](https://github.com/urbit/vere/blob/vere-v4.6/pkg/vere/disk.c#L1432).
+Those numbers alone do not show a pier surviving a previous attempt. Both erasure scripts are
+byte-identical between `d4f268e` and `a6d15ed` (`git diff` on the two
+paths is empty). No ERPit source or workflow has been edited.
+
+Rider 4's one-daemon, capacity-3 retry uses a second README-only fixture
+commit `a866bea33e955befc03487250830ba9423518a0c`, candidate
+`0vdm40u.i3bb4.1cd5s.ivm60.4r5ml`. The frontend arm-bound correction now
+passes all 132 tests.
+
+The retry's erasure attempt passed at **05:31:54 UTC**, with 181 accepted
+events and no refused events. Its new epochs are **139** and **159**;
+chop again removed epoch **0**. Every erased sentinel S1–S7 has zero hits;
+S8's three hits are the fixture's expected retained control, and do not
+constitute a test failure. The trusted log is **63,206 bytes**, SHA-256
+`128272609527aa3557835b19470f4274a2d3a55efb7a76b0284f132568d0874d`.
+The suite subsequently passed at **05:43:21 UTC**. The complete retry
+took **1,109 seconds** from push to verdict and landed the exact candidate
+OID `a866bea33e955befc03487250830ba9423518a0c`.
+
+| Row | Result | Observed on the Rider 4 retry / S5 draft |
+|---|---|---|
+| Q18 | PASS (Rider 4's accepted retry) | Eight job attempts, all passed; all eight logs fetched from the private bucket through session-gated 302s, then plain query-presigned GETs without signing headers. Every key includes `/trusted/`; all sizes and SHA-256 hashes match. Master equals `a866bea33e955befc03487250830ba9423518a0c`; reason `landed`. `.scratch/tmp/q18-retry.log` lists all eight attempt ids, byte lengths and hashes; `.scratch/tmp/p2-web-retry.log` is the P15 driver transcript. ERPit remains at unchanged `a6d15ed` plus the fixture's README-only commits. |
+| Q14 | PASS | Actual Chromium: candidate list has the retry, eight pips; candidate page has eight passed job rows, eight log links and `Landed`. A log fetch renders 25 lines; deep link survives reload and Back restores the log. `.scratch/tmp/q14.log`, `q14-jobs.png`, `q14-log.png`. The failed candidate separately renders its failure reason and 188-line erasure log (`s5-failed-log.png`). |
+| Q15 | PASS | Separate fixture `q15-web-323049648073`: CI required off/on and both untrusted policies persist through page reload. Environment-scoped credential added for production/staging and deleted; random value absent from serialized DOM and policy metadata, password cleared on submit. A multiline paste causes an error with zero POSTs. `.scratch/tmp/q15.log`, `q15-settings.png`. |
+
+At that checkpoint Q16 had not run RED→GREEN; S5 was an uncommitted draft, and Q17/S6's composed
+battery had not run. The socket-boundary finding was boxed as §8;
+no runner execution code was changed while awaiting its scope ruling.
+
+
+## S5 completion — Rider 5
+
+Rider 5 ratifies §8 as **CI-SANDBOX-1.1**, a P1 defect: the prior P1
+batteries never inspected act's child mounts. The sole execution change
+is `--container-daemon-socket=` plus the configured rootless endpoint in
+`runJob`'s act arguments. The parent retains
+`DOCKER_HOST=unix:///var/run/docker.sock`; no sandbox interface, projection,
+scheduler, or polling change. The existing daemon orchestration test now
+checks the configured socket in the exact invocation.
+
+| Row | Verdict | Observed |
+|---|---|---|
+| Q19 original | RED | Unfixed binary, candidate `0vthn2e.1bdpf.7mke7.o2p0s.h0951`, job `0v5.7rhib.vp60l.e8hnf.kl0kr.tja0m`: `Binds=["/var/run/docker.sock:/var/run/docker.sock"]`; child `docker info` exits 1, permission denied. `.scratch/tmp/q19-unfixed-red.log`. |
+| Q19 fixed | GREEN | Candidate `0v3.j2fb7.kqlgt.jum9m.h5u87.sscis`, job `0v6.bda0l.0kojk.srvnc.gp8tj.kd7hd`: bind source `/run/user/1000/ci-p2-astra/docker.sock`; in-job `docker info` exits 0 with `["name=seccomp,profile=builtin","name=rootless","name=cgroupns"]`; job passed and candidate landed. `.scratch/tmp/q19-green.log`. |
+| Q19 mutant | RED → GREEN | One-line sabotage drops the flag. The same live inspection again observes the host rootful bind and prints `Q19 RED: act child binds the host rootful socket`. Restoring the flag gives candidate `0v4.cu799.2nnrn.9hbt9.l8g5q.gttio`, job `0v6.3bvpj.ku60j.rg1mc.vr3h0.nei03`, the correct rootless source and `name=rootless`. `.scratch/tmp/q19-{mutant-red,restored-green}.log`; reusable `p2-socket-regression.sh` is included in P1. |
+| Q16 | RED → GREEN | One-line `web-authorized` sabotage: candidate list/detail, policy, key, and action return 200 anonymously; log returns 302. Restored: all six web routes return 401 anonymously; session reads/actions return 200 and log returns 302. The existing daemon attempt reader independently returns anonymous 401/session 200 in both phases. Tripwire `Q16 RED: anonymous CI reads and action accepted`; `.scratch/tmp/q16-{red,green}.log`. |
+| Browser actions/pagination | PASS | Actual `~dys` peer PR in `web-actions-514882346991`: untrusted rerun keeps head/base/trust and has no attempts. 54 candidates paginate 50/4, no duplicates; malformed cursor 400, absent cursor 404; Older/Newest work in Chromium. Approve creates trusted candidate `0v4.d9pa5.rleeo.4u7gp.t22i4.uechg`, old skipped with approval reason, real job passes and lands. `.scratch/tmp/web-actions.log`. |
+
+The browser exercise exposed a transient candidate-to-list render using the
+previous response shape. The list now waits for a list response before
+rendering; the same navigation passes in the complete browser exercise.
+Q14 and Q15 were repeated after this fix (`q14-final.log`, `q15-final.log`).
+Frontend tests: **132/132**; production build succeeds. Go unit/race/vet
+checks pass. §7 and §8 are removed from the questions file. The S5 commit
+contains this implementation and its Q14–Q16/Q19 evidence. S6's later cold
+regression is recorded in the following stage commit.
+
+The fixture-only first Q19 harness push correctly returned Git's staging
+refusal, which the new driver initially treated as a shell error. Its unused
+job was abandoned during runner shutdown. The driver now asserts that exact
+staging response; this shakedown is not counted as a RED or GREEN row.

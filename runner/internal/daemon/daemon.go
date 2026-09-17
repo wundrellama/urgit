@@ -542,6 +542,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		"-j", a.Job,
 		"-P", "ubuntu-latest=" + d.cfg.ActImage,
 		"--network", h.Network,
+		"--container-daemon-socket=" + d.cfg.DockerHost,
 		"--json", "--pull=false",
 		"--cache-server-path", cachePath,
 		"--artifact-server-path", "/work/artifacts",
