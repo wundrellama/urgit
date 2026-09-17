@@ -10,9 +10,10 @@
 #        log in the bucket and the daemon's saved stream carry `token is
 #        ***` and the value's length, never the value; the daemon log
 #        never carries the value (the --secret argument is redacted)
-#   Q10  an untrusted candidate under %restricted runs the same workflow
-#        with grants=~: the assignment line says 0 grants and the step
-#        sees an empty $TOKEN (length 0)
+#   Q10  an untrusted candidate (the stage poke for a pull request by a
+#        ship the ci-can-write peek refuses) under %restricted runs the
+#        same workflow with grants=~: the assignment line says 0 grants
+#        and the step sees an empty $TOKEN (length 0)
 #   Q11  the value is in no read: the attempt's outputs on the ship hold
 #        the scrubbed leak (***), the candidate/attempt/assignment scries,
 #        the credential-names scry, the attempt JSON route and the log
@@ -72,7 +73,11 @@ BASE=$(repo_master)
 git checkout -q -B "q10-contrib-$TS" master; set_workflows fixture-secret.yml; printf 'q10 %s\n' "$(date -Is)" >> README.md
 git add -A && git commit -qm "ci-p2 Q10: a contributor's revision using the secret"; HEAD=$(git rev-parse HEAD)
 git push -q origin "q10-contrib-$TS" 2>&1 | tail -1 >/dev/null; git checkout -q master
-"$dojo" ":urgit-ci &ci-action [%stage-candidate '$REPO' 'refs/heads/master' (rash '$HEAD' hex) (rash '$BASE' hex) ~sampel-palnet %session %untrusted ~]" 60 3 | tail -1 >/dev/null
+# the stage poke as %urgit sends it for a pull request by ~sampel-palnet, a
+# ship that cannot write the repository: %urgit-ci classes it through the
+# ci-can-write peek (%.n for a ship with no seat), so the candidate is
+# untrusted without the row saying so
+"$dojo" ":urgit-ci &ci-action [%stage-candidate '$REPO' 'refs/heads/master' (rash '$HEAD' hex) (rash '$BASE' hex) ~sampel-palnet %session ~]" 60 3 | tail -1 >/dev/null
 CID=$(dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' \`@ux\`(rash '$HEAD' hex) \`@ux\`(rash '$BASE' hex) %untrusted]))" | one '0v[0-9a-v.]+')
 check "staged %untrusted" '%untrusted' "$(cand_trust "$CID")"
 AID=$(wait_for_attempt "$CID" secret 180)
