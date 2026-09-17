@@ -17,16 +17,19 @@
 #   Q6   app/urgit-ci.hoon     a passed %untrusted candidate is asked to land
 #   Q8   app/urgit-ci.hoon     %approve-candidate accepts any actor
 #   Q10  app/urgit-ci.hoon     grants are released to an %untrusted job too
-#   Q11  app/urgit-ci.hoon     handle-event keeps the event unscrubbed: act's
+#   Q11  runner relay.go       the daemon's line scrub is skipped: act's
 #                              set-output line carries the raw value in `arg`
-#                              (measured), so the attempt's outputs would hold it
+#                              (measured), so the saved stream and the bucket
+#                              object carry it (the ship's own scrub still keeps
+#                              its state clean: that layer is the event vector's)
 #   Q12  runner daemon.go      the assignment signature is not verified
 #   Q13  runner daemon.go      an expired grant is still passed to act
-#   Q16  app/urgit-ci.hoon     the ci/* session check is skipped
+#   Q16  app/urgit-ci.hoon     ++viewer, the one session check every ci/* read
+#                              and the action route ask, answers yes to anyone
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null || { echo "q-mutants.sh: $PWD is not a git work tree"; exit 1; }
-FILES=(desk/lib/ci-storage.hoon desk/app/urgit-ci.hoon desk/app/urgit.hoon runner/internal/daemon/daemon.go)
+FILES=(desk/lib/ci-storage.hoon desk/app/urgit-ci.hoon desk/app/urgit.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go)
 case "${1:-}" in
   apply)
     if ! git diff --quiet -- "${FILES[@]}"; then
@@ -54,15 +57,18 @@ edits = [
  ("Q10", "desk/app/urgit-ci.hoon",
   "    ?.  ?&(?=(%job kind.assignment) =(%trusted trust.assignment))  ~\n",
   "    ?.  ?=(%job kind.assignment)  ~\n"),
- ("Q11", "desk/app/urgit-ci.hoon",
-  "  =/  =event:ci  (scrub:ci-event p.parsed (credential-values (candidate-repo candidate.u.found)))\n",
-  "  =/  =event:ci  p.parsed\n"),
+ ("Q11", "runner/internal/relay/relay.go",
+  "\tif len(live) == 0 {\n\t\treturn stream\n",
+  "\tif true {\n\t\treturn stream\n"),
  ("Q12", "runner/internal/daemon/daemon.go",
   "\t\tif err := d.verifyAssignment(assignment); err != nil {\n",
   "\t\tif err := d.verifyAssignment(assignment); err != nil && false {\n"),
  ("Q13", "runner/internal/daemon/daemon.go",
   "\t\tif g.Expiry <= now {\n",
   "\t\tif false {\n"),
+ ("Q16", "desk/app/urgit-ci.hoon",
+  "++  viewer\n  |=  req=inbound-request:eyre\n  ^-  ?\n  authenticated.req\n",
+  "++  viewer\n  |=  req=inbound-request:eyre\n  ^-  ?\n  %.y\n"),
 ]
 texts = {}
 for row, path, old, new in edits:
@@ -92,9 +98,10 @@ PY
       Q6)  echo "master unmoved (restricted check cannot land): FAIL (observed:" ;;
       Q8)  echo "approval by ~sampel-palnet refused: FAIL (observed: accepted (>=)" ;;
       Q10) echo "grants=~ on the untrusted assignment: FAIL (observed: grants 1 (TOKEN)" ;;
-      Q11) echo "the attempt's recorded output is the scrubbed leak: FAIL (observed: 'q9-hunter2-" ;;
+      Q11) echo "the log route's object: grep -c value = 0: FAIL (observed: 1" ;;
       Q12) echo "daemon b prepared no sandbox (no work): FAIL (observed: 1" ;;
       Q13) echo "expired grant refused by the daemon: FAIL (observed: 0" ;;
+      Q16) echo "/candidates without a session -> 401: FAIL (observed: 200" ;;
       *) echo "q-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

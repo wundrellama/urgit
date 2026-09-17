@@ -690,3 +690,27 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .profile-repo-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .fork-urgit-link { max-width: 148px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* CI tab (BRIEF-CI-P2 D6) */
+.ci-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.ci-row, .ci-attempt-row { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr 1fr 1fr 1.2fr; gap: 0.75rem; align-items: center; padding: 0.5rem 0.75rem; border-radius: 6px; text-align: left; }
+.ci-candidate { background: none; border: 1px solid var(--border, #e2e2e2); color: inherit; cursor: pointer; font: inherit; }
+.ci-candidate:hover { background: var(--hover, rgba(0, 0, 0, 0.04)); }
+.ci-attempt-row { border-bottom: 1px solid var(--border, #e2e2e2); }
+.ci-pips { display: inline-flex; gap: 0.25rem; }
+.ci-pip { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #bbb; display: inline-block; }
+.ci-pip.good { background: #2e8b57; }
+.ci-pip.bad { background: #c0392b; }
+.ci-pip.warn { background: #d4a017; }
+.ci-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.5rem 1.5rem; margin: 0.75rem 0; }
+.ci-facts div { display: flex; gap: 0.5rem; }
+.ci-facts dt { font-weight: 600; min-width: 5.5rem; }
+.ci-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ci-log { margin-top: 1rem; }
+.ci-log details { margin: 0.25rem 0; }
+.ci-log-lines { max-height: 32rem; overflow: auto; font-size: 0.85rem; line-height: 1.4; margin: 0; }
+.ci-line.good { color: #2e8b57; }
+.ci-line.bad { color: #c0392b; }
+.ci-branch-policy { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.ci-radio { display: flex; flex-direction: column; gap: 0.25rem; }
+.ci-credential-form { margin-top: 0.75rem; }

@@ -1101,6 +1101,15 @@
   ?~  bearer  ~
   `(shas %ci-bearer u.bearer)
 ::
+::  a viewer of the web surface (D6) is the ship's own session; every
+::  ci/* read and the action route ask this one arm, so the fence is one
+::  line.  a daemon bearer is not a viewer.
+::
+++  viewer
+  |=  req=inbound-request:eyre
+  ^-  ?
+  authenticated.req
+::
 ++  daemon-authorized
   |=  [req=inbound-request:eyre =daemon:ci]
   ^-  ?
@@ -1460,6 +1469,32 @@
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-key eyre-id req)
+  ::  the web surface (D6): every read and the action route need the
+  ::  ship session; a daemon bearer is not a viewer
+  ::
+  ?:  ?=([%apps %urgit %api %ci %action ~] site)
+    ?.  =(%'POST' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-web-action eyre-id req)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %candidates ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-candidates eyre-id req i.t.t.t.t.t.site args.line)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %policy ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-policy eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %credentials ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-credentials eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %candidate @ ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    =/  segment=@t
+      ?~  ext.line  i.t.t.t.t.t.site
+      (rap 3 ~[i.t.t.t.t.t.site '.' u.ext.line])
+    (handle-candidate-read eyre-id req segment)
   (emit (give-error eyre-id 404 'ci route not found'))
 ::
 ::  enrollment: the token is the credential.  its hash must match a
@@ -1810,7 +1845,7 @@
 ++  handle-log-read
   |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
   ^-  out
-  ?.  authenticated.req
+  ?.  (viewer req)
     (emit (give-error eyre-id 401 'session required'))
   =/  attempt-id=(unit @uv)  (slaw %uv segment)
   =/  found=(unit attempt:ci)  ?~(attempt-id ~ (~(get by attempts) u.attempt-id))
@@ -1825,6 +1860,263 @@
   %+  give-simple-payload:app:server  eyre-id
   [[302 ~[['location' u.url] ['cache-control' 'no-store']]] ~]
 ::
+::  the candidate as the CI tab reads it (D6): the record, with times as
+::  unix seconds, and each attempt's status, timing and whether a log
+::  was recorded.  no credential value can be here: none is on either.
+::
+++  attempt-summary-json
+  |=  =attempt:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['attempt' s+(scot %uv id.attempt)]
+      ['kind' s+kind.attempt]
+      ['workflow' ?~(workflow.attempt ~ s+u.workflow.attempt)]
+      ['job' ?~(job.attempt ~ s+u.job.attempt)]
+      ['status' s+status.attempt]
+      ['trust' s+trust.attempt]
+      ['daemon' ?:(=(0v0 daemon.attempt) ~ s+(scot %uv daemon.attempt))]
+      ['events' (numb:enjs:format events.attempt)]
+      ['reason' ?~(reason.attempt ~ s+u.reason.attempt)]
+      ['started' (numb:enjs:format (unix-seconds started.attempt))]
+      ['finished' ?~(finished.attempt ~ (numb:enjs:format (unix-seconds u.finished.attempt)))]
+      ['log' (object-ref-json log.attempt)]
+  ==
+::
+++  candidate-json
+  |=  =candidate:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.candidate)]
+      ['repo' s+repo.candidate]
+      ['ref' s+ref.candidate]
+      ['head' s+(oid-text:git-codec head.candidate)]
+      ['base' s+(oid-text:git-codec base.candidate)]
+      ['candidate' ?~(candidate.candidate ~ s+(oid-text:git-codec u.candidate.candidate))]
+      ['conflict' b+conflict.candidate]
+      ['status' s+status.candidate]
+      ['trust' s+trust.candidate]
+      ['actor' s+(scot %p actor.candidate)]
+      ['via' s+via.candidate]
+      ['pull' ?~(pull.candidate ~ (numb:enjs:format u.pull.candidate))]
+      ['verdictReason' ?~(verdict-reason.candidate ~ s+u.verdict-reason.candidate)]
+      ['planned' b+?=(^ plan.candidate)]
+      ['created' (numb:enjs:format (unix-seconds created.candidate))]
+      ['updated' (numb:enjs:format (unix-seconds updated.candidate))]
+      :-  'attempts'
+      :-  %a
+      %+  murn  attempts.candidate
+      |=  id=attempt-id:ci
+      ^-  (unit json)
+      =/  found=(unit attempt:ci)  (~(get by attempts) id)
+      ?~  found  ~
+      `(attempt-summary-json u.found)
+  ==
+::
+::  a repository's candidates newest first, at most fifty, from before
+::  the candidate `before` names when the query carries one
+::
+++  handle-candidates
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t args=(list [@t @t])]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  before=(unit candidate:ci)
+    =/  named=(unit @t)  (get-header:http 'before' args)
+    ?~  named  ~
+    =/  id=(unit @uv)  (slaw %uv u.named)
+    ?~  id  ~
+    (~(get by candidates) u.id)
+  =/  mine=(list candidate:ci)
+    %+  sort
+      %+  skim  ~(val by candidates)
+      |=  c=candidate:ci
+      ?&  =(repo repo.c)
+          ?~  before  %.y
+          (lth created.c created.u.before)
+      ==
+    |=([a=candidate:ci b=candidate:ci] (gth created.a created.b))
+  =/  page=(list candidate:ci)  (scag 50 mine)
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      ['candidates' [%a (turn page candidate-json)]]
+      ['more' b+(gth (lent mine) 50)]
+  ==
+::
+++  handle-candidate-read
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit candidate:ci)  ?~(id ~ (~(get by candidates) u.id))
+  ?~  found
+    (emit (give-error eyre-id 404 'no such candidate'))
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['candidate' (candidate-json u.found)]
+      :-  'attempts'
+      :-  %a
+      %+  murn  attempts.u.found
+      |=  id=attempt-id:ci
+      ^-  (unit json)
+      =/  att=(unit attempt:ci)  (~(get by attempts) id)
+      ?~  att  ~
+      `(attempt-summary-json u.att)
+  ==
+::
+::  the repository's CI policy for the settings page: which refs require
+::  CI and what an untrusted revision gets
+::
+++  handle-policy
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      ['untrusted' s+(~(gut by policies) repo %approval)]
+      :-  'ciProtected'
+      :-  %a
+      %+  murn  ~(tap in ci-protected)
+      |=  [r=@t ref=@t]
+      ?.(=(r repo) ~ `s+ref)
+  ==
+::
+::  the repository's credentials by name, scope and environments: the
+::  value is never in a reply (D4)
+::
+++  handle-credentials
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      :-  'credentials'
+      :-  %a
+      %+  turn  (credential-names repo)
+      |=  [name=@t scope=?(%job %env) envs=(set @t) created=@da]
+      %-  pairs:enjs:format
+      :~  ['name' s+name]
+          ['scope' s+scope]
+          ['envs' [%a (turn ~(tap in envs) |=(e=@t s+e))]]
+          ['created' (numb:enjs:format (unix-seconds created))]
+      ==
+  ==
+::
+::  the operator actions as JSON (D6): the poke, with the acting ship
+::  always this ship's owner (the session), applied under mule so a
+::  refusal answers 409 with its reason instead of dropping the request
+::
+++  handle-web-action
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon
+    (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  parsed=(each action:ci @t)  (parse-web-action u.jon)
+  ?:  ?=(%| -.parsed)
+    (emit (give-error eyre-id 400 p.parsed))
+  =/  applied=(each out tang)  (mule |.((handle-action p.parsed)))
+  ?:  ?=(%| -.applied)
+    ::  the refusal's own words: the first quoted cord in the trace (a
+    ::  ~| message renders as 'text'), else the trace's first line
+    ::
+    =/  lines=(list @t)
+      %+  turn  p.applied
+      |=  =tank
+      (crip (of-wall:format (wash [0 200] tank)))
+    =/  quoted=(list @t)
+      (skim lines |=(line=@t ?&(!=('' line) =('\'' (end [3 1] line)))))
+    =/  reason=@t
+      ?^  quoted  i.quoted
+      ?^  lines  i.lines
+      'action refused'
+    (emit (give-error eyre-id 409 (strip-quotes reason)))
+  =.  state  state.p.applied
+  =.  polls  polls.p.applied
+  (emit (weld cards.p.applied (give-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['action' s+-.p.parsed]]))))
+::
+++  strip-quotes
+  |=  text=@t
+  ^-  @t
+  =/  chars=tape  (trip text)
+  =.  chars  ?:(&(?=(^ chars) =('\'' i.chars)) t.chars chars)
+  =.  chars  (flop chars)
+  =.  chars  ?:(&(?=(^ chars) =('\0a' i.chars)) t.chars chars)
+  =.  chars  ?:(&(?=(^ chars) =('\'' i.chars)) t.chars chars)
+  (crip (flop chars))
+::
+++  parse-web-action
+  |=  jon=json
+  ^-  (each action:ci @t)
+  =/  kind=(unit @t)  (string-at 'action' jon)
+  ?~  kind  [%| 'action is required']
+  =/  id=(unit @uv)
+    =/  text=(unit @t)  (string-at 'id' jon)
+    ?~(text ~ (slaw %uv u.text))
+  =/  repo=(unit @t)  (string-at 'repo' jon)
+  =/  name=(unit @t)  (string-at 'name' jon)
+  ?+    u.kind  [%| 'unknown action']
+      %approve-candidate
+    ?~  id  [%| 'id must be a candidate id']
+    [%& [%approve-candidate u.id our.bowl]]
+  ::
+      %rerun-candidate
+    ?~  id  [%| 'id must be a candidate id']
+    [%& [%rerun-candidate u.id]]
+  ::
+      %set-ci-protected
+    =/  ref=(unit @t)  (string-at 'ref' jon)
+    =/  protected=(unit ?)
+      ?.  ?=([%o *] jon)  ~
+      =/  value=(unit json)  (~(get by p.jon) 'protected')
+      ?~  value  ~
+      ?.  ?=([%b *] u.value)  ~
+      `p.u.value
+    ?:  |(?=(~ repo) ?=(~ ref) ?=(~ protected))  [%| 'repo, ref and protected are required']
+    [%& [%set-ci-protected u.repo u.ref u.protected]]
+  ::
+      %set-untrusted-policy
+    =/  policy=(unit @t)  (string-at 'policy' jon)
+    ?~  repo  [%| 'repo is required']
+    ?+  policy  [%| 'policy must be approval or restricted']
+      [~ %approval]    [%& [%set-untrusted-policy u.repo %approval]]
+      [~ %restricted]  [%& [%set-untrusted-policy u.repo %restricted]]
+    ==
+  ::
+      %set-credential
+    =/  value=(unit @t)  (string-at 'value' jon)
+    =/  scope=(unit @t)  (string-at 'scope' jon)
+    =/  envs=(set @t)
+      ?.  ?=([%o *] jon)  ~
+      =/  list=(unit json)  (~(get by p.jon) 'envs')
+      ?~  list  ~
+      ?.  ?=([%a *] u.list)  ~
+      %-  silt
+      %+  murn  p.u.list
+      |=  item=json
+      ?.(?=([%s *] item) ~ `p.item)
+    ?:  |(?=(~ repo) ?=(~ name) ?=(~ value))  [%| 'repo, name and value are required']
+    ?+  scope  [%| 'scope must be job or env']
+      [~ %job]  [%& [%set-credential u.repo u.name u.value %job envs]]
+      [~ %env]  [%& [%set-credential u.repo u.name u.value %env envs]]
+    ==
+  ::
+      %delete-credential
+    ?:  |(?=(~ repo) ?=(~ name))  [%| 'repo and name are required']
+    [%& [%delete-credential u.repo u.name]]
+  ==
+::
 ::  the CI key's public half and the ship's certificate over it (D5):
 ::  what a verifier holds.  neither private key, nor the ring, is ever
 ::  answered by any route or scry.
@@ -1832,7 +2124,7 @@
 ++  handle-key
   |=  [eyre-id=@ta req=inbound-request:eyre]
   ^-  out
-  ?.  authenticated.req
+  ?.  (viewer req)
     (emit (give-error eyre-id 401 'session required'))
   ?~  signing
     (emit (give-error eyre-id 503 'the CI signing key is not generated'))

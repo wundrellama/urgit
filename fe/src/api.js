@@ -360,3 +360,43 @@ export async function waitForPeerForge(requestId, { interval = 500 } = {}) {
     if (!request.active) return request
   }
 }
+
+// the native CI surface (BRIEF-CI-P2 D6): the same origin, the second
+// API base %urgit-ci binds under /apps/urgit/api/ci; every read and the
+// action route are session-authorized like the rest of `api`
+const CI = `${BASE}/ci`
+
+async function ciRequest(path, options = {}) {
+  const response = await fetch(`${CI}${path}`, {
+    credentials: 'same-origin',
+    headers: options.body ? { 'content-type': 'application/json', ...options.headers } : options.headers,
+    ...options,
+  })
+  const text = await response.text()
+  let data = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = { error: text || `HTTP ${response.status}` }
+  }
+  if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`)
+  return data
+}
+
+export const ci = {
+  candidates: (name, before) => ciRequest(`/repository/${encodeURIComponent(name)}/candidates${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+  candidate: (id) => ciRequest(`/candidate/${encodeURIComponent(id)}`),
+  policy: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/policy`),
+  credentials: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/credentials`),
+  key: () => ciRequest('/key'),
+  // the poke as JSON; the ship answers 200 {ok} or the refusal
+  action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
+  // the log route answers a 302 to a presigned store URL; the browser
+  // follows it with no headers of its own and the text is act's jsonl
+  logUrl: (attempt) => `${CI}/attempt/${encodeURIComponent(attempt)}/log`,
+  log: async (attempt) => {
+    const response = await fetch(`${CI}/attempt/${encodeURIComponent(attempt)}/log`, { credentials: 'same-origin', redirect: 'follow' })
+    if (!response.ok) throw new Error(`log: HTTP ${response.status}`)
+    return response.text()
+  },
+}

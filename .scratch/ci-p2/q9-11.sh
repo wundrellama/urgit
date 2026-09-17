@@ -58,6 +58,9 @@ fi
 source "$TMP/q9.env" 2>/dev/null; VALUE="${Q9_VALUE:-$VALUE}"
 if [ "$which_row" = q10 ]; then
 row "Q10: an untrusted attempt gets grants=~ even with the credential set"
+# the row stores its own credential (a fresh repository in the mutant
+# phases has none), so the withheld grant is the class's doing
+"$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'TOKEN' '$VALUE' %job ~]" 60 3 | tail -1 >/dev/null
 "$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %restricted]" 60 3 | tail -1 >/dev/null
 sync_clone
 BASE=$(repo_master)
