@@ -10,8 +10,10 @@
 # carries it. Hoon mutants need a rebuild; Go mutants need `go build`
 # and a daemon restart (q-negatives.sh does both). Never committed.
 # `apply` with row names applies those rows' mutants only: Q5 and Q8 run
-# on the merge gate that Q5a's mutant removes, so the battery sabotages
-# them in a second group (q-negatives.sh passes its rows through).
+# on the merge gate that Q5a's mutant removes, and Q8 approves the
+# untrusted candidate that Q5's mutant classes trusted, so the battery
+# sabotages each of the two on its own (q-negatives.sh passes its rows
+# through).
 #
 #   Q4   lib/ci-storage.hoon   upload-name-allowed: every name passes
 #   Q5a  app/urgit.hoon        the web merge writes the ref even when the

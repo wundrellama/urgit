@@ -7,11 +7,13 @@
 # step that exits non-zero.
 source "$(dirname "$0")/lib.sh"
 set +e
-# the negatives in two groups: Q5 and Q8 run on the merge gate that Q5a's
-# mutant removes, so their sabotage is applied on its own
+# the negatives in three groups: Q5 and Q8 run on the merge gate that
+# Q5a's mutant removes, and Q8 approves the untrusted candidate that Q5's
+# mutant classes trusted, so each of the two is sabotaged on its own
 GROUP_A="Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16"
-GROUP_B="Q5 Q8"
-steps=(p2-setup "q2-4 q2" "q2-4 q3" "q2-4 q4" "q5-8 q5a" "q5-8 q5" "q5-8 q6" "q5-8 q7" "q5-8 q8" "q9-11 q9" "q9-11 q10" "q9-11 q11" "q12-13 q12" "q12-13 q13" q18 "q14-16 q14" "q14-16 q15" "q14-16 q16" "q-negatives red $GROUP_A" "q-negatives green $GROUP_A" "q-negatives red $GROUP_B" "q-negatives green $GROUP_B" foreground)
+GROUP_B="Q5"
+GROUP_C="Q8"
+steps=(p2-setup "q2-4 q2" "q2-4 q3" "q2-4 q4" "q5-8 q5a" "q5-8 q5" "q5-8 q6" "q5-8 q7" "q5-8 q8" "q9-11 q9" "q9-11 q10" "q9-11 q11" "q12-13 q12" "q12-13 q13" q18 "q14-16 q14" "q14-16 q15" "q14-16 q16" "q-negatives red $GROUP_A" "q-negatives green $GROUP_A" "q-negatives red $GROUP_B" "q-negatives green $GROUP_B" "q-negatives red $GROUP_C" "q-negatives green $GROUP_C" foreground)
 for step in "${steps[@]}"; do
   cmd=${step%% *}; args=""; [ "$step" != "$cmd" ] && args=${step#* }
   printf '\n\n################ %s  (%s)\n' "$step" "$(date -Is)"
