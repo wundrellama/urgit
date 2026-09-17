@@ -330,7 +330,7 @@ values. Do not guess past any of them.
 
 ## Launch footer — opus
 
-- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `682c8cf` (re-freeze 2).
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `f7391cb` (re-freeze 3).
 - **First ship** `~dep`, HTTP port `8353`, pier `/var/home/michael/piers/urgit-ci-p2-dep`.
   **Second ship** (Q5–Q8, the non-writer PR author) `~put`, HTTP port `8355`, pier
   `/var/home/michael/piers/urgit-ci-p2-put`. Neither pier may exist before your first boot.
