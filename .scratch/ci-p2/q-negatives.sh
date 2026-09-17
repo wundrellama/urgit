@@ -11,7 +11,9 @@
 # and CI-protected, and keeps daemon a's identity when the ship still
 # knows it (the P1 ghost lesson), enrolling afresh only when it does not.
 # A prep step (Q2's push) gives the rows an attempt to work with; it is
-# not counted as a row.
+# not counted as a row. Only the rows being run are sabotaged: Q5 and Q8
+# need the merge gate Q5a's mutant removes, so the battery runs them as a
+# second group.
 source "$(dirname "$0")/lib.sh"
 set +e
 phase="${1:?usage: q-negatives.sh red|green|all [rows...]}"; shift
@@ -22,7 +24,7 @@ fi
 ROWS=("$@"); [ ${#ROWS[@]} = 0 ] && ROWS=(Q4)
 case "$phase" in
   red)
-    want=FAIL; "$P2/q-mutants.sh" apply || exit 1
+    want=FAIL; "$P2/q-mutants.sh" apply "${ROWS[@]}" || exit 1
     trap 'rc=$?; echo "== red phase exit ($rc): reverting the mutants in the working tree"; "$P2/q-mutants.sh" revert; exit $rc' EXIT
     ;;
   green) want=PASS; "$P2/q-mutants.sh" revert || exit 1 ;;

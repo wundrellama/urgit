@@ -920,65 +920,6 @@
   ?.  =(40 (met 3 text))  ~
   (oid-at:git-protocol [40 text] 0)
 ::
-::  whether a ship can write a repository, for %urgit-ci's ci-can-write
-::  peek (D3, fence touch 5): can-write:git-access over the owner, the
-::  listed writers and the requester's %groups seat.  on-peek cannot reach
-::  on-poke's helper core, where repository-writable and group-seat live,
-::  so the seat is read here the way group-seat reads it — gall's
-::  liveness, the group's existence, then the seat and the mirror's
-::  initialised bit, each under mule — and a group that cannot be read
-::  grants nothing.  the rule itself is the one repository-writable applies.
-::
-++  ci-can-write
-  |=  [our=@p now=@da repo=repository:git requester=@p]
-  ^-  ?
-  =/  group=capability:git
-    ?~  group-policy.repo  %none
-    ?:  =(requester owner.repo)  %none
-    =/  flag=[host=@p name=@tas]  group.u.group-policy.repo
-    =/  prefix=path  /(scot %p our)/groups/(scot %da now)
-    =/  flag-path=path  /groups/(scot %p host.flag)/[name.flag]
-    =/  peek
-      |=  [under=path rest=path]
-      ^-  (unit *)
-      =/  live=(each ? tang)
-        %-  mule  |.
-        .^(? %gu (weld prefix /$))
-      ?.  ?&(?=(%& -.live) p.live)  ~
-      =/  known=(each ? tang)
-        %-  mule  |.
-        .^(? %gu (weld prefix flag-path))
-      ?.  ?&(?=(%& -.known) p.known)  ~
-      =/  raw=(each * tang)
-        %-  mule  |.
-        .^(* %gx (weld prefix (weld under (weld flag-path rest))))
-      ?.  ?=(%& -.raw)  ~
-      `p.raw
-    =/  seat-of
-      |=  who=@p
-      ^-  (unit group-seat:git)
-      =/  raw=(unit *)  (peek / /seats/(scot %p who)/noun)
-      ?~  raw  ~
-      =/  seat=(each (unit group-seat:git) tang)
-        %-  mule  |.
-        ;;((unit group-seat:git) u.raw)
-      ?.  ?=(%& -.seat)  ~
-      p.seat
-    =/  net=?(%pub %sub)  ?:(=(our host.flag) %pub %sub)
-    =/  init=?
-      ?:  ?=(%pub net)  %.y
-      =/  raw=(unit *)  (peek /v2/ui /noun)
-      ?~  raw  %.n
-      =/  ui=(each [* init=? member-count=@ud] tang)
-        %-  mule  |.
-        ;;([* init=? member-count=@ud] u.raw)
-      ?.  ?=(%& -.ui)  %.n
-      init.p.ui
-    =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our)))
-    ?.  (mirror-trusted:git-access net init seated)  %none
-    (group-capability:git-access group-policy.repo (seat-of requester))
-  (can-write:git-access owner.repo writers.repo group requester)
-::
 ++  ci-path
   |=  text=@t
   ^-  path
@@ -2287,9 +2228,11 @@
 =/  github-results  *(map @uv github-result)
 =/  webhook-in-flight  *(map @uv webhook-flight)
 ^-  agent:gall
+=<
 |_  =bowl:gall
 +*  this  .
     def   ~(. (default-agent this %|) bowl)
+    hc    ~(. +> bowl)
 ::
 ++  on-init
   ^-  (quip card _this)
@@ -2372,77 +2315,19 @@
   |=  [target=ship wire=wire packet=packet:git-peer]
   ^-  card
   [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
-::
-::  a guarded read of this ship's %groups: ~ unless %groups is running,
-::  knows the group, and answers the path without crashing.  each scry is
-::  guarded by one that cannot answer [~ ~], because that answer kills the
-::  event even under +mule on the current runtime: gall itself answers the
-::  /$ liveness check, and %groups answers /u/groups/<flag> with a loobean
-::  whether the group exists or not.  the path read is
-::  /<under>/groups/<host>/<name>/<rest>, and rest ends in the mark asked
-::  for: gall hands the answer over as-is when %groups serves that mark,
-::  and otherwise converts it through the %groups desk's marks at request
-::  time, so a read asks for the served mark where that is known.  the only
-::  arm that scries %groups
+::  the four %groups readers live in the door's helper core (fence touch
+::  5: on-peek reads repository-writable too); these keep every caller's
+::  spelling inside this core
 ::
 ++  group-peek
   |=  [group=[host=@p name=@tas] under=path rest=path]
   ^-  (unit *)
-  =/  prefix=path  /(scot %p our.bowl)/groups/(scot %da now.bowl)
-  =/  flag=path  /groups/(scot %p host.group)/[name.group]
-  =/  live=(each ? tang)
-    %-  mule  |.
-    .^(? %gu (weld prefix /$))
-  ?.  ?&(?=(%& -.live) p.live)  ~
-  =/  known=(each ? tang)
-    %-  mule  |.
-    .^(? %gu (weld prefix flag))
-  ?.  ?&(?=(%& -.known) p.known)  ~
-  =/  raw=(each * tang)
-    %-  mule  |.
-    .^(* %gx (weld prefix (weld under (weld flag rest))))
-  ?.  ?=(%& -.raw)  ~
-  `p.raw
-::
-::  the requester's seat in the repository's group, read from %groups in this
-::  event and never cached.  fails closed: anything short of a seat that
-::  soft-casts to our minimal shape is ~.
-::
-::  a group hosted here is authoritative.  a joined group is the host's
-::  mirror, believed only while %groups reports it initialised and this
-::  ship is still seated in it (+mirror-trusted); the initialised bit is
-::  the tail of the /v2/ui/groups/<flag> peek, [group init=? member-count=@ud],
-::  which %groups resets together with its copy whenever it rebuilds one.
-::  the only arm that turns %groups into a capability.
+  (group-peek:hc group under rest)
 ::
 ++  group-seat
   |=  [policy=(unit group-policy:git) requester=@p]
   ^-  (unit group-seat:git)
-  ?~  policy  ~
-  =/  group=[host=@p name=@tas]  group.u.policy
-  =/  seat-of
-    |=  who=@p
-    ^-  (unit group-seat:git)
-    =/  raw=(unit *)  (group-peek group / /seats/(scot %p who)/noun)
-    ?~  raw  ~
-    =/  seat=(each (unit group-seat:git) tang)
-      %-  mule  |.
-      ;;((unit group-seat:git) u.raw)
-    ?.  ?=(%& -.seat)  ~
-    p.seat
-  =/  net=?(%pub %sub)  ?:(=(our.bowl host.group) %pub %sub)
-  =/  init=?
-    ?:  ?=(%pub net)  %.y
-    =/  raw=(unit *)  (group-peek group /v2/ui /noun)
-    ?~  raw  %.n
-    =/  ui=(each [* init=? member-count=@ud] tang)
-      %-  mule  |.
-      ;;([* init=? member-count=@ud] u.raw)
-    ?.  ?=(%& -.ui)  %.n
-    init.p.ui
-  =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our.bowl)))
-  ?.  (mirror-trusted:git-access net init seated)  ~
-  (seat-of requester)
+  (group-seat:hc policy requester)
 ::
 ::  the ships seated in a group, for fanning discovery out to them.  the
 ::  group is believed on exactly the terms +group-seat believes it for
@@ -2465,9 +2350,7 @@
 ++  repository-group-capability
   |=  [repo=repository:git requester=@p]
   ^-  capability:git
-  ?~  group-policy.repo  %none
-  ?:  =(requester owner.repo)  %none
-  (group-capability:git-access group-policy.repo (group-seat group-policy.repo requester))
+  (repository-group-capability:hc repo requester)
 ::
 ++  repository-readable
   |=  [repo=repository:git requester=@p]
@@ -2484,12 +2367,7 @@
 ++  repository-writable
   |=  [repo=repository:git requester=@p]
   ^-  ?
-  %-  can-write:git-access
-  :*  owner.repo
-      writers.repo
-      (repository-group-capability repo requester)
-      requester
-  ==
+  (repository-writable:hc repo requester)
 ::
 ++  peer-activity-put
   |=  event=peer-activity
@@ -9435,7 +9313,7 @@
     !>  ^-  ?
     ?~  found  %.n
     ?~  actor  %.n
-    (ci-can-write our.bowl now.bowl u.found u.actor)
+    (repository-writable:hc u.found u.actor)
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path
@@ -10455,4 +10333,100 @@
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
   [(peer-ui-notify before after -.result) +.result]
 ++  on-fail   on-fail:def
+--
+::
+::  the door's helper core (fence touch 5): the %groups readers and the
+::  write rule, lifted unchanged out of on-poke's local core so on-peek can
+::  ask repository-writable for the ci-can-write peek.  the agent door's
+::  cast is exact, so they live here, reached as `:hc` with the bowl set.
+::
+|_  =bowl:gall
+::
+::  a guarded read of this ship's %groups: ~ unless %groups is running,
+::  knows the group, and answers the path without crashing.  each scry is
+::  guarded by one that cannot answer [~ ~], because that answer kills the
+::  event even under +mule on the current runtime: gall itself answers the
+::  /$ liveness check, and %groups answers /u/groups/<flag> with a loobean
+::  whether the group exists or not.  the path read is
+::  /<under>/groups/<host>/<name>/<rest>, and rest ends in the mark asked
+::  for: gall hands the answer over as-is when %groups serves that mark,
+::  and otherwise converts it through the %groups desk's marks at request
+::  time, so a read asks for the served mark where that is known.  the only
+::  arm that scries %groups
+::
+++  group-peek
+  |=  [group=[host=@p name=@tas] under=path rest=path]
+  ^-  (unit *)
+  =/  prefix=path  /(scot %p our.bowl)/groups/(scot %da now.bowl)
+  =/  flag=path  /groups/(scot %p host.group)/[name.group]
+  =/  live=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix /$))
+  ?.  ?&(?=(%& -.live) p.live)  ~
+  =/  known=(each ? tang)
+    %-  mule  |.
+    .^(? %gu (weld prefix flag))
+  ?.  ?&(?=(%& -.known) p.known)  ~
+  =/  raw=(each * tang)
+    %-  mule  |.
+    .^(* %gx (weld prefix (weld under (weld flag rest))))
+  ?.  ?=(%& -.raw)  ~
+  `p.raw
+::
+::  the requester's seat in the repository's group, read from %groups in this
+::  event and never cached.  fails closed: anything short of a seat that
+::  soft-casts to our minimal shape is ~.
+::
+::  a group hosted here is authoritative.  a joined group is the host's
+::  mirror, believed only while %groups reports it initialised and this
+::  ship is still seated in it (+mirror-trusted); the initialised bit is
+::  the tail of the /v2/ui/groups/<flag> peek, [group init=? member-count=@ud],
+::  which %groups resets together with its copy whenever it rebuilds one.
+::  the only arm that turns %groups into a capability.
+::
+++  group-seat
+  |=  [policy=(unit group-policy:git) requester=@p]
+  ^-  (unit group-seat:git)
+  ?~  policy  ~
+  =/  group=[host=@p name=@tas]  group.u.policy
+  =/  seat-of
+    |=  who=@p
+    ^-  (unit group-seat:git)
+    =/  raw=(unit *)  (group-peek group / /seats/(scot %p who)/noun)
+    ?~  raw  ~
+    =/  seat=(each (unit group-seat:git) tang)
+      %-  mule  |.
+      ;;((unit group-seat:git) u.raw)
+    ?.  ?=(%& -.seat)  ~
+    p.seat
+  =/  net=?(%pub %sub)  ?:(=(our.bowl host.group) %pub %sub)
+  =/  init=?
+    ?:  ?=(%pub net)  %.y
+    =/  raw=(unit *)  (group-peek group /v2/ui /noun)
+    ?~  raw  %.n
+    =/  ui=(each [* init=? member-count=@ud] tang)
+      %-  mule  |.
+      ;;([* init=? member-count=@ud] u.raw)
+    ?.  ?=(%& -.ui)  %.n
+    init.p.ui
+  =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our.bowl)))
+  ?.  (mirror-trusted:git-access net init seated)  ~
+  (seat-of requester)
+::
+++  repository-group-capability
+  |=  [repo=repository:git requester=@p]
+  ^-  capability:git
+  ?~  group-policy.repo  %none
+  ?:  =(requester owner.repo)  %none
+  (group-capability:git-access group-policy.repo (group-seat group-policy.repo requester))
+::
+++  repository-writable
+  |=  [repo=repository:git requester=@p]
+  ^-  ?
+  %-  can-write:git-access
+  :*  owner.repo
+      writers.repo
+      (repository-group-capability repo requester)
+      requester
+  ==
 --

@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: q-mutants.sh apply | revert | status | tripwire <row>
+# usage: q-mutants.sh apply [rows...] | revert | status | tripwire <row>
 # One-line sabotage per P2 negative row (Q4, Q5a, Q5, Q6, Q8, Q10, Q11,
 # Q12, Q13, Q16) that must turn the row RED, in P1's mutants.sh shape:
 # `apply` edits the working tree (each old text must occur exactly once,
@@ -9,6 +9,9 @@
 # line), and q-negatives.sh red counts a row RED only when it FAILS *and*
 # carries it. Hoon mutants need a rebuild; Go mutants need `go build`
 # and a daemon restart (q-negatives.sh does both). Never committed.
+# `apply` with row names applies those rows' mutants only: Q5 and Q8 run
+# on the merge gate that Q5a's mutant removes, so the battery sabotages
+# them in a second group (q-negatives.sh passes its rows through).
 #
 #   Q4   lib/ci-storage.hoon   upload-name-allowed: every name passes
 #   Q5a  app/urgit.hoon        the web merge writes the ref even when the
@@ -38,8 +41,9 @@ case "${1:-}" in
       echo "q-mutants.sh: uncommitted changes in ${FILES[*]}; commit them first (revert is git checkout --)" >&2
       exit 1
     fi
-    python3 - <<'PY'
+    python3 - "${@:2}" <<'PY'
 import sys
+only = set(sys.argv[1:])
 edits = [
  ("Q4", "desk/lib/ci-storage.hoon",
   "  ?:  =('log.jsonl' name)  %.y\n  ?:  =('summary.md' name)  %.y\n",
@@ -74,6 +78,8 @@ edits = [
 ]
 texts = {}
 for row, path, old, new in edits:
+    if only and row not in only:
+        continue
     s = texts.get(path) or open(path).read()
     n = s.count(old)
     if n != 1:
