@@ -76,7 +76,7 @@ When the ship no longer knows the bearer, the daemon logs `enrollment lost; re-e
 
 ## The sandbox
 
-Every attempt gets its own Docker network, work volume and runner container on the rootless daemon. The checkout enters the container by copy, never by bind mount. `act` runs inside that container with `--network` set to the attempt's own bridge. The rootless socket is the only mount, because `act` needs a Docker API to create job containers. That socket belongs to the rootless daemon, never to the host's rootful daemon.
+Every attempt gets its own Docker network, work volume and runner container on the rootless daemon. The checkout enters the container by copy, never by bind mount. `act` runs inside that container with `--network` set to the attempt's own bridge. The rootless socket is the only mount, because `act` needs a Docker API to create job containers. That socket belongs to the rootless daemon, never to the host's rootful daemon. The daemon also passes `--container-daemon-socket` with the configured rootless socket on every `act` invocation, so the socket `act` binds into each job container is the rootless daemon's by construction. Stock `act` would bind `/var/run/docker.sock`, the host's rootful socket, and rely on its permissions to refuse the job.
 
 The network is a user-defined bridge with NAT egress. Jobs reach the internet, because ERPit's workflows fetch `actions/cache@v4` and the urbit toolchain. The sandbox cannot reach the daemon's state file or config, the host's rootful Docker socket, or another attempt's network. Egress allow-listing arrives with the VM backend in P2.
 
