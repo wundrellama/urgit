@@ -8,20 +8,26 @@
 #        202 + candidate id, master unmoved, candidate %trusted with the
 #        pull number; it runs and lands; the pull reads merged only then.
 #        a PR to an unprotected branch still merges directly (200).
-#   Q5   a revision from a non-writer (the stage poke with a foreign actor
-#        and the %untrusted class %urgit's can-write decides; see the
-#        record's Deviations for why the harness pokes rather than opens
-#        a fork PR): %untrusted %pending, plan=~, zero attempts, and the
-#        daemon is offered nothing for it
+#   Q5   a pull request opened by the second galaxy (~put, not a writer)
+#        through the peer protocol — peer.sh: fork, push, pull-request —
+#        and merged by the first ship's writer through the web: 202 with
+#        trust untrusted and actor ~put; the candidate is %untrusted
+#        %pending with actor=~put and the pull number, plan=~, zero
+#        attempts, the daemon is offered nothing, master unmoved, the pull
+#        stays open
 #   Q6   %set-untrusted-policy %restricted: the same candidate is planned
 #        and run with trust=%untrusted on every attempt, its log lands
 #        under /untrusted/, it reaches %passed and cannot land: the
-#        verdict reason names trust and master is unmoved
-#   Q7   %approve-candidate by the writer: a new %trusted candidate of the
-#        same head and base, the old one %skipped 'superseded by
-#        approval'; the new one runs and lands
-#   Q8   %approve-candidate by a non-writer: refused; the candidate stays
-#        %untrusted and no trusted twin appears
+#        verdict reason names trust, master is unmoved, the pull is open
+#   Q7   %approve-candidate by the owner (POST ci/action, the session):
+#        a new %trusted candidate of the same head and base carrying the
+#        pull number, the old one %skipped 'superseded by approval'; the
+#        new one runs and lands and the pull reads merged
+#   Q8   approval is gated by ci-can-write: a second pull request from
+#        ~put is staged untrusted; %approve-candidate with actor ~put is
+#        refused 'actor cannot write <repo>'; with %urgit suspended the
+#        owner's approval is refused naming the unavailable read; with
+#        %urgit back the owner's approval is accepted and the twin runs
 source "$(dirname "$0")/lib.sh"
 source "$TMP/p2.env" 2>/dev/null
 which_row="${1:-q5a}"
@@ -46,16 +52,27 @@ push_branch() {
   git push -q origin "$1" 2>&1 | tail -1
   git checkout -q master
 }
-# stage_untrusted <head> <base>: the stage poke as %urgit sends it for a
-# fork pull request whose author cannot write the repository
+# fork_pr <branch> <title> [fixture]: the second galaxy forks $REPO (once
+# per run), pushes <branch> to its fork and opens the pull request against
+# $REPO's master; sets PR (the number on the first ship) and PR_HEAD
+FORK="$REPO-fork-$TS"
+fork_pr() {
+  if [ -z "${FORKED:-}" ]; then "$P1/peer.sh" fork "$REPO" "$FORK" | tail -2; FORKED=yes; fi
+  PR_HEAD=$("$P1/peer.sh" push "$FORK" "$1" "ci-p2: $2" "${3:-}" | tail -1)
+  PR=$("$P1/peer.sh" pull-request "$FORK" "$2" "refs/heads/$1" refs/heads/master | tail -1)
+  echo "-- pull request #$PR from ~$SHIP2 (head $PR_HEAD)"
+}
 # a 40-hex oid is not a dojo literal (@ux wants dots every four digits);
 # it is parsed from its text with hex
-stage_untrusted() {
-  "$dojo" ":urgit-ci &ci-action [%stage-candidate '$REPO' 'refs/heads/master' (rash '$1' hex) (rash '$2' hex) ~sampel-palnet %session %untrusted ~]" 60 3 | tail -1 >/dev/null
-  dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' \`@ux\`(rash '$1' hex) \`@ux\`(rash '$2' hex) %untrusted]))" | one '0v[0-9a-v.]+'
-}
 trusted_id() {  # <head> <base>
   dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' \`@ux\`(rash '$1' hex) \`@ux\`(rash '$2' hex)]))" | one '0v[0-9a-v.]+'
+}
+approve() {  # <cid> <actor>: the dojo poke, printing refused:<reason> or accepted
+  local out; out=$("$dojo" ":urgit-ci &ci-action [%approve-candidate $1 $2]" 60 14 | awk 1)
+  if printf '%s' "$out" | grep -q 'actor cannot write'; then echo "refused: actor cannot write $REPO"
+  elif printf '%s' "$out" | grep -q 'cannot be read'; then echo "refused: ci: %urgit cannot be read; the actor cannot be checked"
+  elif printf '%s' "$out" | grep -qE 'no such candidate|already trusted|already superseded'; then echo "refused: other"
+  else echo "accepted (>=)"; fi
 }
 # ---- Q5a ---------------------------------------------------------------------------------
 if [ "$which_row" = q5a ]; then
@@ -101,24 +118,31 @@ end_row Q5a
 fi
 # ---- Q5 ------------------------------------------------------------------------------------
 if [ "$which_row" = q5 ]; then
-row "Q5: a non-writer's revision stages %untrusted and waits: no plan, no attempts, no work offered"
+row "Q5: the second galaxy's pull request, merged by the writer, stages %untrusted and waits"
 "$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %approval]" 60 3 | tail -1 >/dev/null
 check "policy is %approval" '%approval' "$(dojo_value ".^(untrusted-policy:ci %gx /=urgit-ci=/policy/(scot %t '$REPO')/noun)" | one '^%[a-z]+$')"
 sync_clone
 BASE=$(repo_master)
-push_branch "q5-contrib-$TS" "ci-p2 Q5: a contributor's revision" fixture-pass.yml
-HEAD=$BOID
-CID=$(stage_untrusted "$HEAD" "$BASE")
-echo "-- staged $CID (head $HEAD onto $BASE, actor ~sampel-palnet)"
+fork_pr "q5-contrib-$TS" "Q5 contributor change" fixture-pass.yml
+check "the pull request's source ship is the second galaxy" "~$SHIP2" "$("$api" GET "/repository/$REPO" | sed 's/^[0-9]* //' | jq -r --argjson n "$PR" '.pullRequests[] | select(.number == $n) | .sourceShip')"
+r=$(merge_pr "$PR")
+echo "-- Merge -> $(printf '%s' "$r" | cut -c1-200)"
+check "merge -> 202" "202" "$(status_of "$r")"
+check "the answer's trust class" "untrusted" "$(jq_of "$r" .trust)"
+check "the answer's actor" "~$SHIP2" "$(jq_of "$r" .actor)"
+CID=$(jq_of "$r" .candidate)
 sleep 20
 check "candidate is %untrusted" '%untrusted' "$(cand_trust "$CID")"
+check "candidate actor is the second galaxy" "~$SHIP2" "$(dojo_value "actor:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CID/noun))" | one '^~[a-z-]+$')"
+check "candidate carries the pull number" "$PR" "$(cand_pull "$CID")"
 check "candidate is %pending" '%pending' "$(cand_status "$CID")"
 check "candidate was materialized (the object exists)" "yes" "$(case "$(cand_object "$CID")" in "[~ "*) echo yes;; *) echo no;; esac)"
 check "plan=~" "~" "$(dojo_value "plan:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CID/noun))" | one '^~$')"
 check "zero attempts" "0" "$(cand_attempt_ids "$CID" | wc -l)"
 check "the daemon was offered nothing for it" "0" "$(grep -c "candidate $CID" "$RUNNER_HOME/a/daemon.log")"
 check "master unmoved" "$BASE" "$(repo_master)"
-echo "export Q5_CID=$CID; export Q5_HEAD=$HEAD; export Q5_BASE=$BASE" > "$TMP/q5.env"
+check "the pull is still open" "open" "$(pull_state "$PR")"
+echo "export Q5_CID=$CID; export Q5_HEAD=$PR_HEAD; export Q5_BASE=$BASE; export Q5_PR=$PR; export Q5_FORK=$FORK" > "$TMP/q5.env"
 end_row Q5
 fi
 source "$TMP/q5.env" 2>/dev/null
@@ -139,42 +163,66 @@ check_contains "the daemon saw trust untrusted on the assignment" "trust untrust
 check_contains "verdict-reason names trust" "untrusted candidate cannot land" "$(cand_reason "$Q5_CID")"
 sleep 3
 check "master unmoved (restricted check cannot land)" "$Q5_BASE" "$(repo_master)"
+check "the pull is still open" "open" "$(pull_state "$Q5_PR")"
 check "eligibility scry answers %.n for the untrusted object" '%.n' "$(dojo_value ".^(? %gx /=urgit-ci=/eligible/(scot %t '$REPO')/(scot %t 'refs/heads/master')/(scot %t '$(cand_object_hex "$Q5_CID")')/noun)" | one '^%\.[yn]$')"
 end_row Q6
 fi
 # ---- Q7 ------------------------------------------------------------------------------------
 if [ "$which_row" = q7 ]; then
-row "Q7: approval by the writer — a trusted twin runs and lands; the untrusted one is superseded"
+row "Q7: approval by the owner — a trusted twin runs and lands; the untrusted one is superseded"
 TWIN=$(trusted_id "$Q5_HEAD" "$Q5_BASE")
-"$dojo" ":urgit-ci &ci-action [%approve-candidate $Q5_CID ~$SHIP]" 60 3 | tail -1 >/dev/null
+r=$(ci_action "{\"action\":\"approve-candidate\",\"id\":\"$Q5_CID\"}")
+echo "-- POST ci/action approve -> $(printf '%s' "$r" | cut -c1-120)"
+check "approve through POST ci/action (the session is the owner) -> 200" "200" "$(status_of "$r")"
 sleep 2
 check "old candidate is %skipped" '%skipped' "$(cand_status "$Q5_CID")"
 check "old verdict-reason" "'superseded by approval'" "$(cand_reason "$Q5_CID")"
 check "a trusted twin exists" '%trusted' "$(cand_trust "$TWIN")"
 check "twin has the same head" "$Q5_HEAD" "$(cand_head_hex "$TWIN")"
+check "twin carries the pull number" "$Q5_PR" "$(cand_pull "$TWIN")"
 st=$(wait_cand "$TWIN" '%passed|%failed|%unknown' 300)
 check "twin %passed" '%passed' "$st"
 sleep 3
 check "landed: master = the twin's object" "$(cand_object_hex "$TWIN")" "$(repo_master)"
 check "twin verdict-reason" "'landed'" "$(cand_reason "$TWIN")"
+check "the pull reads merged after landing" "merged" "$(pull_state "$Q5_PR")"
 check "old candidate still %skipped after the twin's attempts closed" '%skipped' "$(cand_status "$Q5_CID")"
 end_row Q7
 fi
 # ---- Q8 ------------------------------------------------------------------------------------
 if [ "$which_row" = q8 ]; then
-row "Q8: approval by a non-writer is refused"
+row "Q8: approval is gated by ci-can-write — the second galaxy is refused, an unreadable %urgit refuses, the owner is admitted"
 "$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %approval]" 60 3 | tail -1 >/dev/null
 sync_clone
 BASE=$(repo_master)
-push_branch "q8-contrib-$TS" "ci-p2 Q8: another contributor's revision" fixture-pass.yml
-CID=$(stage_untrusted "$BOID" "$BASE")
+# a fresh fork: the Q5 fork's master predates Q7's landing
+fork_pr "q8-contrib-$TS" "Q8 contributor change" fixture-pass.yml
+r=$(merge_pr "$PR")
+CID=$(jq_of "$r" .candidate)
 sleep 3
 check "staged %untrusted" '%untrusted' "$(cand_trust "$CID")"
-out=$("$dojo" ":urgit-ci &ci-action [%approve-candidate $CID ~sampel-palnet]" 60 12 | awk 1)
-if printf '%s' "$out" | grep -q 'only a writer can approve a candidate'; then answer="refused: only a writer can approve a candidate"; else answer="accepted (>=)"; fi
-check "approval by ~sampel-palnet refused" "refused: only a writer can approve a candidate" "$answer"
+check "ci-can-write answers %.n for the second galaxy" '%.n' "$(dojo_value ".^(? %gx /=urgit=/ci-can-write/(scot %t '$REPO')/(scot %p ~$SHIP2)/noun)" | one '^%\.[yn]$')"
+check "ci-can-write answers %.y for the owner" '%.y' "$(dojo_value ".^(? %gx /=urgit=/ci-can-write/(scot %t '$REPO')/(scot %p ~$SHIP)/noun)" | one '^%\.[yn]$')"
+check "approval by the second galaxy refused" "refused: actor cannot write $REPO" "$(approve "$CID" "~$SHIP2")"
 check "candidate still %untrusted %pending" '%untrusted %pending' "$(cand_trust "$CID") $(cand_status "$CID")"
-check "no trusted twin was staged" "~" "$(dojo_value ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$(trusted_id "$BOID" "$BASE")/noun)" | tr -d '\n' | cut -c1-1)"
+check "no trusted twin was staged" "~" "$(dojo_value ".^((unit candidate:ci) %gx /=urgit-ci=/candidate/$(trusted_id "$PR_HEAD" "$BASE")/noun)" | tr -d '\n' | cut -c1-1)"
+echo "-- %urgit suspended (|rein): the read is unavailable"
+"$dojo" '|rein %urgit [%| %urgit]' 60 3 | tail -1 >/dev/null
+sleep 2
+check "%urgit is not running" '%.n' "$(dojo_value '.^(? %gu /=urgit=/$)' | one '^%\.[yn]$')"
+check "the owner's approval is refused naming the unavailable read" "refused: ci: %urgit cannot be read; the actor cannot be checked" "$(approve "$CID" "~$SHIP")"
+"$dojo" '|rein %urgit [%& %urgit]' 60 3 | tail -1 >/dev/null
+for _ in $(seq 1 30); do [ "$(dojo_value '.^(? %gu /=urgit=/$)' | one '^%\.[yn]$')" = '%.y' ] && break; sleep 2; done
+check "%urgit is back" '%.y' "$(dojo_value '.^(? %gu /=urgit=/$)' | one '^%\.[yn]$')"
+check "candidate still %untrusted %pending" '%untrusted %pending' "$(cand_trust "$CID") $(cand_status "$CID")"
+check "the owner's approval is accepted" "accepted (>=)" "$(approve "$CID" "~$SHIP")"
+sleep 2
+TWIN=$(trusted_id "$PR_HEAD" "$BASE")
+check "old candidate %skipped" '%skipped' "$(cand_status "$CID")"
+check "the trusted twin exists" '%trusted' "$(cand_trust "$TWIN")"
+st=$(wait_cand "$TWIN" '%passed|%failed|%unknown' 300)
+check "twin %passed and landed" "%passed $(cand_object_hex "$TWIN")" "$st $(repo_master)"
+check "the pull reads merged" "merged" "$(pull_state "$PR")"
 end_row Q8
 fi
 [ "$NFAIL" = 0 ]

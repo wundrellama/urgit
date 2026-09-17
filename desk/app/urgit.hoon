@@ -920,6 +920,65 @@
   ?.  =(40 (met 3 text))  ~
   (oid-at:git-protocol [40 text] 0)
 ::
+::  whether a ship can write a repository, for %urgit-ci's ci-can-write
+::  peek (D3, fence touch 5): can-write:git-access over the owner, the
+::  listed writers and the requester's %groups seat.  on-peek cannot reach
+::  on-poke's helper core, where repository-writable and group-seat live,
+::  so the seat is read here the way group-seat reads it — gall's
+::  liveness, the group's existence, then the seat and the mirror's
+::  initialised bit, each under mule — and a group that cannot be read
+::  grants nothing.  the rule itself is the one repository-writable applies.
+::
+++  ci-can-write
+  |=  [our=@p now=@da repo=repository:git requester=@p]
+  ^-  ?
+  =/  group=capability:git
+    ?~  group-policy.repo  %none
+    ?:  =(requester owner.repo)  %none
+    =/  flag=[host=@p name=@tas]  group.u.group-policy.repo
+    =/  prefix=path  /(scot %p our)/groups/(scot %da now)
+    =/  flag-path=path  /groups/(scot %p host.flag)/[name.flag]
+    =/  peek
+      |=  [under=path rest=path]
+      ^-  (unit *)
+      =/  live=(each ? tang)
+        %-  mule  |.
+        .^(? %gu (weld prefix /$))
+      ?.  ?&(?=(%& -.live) p.live)  ~
+      =/  known=(each ? tang)
+        %-  mule  |.
+        .^(? %gu (weld prefix flag-path))
+      ?.  ?&(?=(%& -.known) p.known)  ~
+      =/  raw=(each * tang)
+        %-  mule  |.
+        .^(* %gx (weld prefix (weld under (weld flag-path rest))))
+      ?.  ?=(%& -.raw)  ~
+      `p.raw
+    =/  seat-of
+      |=  who=@p
+      ^-  (unit group-seat:git)
+      =/  raw=(unit *)  (peek / /seats/(scot %p who)/noun)
+      ?~  raw  ~
+      =/  seat=(each (unit group-seat:git) tang)
+        %-  mule  |.
+        ;;((unit group-seat:git) u.raw)
+      ?.  ?=(%& -.seat)  ~
+      p.seat
+    =/  net=?(%pub %sub)  ?:(=(our host.flag) %pub %sub)
+    =/  init=?
+      ?:  ?=(%pub net)  %.y
+      =/  raw=(unit *)  (peek /v2/ui /noun)
+      ?~  raw  %.n
+      =/  ui=(each [* init=? member-count=@ud] tang)
+        %-  mule  |.
+        ;;([* init=? member-count=@ud] u.raw)
+      ?.  ?=(%& -.ui)  %.n
+      init.p.ui
+    =/  seated=?  ?|(?=(%pub net) !=(~ (seat-of our)))
+    ?.  (mirror-trusted:git-access net init seated)  %none
+    (group-capability:git-access group-policy.repo (seat-of requester))
+  (can-write:git-access owner.repo writers.repo group requester)
+::
 ++  ci-path
   |=  text=@t
   ^-  path
@@ -6179,8 +6238,25 @@
     ?~  found
       :_  this
       (api-error eyre-id 404 'repository not found')
+    ::  the repository's policy for untrusted revisions, for the settings
+    ::  UI (D6, fence touch 3): %urgit-ci's answer under the same guards
+    ::  the CI gate reads it with, null when it cannot be read
+    ::
+    =/  ci-untrusted-policy=json
+      =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+      =/  live=(each ? tang)
+        %-  mule  |.
+        .^(? %gu (weld prefix /$))
+      ?.  ?&(?=(%& -.live) p.live)  ~
+      =/  raw=(each @tas tang)
+        %-  mule  |.
+        ;;(@tas .^(* %gx (weld prefix /policy/(scot %t name)/noun)))
+      ?.  ?=(%& -.raw)  ~
+      s+p.raw
+    =/  jon=json  (repository-json name u.found)
+    ?>  ?=([%o *] jon)
     :_  this
-    (api-json eyre-id 200 (repository-json name u.found))
+    (api-json eyre-id 200 [%o (~(put by p.jon) 'ciUntrustedPolicy' ci-untrusted-policy)])
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %repository @ %issues ~] site)
       ==
@@ -7463,8 +7539,10 @@
     ?:  p.ci-protected
       =/  =trust:ci
         ?:((repository-writable u.found source-ship.pull) %trusted %untrusted)
-      ::  the id %urgit-ci will give the candidate (its rule: the trusted
-      ::  id is the head and base alone, the untrusted one adds the class)
+      ::  the class %urgit-ci will find through the ci-can-write peek —
+      ::  the same rule, so the id it will give the candidate is known
+      ::  here (its rule: the trusted id is the head and base alone, the
+      ::  untrusted one adds the class)
       ::
       =/  id=@uv
         ?:  =(%trusted trust)  (sham [name target-ref.pull head.pull u.current])
@@ -7472,7 +7550,7 @@
       :_  this
       :-  :*  %pass  /ci/stage/(scot %uv id)
               %agent  [our.bowl %urgit-ci]  %poke  %ci-action
-              !>(`action:ci`[%stage-candidate name target-ref.pull head.pull u.current source-ship.pull %session trust `number.pull])
+              !>(`action:ci`[%stage-candidate name target-ref.pull head.pull u.current source-ship.pull %session `number.pull])
           ==
       %^  api-json  eyre-id  202
       %-  pairs:enjs:format
@@ -8775,14 +8853,15 @@
       ::  ship's own session, or the owner by delegation through the
       ::  write token, since write-authorized admits nothing else
       ::
-      ::  both are writers (write-authorized admitted the push), so the
-      ::  candidate is trusted (D3); a push stages no pull request
+      ::  both are writers (write-authorized admitted the push), which
+      ::  %urgit-ci confirms through ci-can-write (D3); a push stages no
+      ::  pull request (fence touch 4: the pull slot is ~)
       ::
       =/  actor=[@p via:ci]
         ?:(authenticated.req [our.bowl %session] [owner.u.found %token])
       :*  %pass  /ci/stage/(scot %uv id)
           %agent  [our.bowl %urgit-ci]  %poke  %ci-action
-          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate -.actor +.actor %trusted ~])
+          !>(`action:ci`[%stage-candidate repo-name ref.u.stage.u.gate head.u.stage.u.gate base.u.stage.u.gate -.actor +.actor ~])
       ==
     %+  give-simple-payload:app:server  eyre-id
     (receive-payload 'ok' (receive-results commands.u.parsed %.n message.u.gate))
@@ -9341,6 +9420,22 @@
     =/  tip=(unit oid:git)  (~(get by refs.u.found) ref)
     ?~  tip  ~
     `[u.tip ?=(^ binding.u.found)]
+  ::
+      ::  whether a ship can write a repository (D3, fence touch 5): the
+      ::  rule repository-writable applies — owner, listed writer, or a
+      ::  %write group seat — for a public or private repository; %.n for
+      ::  a repository this ship does not hold.  %urgit-ci reads it for the
+      ::  trust class at staging and for approval.
+      ::
+      [%x %ci-can-write @ @ ~]
+    =/  name=@t  (ci-segment i.t.t.path)
+    =/  actor=(unit @p)  (slaw %p i.t.t.t.path)
+    =/  found=(unit repository:git)  (~(get by repositories) name)
+    :^  ~  ~  %noun
+    !>  ^-  ?
+    ?~  found  %.n
+    ?~  actor  %.n
+    (ci-can-write our.bowl now.bowl u.found u.actor)
   ::
       [%x %repository @ %files ~]
     =/  name=@t  i.t.t.path

@@ -29,6 +29,10 @@ git add -A && git commit -qm "seed: fixture-pass"
 SEED=$(git rev-parse HEAD)
 git push -q origin master 2>&1 | tail -1
 check "seed landed" "$SEED" "$(repo_master)"
+# the repository's default branch is master (creation defaults to main):
+# a peer fork checks the head ref exists and refuses the graph otherwise
+"$api" POST "/repository/$REPO/branches/default" '{"name":"master"}' | cut -c1-30
+check "the second galaxy ~$SHIP2 is up (its API answers)" "200" "$(SHIP_ROLE=2 "$P0/api.sh" GET /repositories | cut -d' ' -f1)"
 "$dojo" ":urgit-ci &ci-action [%set-ci-protected '$REPO' 'refs/heads/master' %.y]" 60 3 | tail -1
 check "CI-protected" '%.y' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$REPO')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
 "$P1/runner.sh" stop a >/dev/null 2>&1

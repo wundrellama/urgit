@@ -18,17 +18,18 @@ if [ -e "$PIER" ]; then
   echo "boot.sh: $PIER exists; the footer says it must not exist before boot" >&2
   exit 1
 fi
-rm -f "$TMP/ship-pane.id" "$TMP/code.txt" "$JAR" "$TMP/oids.env"
+rm -f "$TMP/ship$ROLE_SUFFIX-pane.id" "$TMP/code$ROLE_SUFFIX.txt" "$JAR"
+[ -z "$ROLE_SUFFIX" ] && rm -f "$TMP/oids.env"
 value() { python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])'; }
 from="${HERDR_PANE_ID:-$(herdr pane current | value)}"
 PANE=$(herdr pane split --pane "$from" --direction down --no-focus --cwd "$ROOT" | value)
 export PANE
-echo "$PANE" > "$TMP/ship-pane.id"
+echo "$PANE" > "$TMP/ship$ROLE_SUFFIX-pane.id"
 echo "== ship pane $PANE (split from $from); waiting for its shell prompt"
 herdr pane wait-output "$PANE" --lines 1 --regex "$SHELL_PROMPT_RE" --timeout 60000 >/dev/null
 boot="$URBIT -F $SHIP -B $PILL --http-port $PORT -c $PIER"
 echo "== $boot"
-echo "$boot" > "$TMP/boot-line.txt"
+echo "$boot" > "$TMP/boot-line$ROLE_SUFFIX.txt"
 date -Is > "$TMP/launched-at"
 herdr pane run "$PANE" "$boot" >/dev/null
 echo "== waiting for the dojo prompt"
@@ -59,7 +60,7 @@ done
 [ "$live" = "%.y" ] || { echo "boot.sh: %urgit-ci never answered %gu liveness" >&2; exit 1; }
 echo "== %urgit-ci is live; state version (expect 0):"
 "$dojo" '.^(@ud %gx /=urgit-ci=/state/version/noun)' 60 3 | tail -2
-echo "== +code -> $TMP/code.txt"
-"$dojo" '+code' 60 10 | grep -oE '^[a-z]{6}(-[a-z]{6}){3}$' | tail -1 > "$TMP/code.txt"
-[ -s "$TMP/code.txt" ] || { echo "boot.sh: could not read +code from the dojo" >&2; exit 1; }
-echo "code recorded ($(wc -c < "$TMP/code.txt") bytes)"
+echo "== +code -> $TMP/code$ROLE_SUFFIX.txt"
+"$dojo" '+code' 60 10 | grep -oE '^[a-z]{6}(-[a-z]{6}){3}$' | tail -1 > "$TMP/code$ROLE_SUFFIX.txt"
+[ -s "$TMP/code$ROLE_SUFFIX.txt" ] || { echo "boot.sh: could not read +code from the dojo" >&2; exit 1; }
+echo "code recorded ($(wc -c < "$TMP/code$ROLE_SUFFIX.txt") bytes)"

@@ -1384,7 +1384,7 @@ function Settings({ repo, onMutate }) {
           <div className="section-title"><div><h3>Untrusted revisions</h3><p>A revision from a ship that cannot write this repository, such as a fork pull request, is untrusted.</p></div></div>
           <div className="ci-radio">
             {[['approval', 'Wait for approval', 'It runs nothing until a writer approves it on the CI tab.'], ['restricted', 'Run restricted checks', 'It runs at once with no credentials and can never land; approval still runs it trusted.']].map(([value, title, detail]) => (
-              <label className="check-row compact" key={value}><input type="radio" name={`untrusted-${repo.name}`} value={value} checked={(ciPolicy?.untrusted || 'approval') === value} disabled={busy !== '' || !ciPolicy} onChange={() => ciAct('untrusted', ciActions.setUntrustedPolicy(repo.name, value))} /><span><strong>{title}</strong><small>{detail}</small></span></label>
+              <label className="check-row compact" key={value}><input type="radio" name={`untrusted-${repo.name}`} value={value} checked={(ciPolicy?.untrusted || repo.ciUntrustedPolicy || 'approval') === value} disabled={busy !== '' || !ciPolicy} onChange={() => ciAct('untrusted', ciActions.setUntrustedPolicy(repo.name, value))} /><span><strong>{title}</strong><small>{detail}</small></span></label>
             ))}
           </div>
         </div>

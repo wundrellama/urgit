@@ -61,6 +61,7 @@ git init -q -b master .; git config user.name qneg; git config user.email qneg@e
 git remote add origin "$URL/git/$REPO"
 set_workflows fixture-pass.yml
 echo "seed" > README.md; git add -A && git commit -qm "seed"; git push -q origin master 2>&1 | tail -1
+"$P0/api.sh" POST "/repository/$REPO/branches/default" '{"name":"master"}' >/dev/null
 "$dojo" ":urgit-ci &ci-action [%set-ci-protected '$REPO' 'refs/heads/master' %.y]" 60 3 >/dev/null
 echo "-- repository $REPO seeded and CI-protected"
 NPASS=0; NFAIL=0; PASSED=""; FAILED=""; NRED=0; NWRONG=0; RED=""; WRONG=""

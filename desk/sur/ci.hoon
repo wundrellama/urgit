@@ -237,15 +237,14 @@
 ::  operator sends the rest, in the dojo or as JSON through the
 ::  session-authorized POST ci/action.  %assign names a kind and, for a
 ::  job, the workflow file and job id, so one job can be re-driven by hand.
-::  %stage-candidate carries the trust class %urgit decided from the actor
-::  with its own can-write (D3), and the pull number when the web merge
-::  staged it (D3a).  %approve-candidate and the credential pokes name
-::  the acting ship: only this ship can reach the poke, so only its owner
-::  is a writer here.
+::  %stage-candidate names the actor, whose trust class %urgit-ci decides
+::  through %urgit's ci-can-write peek (D3), and the pull number when the
+::  web merge staged it (D3a).  %approve-candidate names the acting ship,
+::  admitted through the same peek.
 ::
 +$  action
   $%  [%set-ci-protected repo=@t ref=@t protected=?]
-      [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via =trust pull=(unit @ud)]
+      [%stage-candidate repo=@t ref=@t head=oid:git base=oid:git actor=@p =via pull=(unit @ud)]
       [%approve-candidate id=candidate-id actor=@p]
       [%rerun-candidate id=candidate-id]
       [%set-untrusted-policy repo=@t policy=untrusted-policy]

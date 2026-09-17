@@ -32,6 +32,9 @@ row "Q9: a %job credential reaches a trusted job as a grant and is masked everyw
 check_contains "credential-names lists TOKEN with scope %job" "name='TOKEN'" "$(cred_names)"
 short=$("$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'SHORT' 'abc' %job ~]" 60 10 | awk 1 | grep -o 'at least 8 characters' | head -1)
 check "a 3-character value is refused" "at least 8 characters" "$short"
+nl=$("$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'MULTI' 'line-one-here\\0aline-two-here' %job ~]" 60 10 | awk 1 | grep -o 'must be a single line' | head -1)
+check "a value with a newline is refused (act 0.2.89 does not mask a multi-line secret)" "must be a single line" "$nl"
+check "neither refused credential was stored" "no" "$(cred_names | grep -qE "name='(SHORT|MULTI)'" && echo yes || echo no)"
 sync_clone
 set_workflows fixture-secret.yml
 printf 'q9 %s\n' "$(date -Is)" >> README.md
@@ -52,6 +55,8 @@ check "the bucket log carries the value's length (the secret was present)" "1" "
 check "the bucket log never carries the value" "0" "$(count_in "$TMP/q9-log.jsonl")"
 check "the daemon's saved stream never carries the value" "0" "$(count_in "$(daemon_stream "$AID")")"
 check "the saved stream equals the bucket object" "$(sha_of "$(daemon_stream "$AID")")" "$(sha_of "$TMP/q9-log.jsonl")"
+check "the step's set-output of the secret is recorded as *** on the ship" "'***'" "$(dojo_value "(~(got by outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))) 'leak')" | one "'[^']*'")"
+check "the daemon's jsonl set-output line has no raw copy (arg scrubbed)" "0" "$(grep '"command":"set-output"' "$(daemon_stream "$AID")" | grep -c -F -- "$VALUE")"
 echo "export Q9_CID=$CID; export Q9_AID=$AID; export Q9_VALUE=$VALUE; export Q9_OID=$OID" > "$TMP/q9.env"
 end_row Q9
 fi

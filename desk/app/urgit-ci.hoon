@@ -418,6 +418,21 @@
   ?~  raw  ~
   `;;((unit [tip=oid:git linked=?]) u.raw)
 ::
+::  whether an actor can write a repository, as %urgit answers it (D3):
+::  ~ when %urgit cannot be read, and every caller refuses on ~ rather
+::  than assuming a class
+::
+++  can-write
+  |=  [repo=@t actor=@p]
+  ^-  (unit ?)
+  =/  raw=(unit *)  (urgit-peek /ci-can-write/(scot %t repo)/(scot %p actor))
+  ?~  raw  ~
+  =/  answer=(each ? tang)
+    %-  mule  |.
+    ;;(? u.raw)
+  ?.  ?=(%& -.answer)  ~
+  `p.answer
+::
 ++  tree-at
   |=  [repo=@t oid=oid:git under=@t]
   ^-  (unit (list path))
@@ -470,19 +485,28 @@
       ::  against the same base is the same candidate and keeps its record
       ::
       %stage-candidate
-    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act trust.act)
+    ::  the trust class is the actor's standing with the repository as
+    ::  %urgit answers it (D3): a writer's revision is trusted, anyone
+    ::  else's is untrusted.  an unreadable answer refuses the staging
+    ::  rather than assuming a class.
+    ::
+    =/  writable=(unit ?)  (can-write repo.act actor.act)
+    ?~  writable
+      ~|  'ci: %urgit cannot be read; the actor cannot be classified'
+      !!
+    =/  =trust:ci  ?:(u.writable %trusted %untrusted)
+    =/  id=candidate-id:ci  (candidate-id repo.act ref.act head.act base.act trust)
     =/  existing=(unit candidate:ci)  (~(get by candidates) id)
     ?^  existing
       =.  candidates  (~(put by candidates) id u.existing(updated now.bowl))
       (emit ~)
-    ::  the trust class is %urgit's finding about the actor (D3); an
-    ::  untrusted candidate is materialized like any other but is planned
-    ::  only once its repository runs restricted checks or a writer
-    ::  approves it
+    ::  an untrusted candidate is materialized like any other but is
+    ::  planned only once its repository runs restricted checks or a
+    ::  writer approves it
     ::
     =/  next=candidate:ci
       :*  id  repo.act  ref.act  head.act  base.act
-          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  trust.act  pull.act
+          ~  %.n  %pending  ~  ~  ~  ~  actor.act  via.act  trust  pull.act
           now.bowl  now.bowl
       ==
     =.  candidates  (~(put by candidates) id next)
@@ -513,15 +537,19 @@
   ::
       ::  a writer approves an untrusted candidate (D3): the same head and
       ::  base are staged again as a trusted candidate with its own id,
-      ::  and the untrusted one is superseded.  only this ship's owner can
-      ::  reach this poke, and the owner writes every repository it holds,
-      ::  so a writer is this ship: any other actor is refused.
+      ::  and the untrusted one is superseded.  a writer is whoever
+      ::  %urgit's ci-can-write admits for the repository; an unreadable
+      ::  answer refuses.
       ::
       %approve-candidate
     =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
     ?~  found  ~|('no such candidate' !!)
-    ?.  =(actor.act our.bowl)
-      ~|  'only a writer can approve a candidate'
+    =/  writable=(unit ?)  (can-write repo.u.found actor.act)
+    ?~  writable
+      ~|  'ci: %urgit cannot be read; the actor cannot be checked'
+      !!
+    ?.  u.writable
+      ~|  `@t`(rap 3 ~['actor cannot write ' repo.u.found])
       !!
     ?.  =(%untrusted trust.u.found)
       ~|  'candidate is already trusted'
