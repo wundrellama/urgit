@@ -330,18 +330,20 @@ values. Do not guess past any of them.
 
 ## Launch footer — opus
 
-- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `4872953` (re-freeze 1).
-- Ship `~dep`, HTTP port `8353`, pier `/var/home/michael/piers/urgit-ci-p2-dep` (must not exist
-  before your first boot). Rootless Docker state dir `/run/user/1000/ci-p2-opus/`, data root
-  `<worktree>/.scratch/tmp/docker-data`. **Store fixture (RustFS) port `8363`**, data
-  `<worktree>/.scratch/tmp/store-data`. Boot inside a herdr pane you split from your own, after
-  the shell prompt: `/var/home/michael/workspace/urbit/bin/urbit -F dep -B
-  /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port 8353 -c
-  /var/home/michael/piers/urgit-ci-p2-dep`. Rewrite `SHIP/PORT/PIER` in `.scratch/ci-p0/env.sh`
-  and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` to these values **inside S1, before your first
-  boot** — S0 stays spec-only (D7).
+- Worktree `/var/home/michael/workspace/urbit/urgit-ci-p2-opus`, branch `ci/p2-opus`, base `master` at `682c8cf` (re-freeze 2).
+- **First ship** `~dep`, HTTP port `8353`, pier `/var/home/michael/piers/urgit-ci-p2-dep`.
+  **Second ship** (Q5–Q8, the non-writer PR author) `~put`, HTTP port `8355`, pier
+  `/var/home/michael/piers/urgit-ci-p2-put`. Neither pier may exist before your first boot.
+  Boot each inside a herdr pane you split from your own, after the shell prompt:
+  `/var/home/michael/workspace/urbit/bin/urbit -F <ship> -B
+  /var/home/michael/workspace/urbit/pills/brass-408k-1.pill --http-port <port> -c <pier>` —
+  **no `-p`** on either. Rootless Docker state dir `/run/user/1000/ci-p2-opus/`, data root
+  `<worktree>/.scratch/tmp/docker-data`. Store fixture (RustFS) port `8363`, data
+  `<worktree>/.scratch/tmp/store-data`. Rewrite `SHIP/PORT/PIER` in `.scratch/ci-p0/env.sh`
+  (+ `SHIP2/PORT2/PIER2`) and `DOCKER_STATE` in `.scratch/ci-p1/env.sh` inside S1, before your
+  first boot — S0 stays spec-only (D7).
 - Do NOT boot `~zod ~nec ~bud ~wes ~bel ~bus ~syt ~dur ~wep ~ser ~ryx ~wyd ~tem ~mul ~dev ~sev
-  ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chair's `~lup`.
+  ~lyt ~ryp ~syx ~nup ~heb ~peg ~lun` or the other chair's `~lup` / `~dys`.
 - ERPit workload: clone `/var/home/michael/workspace/urbit/erpit` (read-only source) into your
   fixture repo as P1's harness does; never push to it.
 - `act` 0.2.89 via `.scratch/ci-p1/act-static.sh`, `go` 1.27, `zig` 0.15.2 on PATH
