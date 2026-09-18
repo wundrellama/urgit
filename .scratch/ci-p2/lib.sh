@@ -57,3 +57,27 @@ cand_head_hex() {
   local o; o=$(dojo_value "head:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | one '^0x[0-9a-f.]+$' | sed 's/^0x//; s/\.//g')
   [ -n "$o" ] && printf '%040s' "$o" | tr ' ' 0
 }
+# ---- daemon records (the P1 ghost, thrice — Deviations) ------------------------------
+# daemon_ids: every daemon record the ship holds
+daemon_ids() { dojo_value "\`(list @uv)\`~(tap in ~(key by .^((map @uv daemon:ci) %gx /=urgit-ci=/daemons/noun)))" 120 | tr -d '\n' | grep -oE '0v[0-9a-v.]+'; }
+# daemon_stale <id>: %.y once the scheduler would no longer select it —
+# last-seen older than ~m5 (D6, select-daemon) — or it was never seen
+daemon_stale() { dojo_value "=/  d  (need .^((unit daemon:ci) %gx /=urgit-ci=/daemon/$1/noun))  ?~(last-seen.d %.y (gte (sub now u.last-seen.d) ~m5))" | one '^%\.[yn]$'; }
+# wait_ghosts_stale [seconds]: until every daemon record but a is stale
+# (default 400 s: a record goes stale ~m5 after its daemon's last poll).
+# A row whose work exceeds daemon a's capacity must call this first: a
+# record the ship saw within ~m5 is still selected although its process
+# is gone, an assignment is offered only to its own daemon, and one never
+# fetched waits out the ~h1 deadline (urgit-ci.hoon select-daemon,
+# handle-assignment-poll, stale-delivery).
+wait_ghosts_stale() {
+  local t="${1:-400}" i=0 d pending
+  while :; do
+    pending=""
+    for d in $(daemon_ids); do [ "$d" = "${DAEMON_A:-}" ] && continue; [ "$(daemon_stale "$d")" = '%.y' ] || pending="$pending $d"; done
+    [ -z "$pending" ] && { echo "-- every daemon record but a ($DAEMON_A) is stale or absent ($(date -Is))"; return 0; }
+    [ "$i" -ge "$t" ] && { echo "-- wait_ghosts_stale: still selectable after $t s:$pending" >&2; return 1; }
+    echo "-- daemon records the ship would still select besides a:$pending; waiting 15 s ($(date -Is))"
+    sleep 15; i=$((i+15))
+  done
+}

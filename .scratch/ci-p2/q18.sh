@@ -22,6 +22,14 @@ if [ -z "$enrolled" ] || [ "$enrolled" -lt 3 ]; then
   exit 0
 fi
 [ "$("$P1/runner.sh" status a | head -1 | cut -d' ' -f1)" = running ] || "$P1/runner.sh" start a | head -1
+# eight jobs exceed daemon a's capacity, so the scheduler reaches for any
+# other daemon record it saw within ~m5 — Q12's stopped daemon b, in the
+# close-out's first cold run: it took fixtures.yml/plan 100 s after its
+# last poll, never fetched it, and the candidate went %unknown at the ~h1
+# deadline (the P1 ghost, thrice — Deviations). Wait until every record
+# but a is stale first, as P1's P13 waits before P15.
+source "$TMP/p2.env" 2>/dev/null
+wait_ghosts_stale 400 || { echo "Q18: not run — a daemon record other than a is still selectable"; exit 1; }
 # p15.sh uses REPO=erpit-p15; a second run on the same ship needs a fresh name
 export P15_REPO="erpit-q18-$(date +%H%M%S)"
 # the copy sources the P1 lib by its absolute path (it no longer sits beside it)
