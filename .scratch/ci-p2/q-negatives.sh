@@ -33,7 +33,7 @@ case "$phase" in
 esac
 marker="qneg-$phase-$(date +%s)"; "$P0/dojo.sh" "'$marker'" 60 2 >/dev/null
 "$P0/rebuild.sh" "qneg-$phase" urgit urgit-ci | tail -3 || echo "(no reload: the installed desk already matches this phase's tree)"
-if herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { f = 1; next } f' | grep -q 'crud: %into event failed'; then
+if tty_read 400 | awk -v m="'$marker'" 'index($0, m) { f = 1; next } f' | grep -q 'crud: %into event failed'; then
   echo "q-negatives.sh: the $phase build failed to commit; stopping" >&2; exit 1
 fi
 ( cd "$ROOT/runner" && CGO_ENABLED=0 go build -o urgit-runner ./cmd/urgit-runner ) || exit 1

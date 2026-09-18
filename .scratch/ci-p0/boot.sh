@@ -1,11 +1,12 @@
 #!/bin/bash
 # Harness step 1: boot the ship from the launch footer and install the desk,
 # with nothing typed by hand. Run once, first; the other scripts read the
-# pane id and +code it records under $TMP.
-#   1. the pier must not exist yet (footer rule)
-#   2. split a herdr pane from this one and WAIT FOR THE SHELL PROMPT before
-#      typing the boot line: a fresh pane paints its MOTD first, and a line
-#      sent during that paint is eaten
+# +code it records under $TMP.
+#   1. the pier must not exist yet (footer rule), nor the ship's tmux session
+#   2. start the boot line as a detached tmux session named from the footer
+#      (`tmux new-session -d -s $TTY "<urbit> -F … -B … --http-port … -c …"`,
+#      200 columns so the dojo seldom pretty-prints a value over lines);
+#      the session IS the ship's terminal: no shell, no prompt to wait for
 #   3. wait for the dojo prompt; |new-desk %urgit; |mount %urgit; wait for
 #      the mount to appear on disk
 #   4. zig build -Ddesk=$PIER/urgit; |commit %urgit (wait until clay has
@@ -18,23 +19,20 @@ if [ -e "$PIER" ]; then
   echo "boot.sh: $PIER exists; the footer says it must not exist before boot" >&2
   exit 1
 fi
-rm -f "$TMP/ship$ROLE_SUFFIX-pane.id" "$TMP/code$ROLE_SUFFIX.txt" "$JAR"
+if tty_alive; then
+  echo "boot.sh: tmux session $TTY already exists; shut that ship down first (shutdown.sh)" >&2
+  exit 1
+fi
+rm -f "$TMP/code$ROLE_SUFFIX.txt" "$JAR"
 [ -z "$ROLE_SUFFIX" ] && rm -f "$TMP/oids.env"
-value() { python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])'; }
-from="${HERDR_PANE_ID:-$(herdr pane current | value)}"
-PANE=$(herdr pane split --pane "$from" --direction down --no-focus --cwd "$ROOT" | value)
-export PANE
-echo "$PANE" > "$TMP/ship$ROLE_SUFFIX-pane.id"
-echo "== ship pane $PANE (split from $from); waiting for its shell prompt"
-herdr pane wait-output "$PANE" --lines 1 --regex "$SHELL_PROMPT_RE" --timeout 60000 >/dev/null
 boot="$URBIT -F $SHIP -B $PILL --http-port $PORT -c $PIER"
-echo "== $boot"
+echo "== tmux new-session -d -s $TTY -x 200 -y 50 \"$boot\""
 echo "$boot" > "$TMP/boot-line$ROLE_SUFFIX.txt"
-date -Is > "$TMP/launched-at"
-herdr pane run "$PANE" "$boot" >/dev/null
+date -Is > "$TMP/launched-at$ROLE_SUFFIX"
+tmux new-session -d -s "$TTY" -x 200 -y 50 -c "$ROOT" "$boot"
 echo "== waiting for the dojo prompt"
-herdr pane wait-output "$PANE" --lines 1 --regex "$DOJO_PROMPT_RE" --timeout 900000 >/dev/null
-herdr pane read "$PANE" --lines 4
+tty_wait "$DOJO_PROMPT_RE" 900 || { echo "boot.sh: no dojo prompt in $TTY within 900 s" >&2; tty_read 20 >&2; exit 1; }
+tty_read 4
 echo "== |new-desk %urgit ; |mount %urgit"
 "$dojo" '|new-desk %urgit' 120 3 | tail -2
 "$dojo" '|mount %urgit' 120 3 | tail -2

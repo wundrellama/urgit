@@ -19,6 +19,14 @@ data_root_holders() {
     case "$cmd" in dockerd\ *"--data-root $DOCKER_DATA "*) basename "$p" ;; esac
   done
 }
+# pids of the rootlesskit parent and child whose cmdline names our state dir
+rootlesskit_pids() {
+  local p cmd
+  for p in /proc/[0-9]*; do
+    cmd=$({ tr '\0' ' ' < "$p/cmdline"; } 2>/dev/null)
+    case "$cmd" in rootlesskit\ *"--state-dir=$DOCKER_STATE/rootlesskit "*|/proc/self/exe\ *"--state-dir=$DOCKER_STATE/rootlesskit "*) basename "$p" ;; esac
+  done
+}
 case "${1:-status}" in
   start)
     mkdir -p "$DOCKER_STATE" "$DOCKER_DATA"
@@ -61,12 +69,30 @@ case "${1:-status}" in
     [ -f "$PIDFILE" ] && printf 'pid %s: ' "$(cat "$PIDFILE")" && { tr '\0' ' ' < "/proc/$(cat "$PIDFILE")/cmdline" 2>/dev/null | cut -c1-120; echo; }
     ;;
   stop)
+    # by /proc-verified pid (T2): the pidfile's pid must be a dockerd
+    # whose cmdline names OUR data root; TERM it, wait, KILL a survivor;
+    # then the rootlesskit pair that launched it (their cmdline names our
+    # state dir), which normally exits with dockerd
     [ -f "$PIDFILE" ] || { echo "no pidfile at $PIDFILE"; exit 0; }
     p=$(cat "$PIDFILE")
-    echo "dockerd pid $p: $(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | cut -c1-120)"
-    kill "$p" && echo "sent TERM to $p"
+    cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)
+    case "$cmd" in dockerd\ *"--data-root $DOCKER_DATA "*) ;;
+      *) echo "docker-rootless.sh: pid $p is not our dockerd (/proc/$p/cmdline: ${cmd:0:100}); nothing killed"; rm -f "$PIDFILE"; exit 0 ;;
+    esac
+    echo "dockerd pid $p: $(printf '%s' "$cmd" | cut -c1-120)"
+    kill -TERM "$p" && echo "sent TERM to $p"
     for _ in $(seq 1 60); do [ -d "/proc/$p" ] || break; sleep 1; done
-    [ -d "/proc/$p" ] && { echo "docker-rootless.sh: dockerd $p still running after 60 s" >&2; exit 1; }
+    if [ -d "/proc/$p" ]; then
+      echo "dockerd $p still running after 60 s; SIGKILL" >&2; kill -KILL "$p"
+      for _ in $(seq 1 30); do [ -d "/proc/$p" ] || break; sleep 1; done
+      [ -d "/proc/$p" ] && { echo "docker-rootless.sh: dockerd $p survived SIGKILL" >&2; exit 1; }
+    fi
     echo "dockerd $p gone; $DOCKER_DATA released"
+    for _ in $(seq 1 20); do [ -z "$(rootlesskit_pids)" ] && break; sleep 1; done
+    for r in $(rootlesskit_pids); do
+      echo "rootlesskit pid $r outlived dockerd: $(tr '\0' ' ' < "/proc/$r/cmdline" 2>/dev/null | cut -c1-100); TERM"; kill -TERM "$r" 2>/dev/null
+    done
+    for _ in $(seq 1 30); do [ -z "$(rootlesskit_pids)" ] && break; sleep 1; done
+    [ -z "$(rootlesskit_pids)" ] && echo "rootless daemon $DOCKER_STATE down" || { echo "docker-rootless.sh: rootlesskit still present: $(rootlesskit_pids | tr '\n' ' ')" >&2; exit 1; }
     ;;
 esac

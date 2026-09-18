@@ -15,7 +15,7 @@ marker="rebuild-$label-$(date +%s)"
 "$dojo" "'$marker'" 60 2 >/dev/null
 echo "== |commit %urgit (marker $marker)"
 "$dojo" '|commit %urgit' 300 3 | tail -2
-after_marker() { herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
+after_marker() { tty_read 400 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
 for agent in "${agents[@]}"; do
   ok=0
   for _ in $(seq 1 150); do

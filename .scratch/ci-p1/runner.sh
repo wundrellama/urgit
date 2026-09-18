@@ -9,7 +9,7 @@
 # come first (P12 wraps docker that way).
 source "$(dirname "$0")/env.sh"
 cmd="${1:?usage}"; name="${2:?name}"; home="$RUNNER_HOME/$name"
-pid_of() { cat "$home/pid" 2>/dev/null; }
+pid_of() { cat "$home/pid" 2>/dev/null || true; }   # no pid file (never started): empty, not an exit under set -e
 alive() { local p; p=$(pid_of); [ -n "$p" ] && [ -r "/proc/$p/cmdline" ] && tr '\0' ' ' < "/proc/$p/cmdline" | grep -q "urgit-runner.*$home/config.toml"; }
 write_config() {
   local capacity="${1:-1}" token="${2:-}"

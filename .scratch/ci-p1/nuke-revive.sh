@@ -9,12 +9,12 @@ source "$(dirname "$0")/env.sh"
 dojo="$P0/dojo.sh"
 label="${1:-nuke}"
 echo "== |nuke %urgit-ci (answering y)"
-herdr pane send-keys "$PANE" 'ctrl+a' 'ctrl+k' >/dev/null
-herdr pane wait-output "$PANE" --lines 1 --regex "$DOJO_PROMPT_RE" --timeout 60000 >/dev/null
-herdr pane run "$PANE" '|nuke %urgit-ci' >/dev/null
-herdr pane wait-output "$PANE" --lines 1 --regex 'nuke\? \(y/N\)' --timeout 60000 >/dev/null
-herdr pane send-keys "$PANE" 'y' 'enter' >/dev/null
-herdr pane wait-output "$PANE" --lines 1 --regex "$DOJO_PROMPT_RE" --timeout 120000 >/dev/null
+tty_keys C-a C-k
+tty_wait "$DOJO_PROMPT_RE" 60
+tty_send '|nuke %urgit-ci'
+tty_wait 'nuke\? \(y/N\)' 60
+tty_keys y Enter
+tty_wait "$DOJO_PROMPT_RE" 120
 for _ in $(seq 1 30); do
   live=$("$dojo" '.^(? %gu /=urgit-ci=/$)' 60 3 | grep -oE '^%\.[yn]$' | tail -1 || true)
   [ "$live" = "%.n" ] && break; sleep 2
@@ -26,7 +26,7 @@ marker="nuke-$label-$(date +%s)"
 "$dojo" "'$marker'" 60 2 >/dev/null
 echo "== |commit %urgit (marker $marker)"
 "$dojo" '|commit %urgit' 300 3 | tail -2
-after_marker() { herdr pane read "$PANE" --lines 400 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
+after_marker() { tty_read 400 | awk -v m="'$marker'" 'index($0, m) { found = 1; next } found'; }
 # a commit of an unchanged desk prints nothing (no reload, no file lines)
 # and does not re-boot the nuked agent; the revive below covers both cases.
 # the build runs after the prompt returns: wait for its verdict (a failed
