@@ -7,7 +7,14 @@
 # `git checkout --` of the files; `tripwire <row>` prints the substring
 # the sabotaged build must produce in the row's log (alternatives one per
 # line), and q-negatives.sh red counts a row RED only when it FAILS *and*
-# carries it. Hoon mutants need a rebuild; Go mutants need `go build`
+# carries it. The strings are the tighter of this harness's and astra's
+# per row (BRIEF-CI-P2-CLOSEOUT T4): where a row's own check line pins the
+# sabotaged build's answer (the class it stored, the grant line, the bind
+# string, the value's count in the object) the check line stays; where it
+# pinned only a status code or an absence, the row now prints astra's
+# `Q<n> RED: <effect>` label — only once it has observed the mutant's
+# effect and its precondition — and that label is the tripwire (Q5a, Q6,
+# Q13, Q16). A RED that fails for another reason is not RED. Hoon mutants need a rebuild; Go mutants need `go build`
 # and a daemon restart (q-negatives.sh does both). Never committed.
 # `apply` with row names applies those rows' mutants only: Q5 and Q8 run
 # on the merge gate that Q5a's mutant removes, and Q8 approves the
@@ -108,15 +115,15 @@ PY
   tripwire)
     case "${2:-}" in
       Q4)  echo "upload name=../x -> 400: FAIL (observed: 200" ;;
-      Q5a) echo "merge of a PR to the CI-protected branch -> 202: FAIL (observed: 200" ;;
+      Q5a) echo "Q5a RED: protected master moved before checks" ;;
       Q5)  echo "candidate is %untrusted: FAIL (observed: %trusted" ;;
-      Q6)  echo "master unmoved (restricted check cannot land): FAIL (observed:" ;;
+      Q6)  echo "Q6 RED: untrusted candidate landed" ;;
       Q8)  echo "approval by the second galaxy refused: FAIL (observed: accepted (>=)" ;;
       Q10) echo "grants=~ on the untrusted assignment: FAIL (observed: grants 1 (TOKEN)" ;;
       Q11) echo "the log route's object: grep -c value = 0: FAIL (observed: 1" ;;
       Q12) echo "daemon b prepared no sandbox (no work): FAIL (observed: 1" ;;
-      Q13) echo "expired grant refused by the daemon: FAIL (observed: 0" ;;
-      Q16) echo "/candidates without a session -> 401: FAIL (observed: 200" ;;
+      Q13) echo "Q13 RED: expired signed grant reached act" ;;
+      Q16) echo "Q16 RED: anonymous CI reads and action accepted" ;;
       Q19) echo "the job container's socket bind is the rootless socket: FAIL (observed: /var/run/docker.sock:/var/run/docker.sock" ;;
       *) echo "q-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac

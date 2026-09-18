@@ -37,6 +37,7 @@ att_log_sha() { att_log "$1" | grep -oE "sha256='[^']*'" | cut -d"'" -f2; }
 att_log_size() { att_log "$1" | grep -oE 'size=[0-9.]+' | cut -d= -f2 | tr -d .; }
 att_trust() { dojo_value "trust:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$1/noun))" | one '^%[a-z]+$'; }
 cand_trust() { dojo_value "trust:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | one '^%[a-z]+$'; }
+ci_protected() { dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$REPO')/(scot %t '$1')/noun)" | one '^%\.[yn]$'; }   # <ref> -> %.y/%.n
 cand_pull() { dojo_value "pull:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$1/noun))" | unit_join | sed 's/^\[~ //; s/\]$//'; }
 # presign_scry <aid> <trusted|untrusted> <name> <seconds>: the URL or ~
 presign_scry() { dojo_unit_cord ".^((unit @t) %gx /=urgit-ci=/presign-get/$1/$2/(scot %t '$3')/$4/noun)" | sed "s/^\[~ '//; s/'\]$//"; }

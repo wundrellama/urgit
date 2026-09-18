@@ -104,6 +104,8 @@ CID=$(jq_of "$r" .candidate)
 check "the answer names a candidate" "yes" "${CID:+yes}"
 check "the answer names the trust class" "trusted" "$(jq_of "$r" .trust)"
 check "master unmoved after Merge" "$BEFORE" "$(repo_master)"
+# the mutant's tripwire (T4): the ref IS CI-protected and master moved at the click
+[ "$(repo_master)" != "$BEFORE" ] && [ "$(ci_protected refs/heads/master)" = '%.y' ] && echo "Q5a RED: protected master moved before checks"
 check "the pull is still open" "open" "$(pull_state "$N")"
 check "candidate is %trusted" '%trusted' "$(cand_trust "$CID")"
 check "candidate carries the pull number" "$N" "$(cand_pull "$CID")"
@@ -188,6 +190,8 @@ check_contains "the daemon saw trust untrusted on the assignment" "trust untrust
 check_contains "verdict-reason names trust" "untrusted candidate cannot land" "$(cand_reason "$Q5_CID")"
 sleep 3
 check "master unmoved (restricted check cannot land)" "$Q5_BASE" "$(repo_master)"
+# the mutant's tripwire (T4): the candidate is %untrusted and master is its object
+[ "$(cand_trust "$Q5_CID")" = '%untrusted' ] && [ "$(repo_master)" = "$(cand_object_hex "$Q5_CID")" ] && echo "Q6 RED: untrusted candidate landed"
 [ -n "${Q5_PR:-}" ] && check "the pull is still open" "open" "$(pull_state "$Q5_PR")"
 check "eligibility scry answers %.n for the untrusted object" '%.n' "$(dojo_value ".^(? %gx /=urgit-ci=/eligible/(scot %t '$REPO')/(scot %t 'refs/heads/master')/(scot %t '$(cand_object_hex "$Q5_CID")')/noun)" | one '^%\.[yn]$')"
 end_row Q6

@@ -108,14 +108,19 @@ if [ "$which_row" = q16 ]; then
 row "Q16: the session fence on every ci/* read and on POST ci/action"
 ANY=$(cand_attempt_ids "$(ci_get "/repository/$REPO/candidates" | sed 's/^[0-9]* //' | jq -r '.candidates[0].id')" 2>/dev/null | head -1)
 CANY=$(ci_get "/repository/$REPO/candidates" | sed 's/^[0-9]* //' | jq -r '.candidates[0].id')
+anon_reads=0   # the mutant's tripwire (T4) counts anonymous 200s on the five reads and the action
 for path in "/repository/$REPO/candidates" "/candidate/$CANY" "/repository/$REPO/policy" "/repository/$REPO/credentials" "/key" "/attempt/$ANY/log"; do
-  check "GET ci$path without a session -> 401" "401" "$(status_of "$(ci_get "$path" -)")"
+  s=$(status_of "$(ci_get "$path" -)")
+  check "GET ci$path without a session -> 401" "401" "$s"
+  [ "$s" = 200 ] && [ "$path" != "/attempt/$ANY/log" ] && anon_reads=$((anon_reads+1))
 done
 for path in "/repository/$REPO/candidates" "/candidate/$CANY" "/repository/$REPO/policy" "/repository/$REPO/credentials" "/key"; do
   check "GET ci$path with a session -> 200" "200" "$(status_of "$(ci_get "$path")")"
 done
 check "GET ci/attempt/<id>/log with a session -> 302 or 404 (a log or none), never 401" "yes" "$(case "$(status_of "$(ci_get "/attempt/$ANY/log")")" in 302|404) echo yes;; *) echo no;; esac)"
-check "POST ci/action without a session -> 401" "401" "$(status_of "$("$api" POST /ci/action "{\"action\":\"set-untrusted-policy\",\"repo\":\"$REPO\",\"policy\":\"approval\"}" -)")"
+s=$(status_of "$("$api" POST /ci/action "{\"action\":\"set-untrusted-policy\",\"repo\":\"$REPO\",\"policy\":\"approval\"}" -)")
+check "POST ci/action without a session -> 401" "401" "$s"
+[ "$anon_reads" = 5 ] && [ "$s" = 200 ] && echo "Q16 RED: anonymous CI reads and action accepted"
 check "POST ci/action with a session -> 200" "200" "$(status_of "$(ci_action "{\"action\":\"set-untrusted-policy\",\"repo\":\"$REPO\",\"policy\":\"approval\"}")")"
 BEARER_A=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["bearer"])' "$RUNNER_HOME/a/state.json")
 check "a daemon bearer is not a session: GET candidates with the bearer -> 401" "401" "$(status_of "$(ci_get "/repository/$REPO/candidates" "$BEARER_A")")"

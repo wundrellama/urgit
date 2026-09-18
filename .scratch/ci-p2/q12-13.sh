@@ -113,7 +113,8 @@ echo "-- assigned at $T0: attempt $LATE (grant expires at the 25 s deadline)"
 sleep 15
 RUNNER_PATH="$TMP/q13-bin" "$P1/runner.sh" start a | head -1
 for _ in $(seq 1 40); do grep -q "$LATE.*act exited" "$RUNNER_HOME/a/daemon.log" && break; sleep 2; done
-echo "-- act exited at +$(( $(date +%s) - T0 )) s: $(grep "$LATE" "$RUNNER_HOME/a/daemon.log" | grep -o 'act exited [0-9]*' | head -1)"
+EXITED_AT=$(( $(date +%s) - T0 ))
+echo "-- act exited at +$EXITED_AT s: $(grep "$LATE" "$RUNNER_HOME/a/daemon.log" | grep -o 'act exited [0-9]*' | head -1)"
 check "the override attempt is not the normal one" "no" "$([ "$LATE" = "$AID" ] && echo yes || echo no)"
 line=$(grep "$LATE" "$RUNNER_HOME/a/daemon.log" | grep -o 'grant TOKEN refused: expired at [^;]*' | head -1)
 echo "-- daemon: $line"
@@ -122,6 +123,8 @@ check_contains "the assignment line counts it out" "grants 0 () of 1 offered" "$
 for _ in $(seq 1 60); do [ -s "$(daemon_stream "$LATE")" ] && grep -q 'token length' "$(daemon_stream "$LATE")" && break; sleep 2; done
 check "act ran without the secret (token length 0)" "1" "$(grep -c 'token length 0' "$(daemon_stream "$LATE")")"
 check "the secret was not passed (no non-zero token length line)" "0" "$(grep -c 'token length [1-9]' "$(daemon_stream "$LATE")")"
+# the mutant's tripwire (T4): act ran past the grant's 25 s expiry and the step saw the secret
+[ "$(grep -c 'token length [1-9]' "$(daemon_stream "$LATE")")" -ge 1 ] && [ "$EXITED_AT" -ge 25 ] && echo "Q13 RED: expired signed grant reached act"
 "$P1/runner.sh" stop a >/dev/null 2>&1
 "$P1/runner.sh" start a | head -1
 sleep 3
