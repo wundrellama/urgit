@@ -9,7 +9,8 @@
 # The red phase reverts the working tree on EXIT however it ends. Each
 # phase gets its own fresh repository (ci-p2-<phase>-<hhmmss>), seeded
 # and CI-protected, and keeps daemon a's identity when the ship still
-# knows it (the P1 ghost lesson), enrolling afresh only when it does not.
+# knows it (the P1 ghost lesson), enrolling afresh only when it does not;
+# the capacity is the footer's DAEMON_CAPACITY either way (T1).
 # A prep step (Q2's push) gives the rows an attempt to work with; it is
 # not counted as a row. Only the rows being run are sabotaged: Q5 and Q8
 # need the merge gate Q5a's mutant removes, so the battery runs them as a
@@ -40,19 +41,19 @@ echo "== build under test: $("$P2/q-mutants.sh" status | tail -1); rows must $wa
 "$P1/runner.sh" stop a >/dev/null 2>&1
 fresh=yes
 if [ -f "$RUNNER_HOME/a/state.json" ]; then
-  "$P1/runner.sh" config a 2 >/dev/null
+  "$P1/runner.sh" config a "$DAEMON_CAPACITY" >/dev/null
   "$P1/runner.sh" start a | head -1
   sleep 3
   if [ "$("$P1/runner.sh" status a | head -1)" = "not running" ]; then
     echo "-- the ship no longer knows daemon a: enrolling afresh"
   else
-    fresh=no; echo "-- daemon a kept its identity; capacity 2 reported on its poll"
+    fresh=no; echo "-- daemon a kept its identity; capacity $DAEMON_CAPACITY reported on its poll"
   fi
 fi
 if [ "$fresh" = yes ]; then
   rm -rf "$RUNNER_HOME/a"
   TOKEN=$("$P1/mint.sh") || exit 1
-  "$P1/runner.sh" start a 2 "$TOKEN" | head -1
+  "$P1/runner.sh" start a "$DAEMON_CAPACITY" "$TOKEN" | head -1
 fi
 python3 -c 'import json,sys; print("export DAEMON_A="+json.load(open(sys.argv[1]))["daemon_id"])' "$RUNNER_HOME/a/state.json" > "$TMP/p2.env"
 export P2_REPO="ci-p2-$phase-$(date +%H%M%S)"

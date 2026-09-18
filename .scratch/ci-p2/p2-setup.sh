@@ -5,7 +5,8 @@
 # ship's %storage pointed at it (the P0 recipe against a REAL store), the
 # static act, the runner binary, a fresh public repository `ci-p2` seeded
 # with one commit (fixture-pass.yml) and CI-protected, a local clone, and
-# daemon `a` enrolled afresh at capacity 2.
+# daemon `a` enrolled afresh at the footer's capacity ($DAEMON_CAPACITY,
+# default 3) — once; no row restarts it at another capacity (T1).
 source "$(dirname "$0")/lib.sh"
 "$P1/nuke-revive.sh" p2-setup | tail -3
 "$P1/docker-rootless.sh" start | tail -2
@@ -38,10 +39,10 @@ check "CI-protected" '%.y' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(sco
 "$P1/runner.sh" stop a >/dev/null 2>&1
 rm -rf "$RUNNER_HOME/a"
 TOKEN=$("$P1/mint.sh") || exit 1
-"$P1/runner.sh" start a 2 "$TOKEN" | head -1
+"$P1/runner.sh" start a "$DAEMON_CAPACITY" "$TOKEN" | head -1
 DAEMON_A=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["daemon_id"])' "$RUNNER_HOME/a/state.json")
 echo "export DAEMON_A=$DAEMON_A" > "$TMP/p2.env"
-echo "daemon a enrolled as $DAEMON_A with capacity 2"
+echo "daemon a enrolled as $DAEMON_A with capacity $DAEMON_CAPACITY (DAEMON_CAPACITY)"
 echo "== prelude: ci bound in the dojo"
 "$P0/prelude.sh" | tail -1
 [ "$ROW_FAIL" = 0 ]

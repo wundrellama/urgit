@@ -13,6 +13,11 @@ export DOCKER_SOCK="$DOCKER_STATE/docker.sock"
 export RUNNER_BIN="$ROOT/runner/urgit-runner"
 export RUNNER_HOME="$TMP/runner"
 export ACT_IMAGE=catthehacker/ubuntu:act-latest
+# the capacity daemon a is enrolled at (footer; BRIEF-CI-P2-CLOSEOUT T1):
+# p2-setup enrolls at it once and q18 refuses to run below 3 — the
+# eight-job row on a capacity-2 daemon is CI-DELIVERY-1.1's t+0 squeeze
+# (an attempt with events and no result until the ~h1 deadline), P3's
+export DAEMON_CAPACITY="${DAEMON_CAPACITY:-3}"
 # the RustFS object-store fixture (BRIEF-CI-P2 §5): one rootless container
 # on the harness Docker daemon, its own port from the footer, data under
 # $TMP; store.sh writes the fixture's access key to $TMP/store.env
