@@ -12,6 +12,11 @@ source "$(dirname "$0")/lib.sh"
 "$P1/docker-rootless.sh" start | tail -2
 "$P1/docker-rootless.sh" info | tail -1
 "$store" start | tail -3
+# the store must ANSWER before %storage is pointed at it and Q2 uploads
+# (T3: the operator's first attempt 401'd into a store that was not up —
+# `store.sh start | tail` had hidden its exit); a bounded retry, then a
+# non-zero exit naming the port
+"$store" ready || { echo "p2-setup: the store fixture on 127.0.0.1:$STORE_PORT does not answer; the P2 rows need it before Q2" >&2; exit 1; }
 "$store" configure | tail -1
 "$P1/act-static.sh"
 ( cd "$ROOT/runner" && CGO_ENABLED=0 go build -o urgit-runner ./cmd/urgit-runner ) && echo "runner built: $RUNNER_BIN"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: store.sh start|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>
+# usage: store.sh start|ready|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>
 # The object-store fixture (BRIEF-CI-P2 §5, astra §3): RustFS (Apache-2.0,
 # SigV4; the store NativePlanet ships by default) as ONE rootless container
 # on the harness Docker daemon, on the footer's port ($STORE_PORT), data
@@ -10,6 +10,11 @@
 # (`--aws-sigv4`), never through the container's filesystem.
 #   start      pull the image if missing, run the container, wait for the
 #              S3 port, create the bucket (idempotent), prove it is private
+#   ready      assert the store ANSWERS on its port before any row reads
+#              it (BRIEF-CI-P2-CLOSEOUT T3): an unauthenticated GET of the
+#              root must return an HTTP status (2xx/4xx; a private RustFS
+#              answers 403), never a connection refusal (curl's 000),
+#              within 30 tries 2 s apart; exits non-zero naming the port
 #   stop       remove the container (part of shutdown); the data dir stays
 #   status     container state and the bucket's object count
 #   configure  the %storage-action pokes that point the fixture ship at it
@@ -59,6 +64,16 @@ case "${1:-status}" in
     echo "anonymous list of $STORE_BUCKET: $anon (private: must be 403)"
     [ "$anon" = 403 ] || { echo "store.sh: the bucket is not private" >&2; exit 1; }
     ;;
+  ready)
+    code=000
+    for i in $(seq 1 30); do
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$STORE_URL/")
+      case "$code" in 2??|4??) echo "store answers on 127.0.0.1:$STORE_PORT: HTTP $code (try $i)"; exit 0;; esac
+      sleep 2
+    done
+    echo "store.sh: no HTTP answer from the store on 127.0.0.1:$STORE_PORT after 30 tries (last: $code; 000 is a connection refusal)" >&2
+    exit 1
+    ;;
   stop)
     if $DK inspect "$STORE_NAME" >/dev/null 2>&1; then
       $DK rm -f "$STORE_NAME" >/dev/null && echo "removed $STORE_NAME (data kept under $STORE_DATA)"
@@ -85,5 +100,5 @@ case "${1:-status}" in
   get)  load_keys; signed GET "$STORE_URL/$STORE_BUCKET/$2" -o "$3" -w '%{http_code}\n' ;;
   anon) curl -s -o /dev/null -w '%{http_code}\n' "$STORE_URL/$STORE_BUCKET/$2" ;;
   ls)   load_keys; signed GET "$STORE_URL/$STORE_BUCKET/?list-type=2&prefix=${2:-}" | python3 -c 'import sys,re; print("\n".join(re.findall(r"<Key>([^<]+)</Key>", sys.stdin.read())))' | sed '/^$/d' ;;
-  *) echo "usage: store.sh start|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>" >&2; exit 2 ;;
+  *) echo "usage: store.sh start|ready|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>" >&2; exit 2 ;;
 esac
