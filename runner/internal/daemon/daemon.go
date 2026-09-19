@@ -681,7 +681,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 	ctx = rctx
 	streamPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
 	streamLog, _ := os.Create(streamPath)
-	tee := io.TeeReader(relay.Scrub(stream, values), streamLog)
+	tee := io.TeeReader(relay.Scrub(stream, relay.ScrubForms(values)), streamLog)
 	summary, relayErr := relay.Relay(ctx, tee, func(ctx context.Context, line []byte) (int, []byte, error) {
 		resp, err := d.client.Event(ctx, a.Attempt, line)
 		return resp.Status, resp.Body, err

@@ -20,25 +20,35 @@ which_row="${1:-r14}"
 TS=$(date +%H%M%S)
 if [ "$which_row" = r14 ]; then
 row "R14: a desk-linked repository is CI-protected and its candidate lands through the clay path — the desk written, then the ref"
-if [ "$(dojo_value '(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now))) %scratch)' | one '^%\.[yn]$')" = "%.y" ]; then
-  echo "-- desk %scratch already exists"
-else
-  "$dojo" '|new-desk %scratch' 120 3 | tail -1
-fi
+# a fresh desk per run: a desk that already holds a file whose mark it
+# cannot build (a yml without mime, from an earlier shape of this row)
+# crashes every read of it in Clay, and the crash is a scry's, which no
+# +mule catches (the P0 note): the landing would be nacked
+DESK="r14-$TS"
+"$dojo" "|new-desk %$DESK" 120 3 | tail -1
+check "a fresh desk %$DESK" '%.y' "$(dojo_value "(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now))) %$DESK)" | one '^%\.[yn]$')"
 LINKED="ci-p3-linked-$TS"
 "$api" POST /repositories "{\"name\":\"$LINKED\",\"publicRead\":true}" | cut -c1-30
+# a desk-shaped repository (measured on ~tug: a linked push writes the
+# WHOLE tree to the desk and deletes what the repository lacks, so the
+# repository carries sys.kelvin and the marks a new desk has, plus yml
+# for the workflow and mime, which yml's grad builds on — without it the
+# desk's second read of the yml crashed in Clay (`no files match
+# /mar/mime/hoon`) and the second landing was nacked; a repository of
+# README.md alone is refused by Clay with `missing /sys/kelvin`)
 L="$TMP/clone-$LINKED"; rm -rf "$L"; mkdir -p "$L"; cd "$L"; git init -q -b master .; git config user.name r14; git config user.email r14@example; git config http.cookieFile "$JAR"
-git remote add origin "$URL/git/$LINKED"; mkdir -p .github/workflows; cp "$ROOT/desk/tests/ci/fixture-pass.yml" .github/workflows/
+git remote add origin "$URL/git/$LINKED"; mkdir -p .github/workflows mar; cp "$ROOT/desk/tests/ci/fixture-pass.yml" .github/workflows/
+for m in txt yml mime hoon kelvin noun; do cp "$ROOT/desk/mar/$m.hoon" mar/; done; cp "$ROOT/desk/sys.kelvin" sys.kelvin
 printf 'seed\n' > notes.txt; git add -A; git commit -qm seed; git push -q origin master 2>&1 | tail -1
 "$api" POST "/repository/$LINKED/branches/default" '{"name":"master"}' >/dev/null
-r=$("$api" POST "/repository/$LINKED/bind" '{"desk":"scratch","branch":"refs/heads/master"}')
-check "bound to desk %scratch through the API" "200" "$(status_of "$r")"
+r=$("$api" POST "/repository/$LINKED/bind" "{\"desk\":\"$DESK\",\"branch\":\"refs/heads/master\"}")
+check "bound to desk %$DESK through the API" "200" "$(status_of "$r")"
 check "the ci-ref peek reports linked" "%.y" "$(dojo_value ".^((unit [tip=@ux linked=?]) %gx /=urgit=/ci-ref/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | tr -d '\n' | grep -oE '%\.[yn]' | tail -1)"
 r=$(ci_action "{\"action\":\"set-ci-protected\",\"repo\":\"$LINKED\",\"ref\":\"refs/heads/master\",\"protected\":true}")
 check "CI required on the linked repository -> 200 (no longer refused)" "200" "$(status_of "$r")"
 check "the ref reads CI-protected" '%.y' "$(REPO=$LINKED ci_protected refs/heads/master)"
-R0=$(dojo_value "ud:.^(cass:clay %cw /(scot %p our)/scratch/(scot %da now))" | one '^[0-9.]+$' | tr -d .)
-echo "-- desk %scratch at revision $R0"
+R0=$(dojo_value "ud:.^(cass:clay %cw /(scot %p our)/$DESK/(scot %da now))" | one '^[0-9.]+$' | tr -d .)
+echo "-- desk %$DESK at revision $R0"
 printf 'r14 %s\n' "$(date -Is)" >> notes.txt
 git add -A; git commit -qm "ci-p3 R14: through the desk"
 OID=$(git rev-parse HEAD)
@@ -52,10 +62,10 @@ check "the candidate passed" '%passed' "$st"
 for _ in $(seq 1 30); do [ "$(cand_reason "$CID")" = "'landed'" ] && break; sleep 2; done
 check "%urgit-ci heard %landed" "'landed'" "$(cand_reason "$CID")"
 check "master = the candidate" "$OID" "$(REPO=$LINKED repo_master)"
-R1=$(dojo_value "ud:.^(cass:clay %cw /(scot %p our)/scratch/(scot %da now))" | one '^[0-9.]+$' | tr -d .)
+R1=$(dojo_value "ud:.^(cass:clay %cw /(scot %p our)/$DESK/(scot %da now))" | one '^[0-9.]+$' | tr -d .)
 check "the desk advanced a revision ($R0 -> $R1)" "yes" "$([ "$R1" -gt "$R0" ] 2>/dev/null && echo yes || echo no)"
-check "the desk holds the candidate's file" "1" "$(dojo_value ".^(@t %cx /(scot %p our)/scratch/(scot %da now)/notes/txt)" | grep -c 'r14 ')"
-check "the repository's binding records the landed commit" "$OID" "$("$api" GET "/repository/$LINKED" | sed 's/^[0-9]* //' | jq -r '.binding.commit // .binding.lastCommit // empty' | head -1)"
+check "the desk holds the candidate's file" "1" "$(dojo_value "(of-wain:format .^(wain %cx /(scot %p our)/$DESK/(scot %da now)/notes/txt))" | grep -c 'r14 ')"
+check "the repository's binding records the landed commit (git-to-clay)" "$OID git-to-clay" "$("$api" GET "/repository/$LINKED" | sed 's/^[0-9]* //' | jq -r '.binding | "\(.lastGit) \(.history[-1].direction)"')"
 echo "-- a landing whose destination moved: the candidate passes, the completion event refuses"
 # two commits in flight: the second's candidate is materialized against
 # the first's tip; when the first lands the second's expected tip is stale
@@ -109,5 +119,56 @@ check "the ship's recorded output is masked" "'***'" "$(dojo_value "(~(got by ou
 check "the candidate route carries no line of the value" "0" "$(body_of "$(ci_get "/candidate/$CID")" | grep -cF -e "$L1" -e "$L2")"
 ci_action "{\"action\":\"delete-credential\",\"repo\":\"$REPO\",\"name\":\"PEM\"}" >/dev/null
 end_row R15
+fi
+if [ "$which_row" = r16 ]; then
+row "R16: the second galaxy, a listed writer, approves an untrusted candidate over the peer protocol; a galaxy that cannot write is refused"
+"$dojo" ":urgit-ci &ci-action [%set-untrusted-policy '$REPO' %approval]" 60 3 | tail -1 >/dev/null
+check "~$SHIP2 listed as a writer of $REPO -> 200" "200" "$(status_of "$("$api" POST "/repository/$REPO/writers" "{\"ship\":\"~$SHIP2\",\"allowed\":true}")")"
+check "ci-can-write answers %.y for ~$SHIP2" '%.y' "$(dojo_value ".^(? %gx /=urgit=/ci-can-write/(scot %t '$REPO')/(scot %p ~$SHIP2)/noun)" | one '^%\.[yn]$')"
+# an untrusted candidate: the stage poke as %urgit sends it for a revision
+# by a ship with no seat (Q10's shape)
+stage_untrusted() {  # <branch-suffix>: sets UC (the untrusted candidate), HEAD, BASE
+  sync_clone; BASE=$(repo_master)
+  # a branch name of this run's own: a branch left by an earlier run
+  # refuses the push and the head never reaches the ship
+  git checkout -q -B "r16-$1-$TS" master; set_workflows fixture-pass.yml; printf 'r16 %s %s\n' "$1" "$(date -Is)" >> README.md
+  git add -A && git commit -qm "ci-p3 R16: a contributor's revision ($1)"; HEAD=$(git rev-parse HEAD)
+  git push -q origin "r16-$1-$TS" 2>&1 | tail -1 >/dev/null; git checkout -q master
+  check "the contributor's branch reached the ship" "$HEAD" "$(git ls-remote origin "refs/heads/r16-$1-$TS" | cut -f1)"
+  "$dojo" ":urgit-ci &ci-action [%stage-candidate '$REPO' 'refs/heads/master' (rash '$HEAD' hex) (rash '$BASE' hex) ~sampel-palnet %session ~]" 60 3 | tail -1 >/dev/null
+  UC=$(dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' (rash '$HEAD' hex) (rash '$BASE' hex) %untrusted]))" | one '0v[0-9a-v.]+')
+}
+stage_untrusted one
+echo "-- untrusted candidate $UC (head $HEAD)"
+check "the candidate is untrusted and pending" "%untrusted %pending" "$(cand_trust "$UC") $(cand_status "$UC")"
+r=$(SHIP_ROLE=2 "$P0/api.sh" POST /peer/ci-approve "{\"ship\":\"~$SHIP\",\"repository\":\"$REPO\",\"candidate\":\"$UC\"}")
+check "POST /peer/ci-approve on ~$SHIP2 -> 202" "202" "$(status_of "$r")"
+REQ=$(jq_of "$r" .request)
+result=""; for _ in $(seq 1 40); do result=$(SHIP_ROLE=2 "$P0/api.sh" GET /peer/forge | sed 's/^[0-9]* //' | jq -c ".requests[] | select(.request == \"$REQ\")"); [ "$(printf '%s' "$result" | jq -r .active)" = false ] && break; sleep 2; done
+echo "-- the forge request on ~$SHIP2: $(printf '%s' "$result" | cut -c1-200)"
+check "the owner answered: ok" "true" "$(printf '%s' "$result" | jq -r .ok)"
+check_contains "with the approval's message" "candidate approved" "$(printf '%s' "$result" | jq -r .message)"
+check "the request is of kind candidate" "candidate" "$(printf '%s' "$result" | jq -r .kind)"
+check "on ~$SHIP the untrusted candidate is superseded" "%skipped" "$(wait_cand "$UC" '%skipped' 30)"
+check_contains "by approval" "superseded by approval" "$(cand_reason "$UC")"
+TWIN=$(dojo_value "(scot %uv (sham ['$REPO' 'refs/heads/master' (rash '$HEAD' hex) (rash '$BASE' hex)]))" | one '0v[0-9a-v.]+')
+check "the trusted twin's actor is ~$SHIP2 (src.bowl, never the owner)" "~$SHIP2" "$(dojo_value "actor:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$TWIN/noun))" | one '^~[a-z-]+$')"
+check "the twin passes" '%passed' "$(wait_cand "$TWIN" '%passed|%failed|%unknown' 300)"
+check "and lands: master = the contributor's head" "$HEAD" "$(for _ in $(seq 1 30); do [ "$(repo_master)" = "$HEAD" ] && break; sleep 2; done; repo_master)"
+echo "-- ~$SHIP2 is no longer a writer: its approval must be refused"
+check "~$SHIP2 removed from the writers -> 200" "200" "$(status_of "$("$api" POST "/repository/$REPO/writers" "{\"ship\":\"~$SHIP2\",\"allowed\":false}")")"
+check "ci-can-write answers %.n for ~$SHIP2" '%.n' "$(dojo_value ".^(? %gx /=urgit=/ci-can-write/(scot %t '$REPO')/(scot %p ~$SHIP2)/noun)" | one '^%\.[yn]$')"
+stage_untrusted two; UC2="$UC"
+r=$(SHIP_ROLE=2 "$P0/api.sh" POST /peer/ci-approve "{\"ship\":\"~$SHIP\",\"repository\":\"$REPO\",\"candidate\":\"$UC2\"}")
+REQ2=$(jq_of "$r" .request)
+result=""; for _ in $(seq 1 40); do result=$(SHIP_ROLE=2 "$P0/api.sh" GET /peer/forge | sed 's/^[0-9]* //' | jq -c ".requests[] | select(.request == \"$REQ2\")"); [ "$(printf '%s' "$result" | jq -r .active)" = false ] && break; sleep 2; done
+echo "-- the forge request on ~$SHIP2: $(printf '%s' "$result" | cut -c1-200)"
+check "the owner refused: ok false" "false" "$(printf '%s' "$result" | jq -r .ok)"
+check "with the reason" "requester cannot write the repository" "$(printf '%s' "$result" | jq -r .message)"
+sleep 3
+check "the candidate stays untrusted and pending" "%untrusted %pending" "$(cand_trust "$UC2") $(cand_status "$UC2")"
+[ "$(printf '%s' "$result" | jq -r .ok)" = true ] && echo "R16 RED: a galaxy that cannot write approved a candidate"
+# tidy: the second untrusted candidate stays pending; nothing else to undo
+end_row R16
 fi
 [ "$NFAIL" = 0 ]

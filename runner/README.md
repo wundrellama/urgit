@@ -91,7 +91,7 @@ Open the repository's **Settings → Protected branches** and turn on **CI requi
 
 From then on a push or a web merge to that branch is never applied directly. The ship stages the pushed head as a candidate — the push answers `staged as ci candidate <id>` — plans its workflows, runs every job, and advances the branch to the candidate's exact commit only when every job passes. A candidate whose branch moved meanwhile is refused with `destination moved; rebase and push again`. A revision from a ship that cannot write the repository (a fork pull request) is untrusted: it waits for a writer's approval on the CI tab, or runs as a restricted check with no credentials if you choose that policy in Settings → Untrusted revisions.
 
-The toggle refuses a branch with no commit yet (`ref has no tip; push a commit before CI-protecting it`), a repository bound to a Clay desk, and any repository while `%storage` is unset. When you turn it on, the CI tab's storage check runs; a red result is a warning under the toggle, not a refusal — the runner may still reach the store even when your browser does not.
+The toggle refuses a branch with no commit yet (`ref has no tip; push a commit before CI-protecting it`) and any repository while `%storage` is unset. A repository bound to a Clay desk may be CI-protected: its candidate lands through the desk — the candidate's files are written to the desk first, exactly as a push to the linked branch is (so the repository must be desk-shaped: `sys.kelvin`, a mark for every file it carries, and the marks those marks build on), and the branch advances only once the desk took them and the checks still hold. When you turn it on, the CI tab's storage check runs; a red result is a warning under the toggle, not a refusal — the runner may still reach the store even when your browser does not.
 
 ## 5. Watch
 
@@ -125,11 +125,10 @@ A repository with CI required and no runner shows *No runner is enrolled. Mint a
 
 - Sandboxes are containers on a rootless Docker daemon, not virtual machines. The `microvm` backend is the next phase's first item on the same interface. Egress from a sandbox is unrestricted NAT until then.
 - The candidate's own workflow files are the required evidence. The ship records the commit it read them from, so a later release can pin an approved revision.
-- Only this ship's owner can approve an untrusted candidate in this release; a listed writer on another ship cannot yet.
+- The web interface's **Approve** button is the owner's. A listed writer on another ship approves through the peer protocol from their own ship (`POST /peer/ci-approve` with the owner ship, the repository and the candidate id; the answer arrives as a forge request of kind `candidate`); the owner's ship admits exactly the ships that can write the repository. No button for it yet.
 - The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error.
-- A credential value must be a single line of at least eight characters; multi-line material (a PEM key) is stored base64-encoded, because `act` masks a secret only where the whole value appears on one output line. Every released value is scrubbed whole from the relayed stream and the saved log.
+- A credential value is at least eight characters and may span lines (a PEM key pastes as is). `act` masks a secret only where the whole value appears on one output line, so the runner and the ship scrub every released value whole and every line of it of at least eight characters from the relayed stream, the saved log and the recorded outputs.
 - The CI public key is pinned at enrollment. A rotated key needs a fresh enrollment (or `ci_public_key` in the config, for testing only).
-- A repository bound to a Clay desk cannot be CI-protected; binding a CI-protected repository to a desk afterwards is not blocked, and such a candidate is refused at landing.
 - A matrix strategy, a `runs-on` expression, and any job-level `if` other than `needs.<job>.outputs.<name> == '<literal>'` fail the plan with a diagnosed reason.
 - The saved `act` stream is uploaded as `log.jsonl`. Step summaries and artifacts stay in the sandbox and are not uploaded.
 - The store's `public-url-base` setting is not read: the endpoint `%storage` names is the one both the runner and every browser must reach.

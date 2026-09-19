@@ -154,12 +154,13 @@ export const ciActions = {
 }
 
 // a credential form's validity: a name, a value of at least eight
-// characters (the ship's rule), and environments only for %env
+// characters (the ship's rule), and environments only for %env. A value
+// may span lines (P3 D9: a PEM key pastes as is; every line of at least
+// eight characters is scrubbed on both sides).
 export function credentialFormError({ name, value, scope, envs }) {
   if (!String(name || '').trim()) return 'A name is required.'
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(String(name).trim())) return 'Names are letters, digits and underscores, like GITHUB_TOKEN.'
   if (String(value || '').length < 8) return 'Values must be at least 8 characters.'
-  if (/[\r\n]/.test(String(value || ''))) return 'Values must be a single line.'
   if (scope === 'env' && !parseEnvs(envs).length) return 'Name at least one environment for the env scope.'
   return ''
 }

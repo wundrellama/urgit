@@ -74,6 +74,11 @@ export const api = {
     method: 'POST', body: JSON.stringify({ ship, repository, title, body }),
   }),
   peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
+  // a writer's approval of an untrusted CI candidate on another ship's
+  // repository (P3 D9), tracked like a forge comment
+  peerCiApprove: (ship, repository, candidate) => request('/peer/ci-approve', {
+    method: 'POST', body: JSON.stringify({ ship, repository, candidate }),
+  }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
   // one catalog request to every seated member of a group this ship is in; `group` is a flag, ~host/name

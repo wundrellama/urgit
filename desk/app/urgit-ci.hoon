@@ -666,9 +666,9 @@
   ^-  out
   ?-    -.act
       ::  CI-EMPTY-REF-1-A: every CI-protected ref has a tip, so the gate's
-      ::  "no tip to stage against" branch is unreachable.  CI-LINKED-DESK-P1:
-      ::  a repository bound to a Clay desk cannot be CI-protected, because
-      ::  its ref write is not one event.  un-protect never checks.
+      ::  "no tip to stage against" branch is unreachable.  a repository
+      ::  bound to a Clay desk lands through the clay path since P3 D9
+      ::  (CI-LINKED-DESK-P1-B alternative A).  un-protect never checks.
       ::
       %set-ci-protected
     ?.  protected.act
@@ -687,9 +687,9 @@
     ?~  u.tip
       ~|  no-tip-refusal
       !!
-    ?:  linked.u.u.tip
-      ~|  linked-refusal
-      !!
+    ::  a desk-linked repository lands through the receive tail's clay
+    ::  path since P3 D9; the ci-ref peek still says whether it is linked
+    ::
     =.  ci-protected  (~(put in ci-protected) [repo.act ref.act])
     (emit ~)
   ::
@@ -828,12 +828,10 @@
       !!
     ::  act masks a secret only where the whole value appears on one
     ::  output line (measured on 0.2.89: a two-line secret printed line by
-    ::  line is not masked), so a value with a newline is refused until
-    ::  the operator rules on per-line scrubbing (QUESTIONS-CI-P2 §2)
+    ::  line is not masked), so a multi-line value — a PEM key — is
+    ::  scrubbed line by line on both sides (P3 D9, CI-P2-SECRET-1); every
+    ::  line of at least eight characters is in the scrub set
     ::
-    ?:  (lien (trip value.act) |=(c=@tD =('\0a' c)))
-      ~|  'credential values must be a single line'
-      !!
     =.  credentials
       (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
     (emit ~)
@@ -1857,10 +1855,12 @@
 ++  credential-values
   |=  repo=@t
   ^-  (list @t)
+  %-  zing
   %+  murn  ~(tap by credentials)
   |=  [[r=@t name=@t] c=credential:ci]
+  ^-  (unit (list @t))
   ?.  =(r repo)  ~
-  `value.c
+  `(scrub-forms:ci-event value.c)
 ::
 ++  attempt-json
   |=  =attempt:ci

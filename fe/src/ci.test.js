@@ -78,7 +78,7 @@ test('the credential form refuses a missing name, a bad name, a short value and 
   assert.match(credentialFormError({ name: '', value: 'hunter2hunter2', scope: 'job', envs: '' }), /name/)
   assert.match(credentialFormError({ name: 'my token', value: 'hunter2hunter2', scope: 'job', envs: '' }), /letters/)
   assert.match(credentialFormError({ name: 'TOKEN', value: 'short', scope: 'job', envs: '' }), /8 characters/)
-  assert.match(credentialFormError({ name: 'TOKEN', value: 'line one\nline two', scope: 'job', envs: '' }), /single line/)
+  assert.equal(credentialFormError({ name: 'TOKEN', value: 'line one\nline two', scope: 'job', envs: '' }), '')
   assert.match(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: ' ' }), /environment/)
   assert.equal(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: 'staging, production' }), '')
   assert.deepEqual(parseEnvs('staging, production\nqa'), ['staging', 'production', 'qa'])

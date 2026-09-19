@@ -728,5 +728,6 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-storage { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.3rem; }
 .ci-storage code { font-size: 0.8rem; }
 .ci-toggle-warning { color: #b8860b; }
+.ci-secret { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; -webkit-text-security: disc; }
 .ci-radio { display: flex; flex-direction: column; gap: 0.25rem; }
 .ci-credential-form { margin-top: 0.75rem; }

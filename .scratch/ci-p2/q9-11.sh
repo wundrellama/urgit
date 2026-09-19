@@ -33,9 +33,13 @@ row "Q9: a %job credential reaches a trusted job as a grant and is masked everyw
 check_contains "credential-names lists TOKEN with scope %job" "name='TOKEN'" "$(cred_names)"
 short=$("$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'SHORT' 'abc' %job ~]" 60 10 | awk 1 | grep -o 'at least 8 characters' | head -1)
 check "a 3-character value is refused" "at least 8 characters" "$short"
-nl=$("$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'MULTI' 'line-one-here\\0aline-two-here' %job ~]" 60 10 | awk 1 | grep -o 'must be a single line' | head -1)
-check "a value with a newline is refused (act 0.2.89 does not mask a multi-line secret)" "must be a single line" "$nl"
-check "neither refused credential was stored" "no" "$(cred_names | grep -qE "name='(SHORT|MULTI)'" && echo yes || echo no)"
+# P3 D9 (CI-P2-SECRET-1's P3 item): a multi-line value is accepted and
+# scrubbed line by line on both sides (R15 proves the scrub); the P2 rule
+# that refused a newline is gone
+"$dojo" ":urgit-ci &ci-action [%set-credential '$REPO' 'MULTI' 'line-one-here\\0aline-two-here' %job ~]" 60 3 | tail -1 >/dev/null
+check "a value with a newline is accepted (P3: scrubbed line by line)" "yes" "$(cred_names | grep -qE "name='MULTI'" && echo yes || echo no)"
+check "the refused short credential was not stored" "no" "$(cred_names | grep -qE "name='SHORT'" && echo yes || echo no)"
+"$dojo" ":urgit-ci &ci-action [%delete-credential '$REPO' 'MULTI']" 60 3 | tail -1 >/dev/null
 sync_clone
 set_workflows fixture-secret.yml
 printf 'q9 %s\n' "$(date -Is)" >> README.md

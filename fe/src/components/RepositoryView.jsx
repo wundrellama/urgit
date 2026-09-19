@@ -1057,7 +1057,7 @@ function Settings({ repo, onMutate }) {
   const [ciPolicy, setCiPolicy] = useState(null)
   const [ciError, setCiError] = useState('')
   const [credentials, setCredentials] = useState([])
-  const [credForm, setCredForm] = useState({ name: '', value: '', scope: 'job', envs: '' })
+  const [credForm, setCredForm] = useState({ name: '', value: '', scope: 'job', envs: '', multiline: false })
   const [credError, setCredError] = useState('')
   const loadCi = useCallback(async () => {
     try {
@@ -1418,7 +1418,7 @@ function Settings({ repo, onMutate }) {
           <form className="ci-credential-form" onSubmit={addCredential} autoComplete="off">
             <div className="three-fields">
               <label><span>Name</span><input value={credForm.name} onChange={(e) => setCredForm({ ...credForm, name: e.target.value })} placeholder="NPM_TOKEN" /></label>
-              <label><span>Value</span><input type="password" value={credForm.value} autoComplete="new-password" onChange={(e) => setCredForm({ ...credForm, value: e.target.value })} /></label>
+              <label><span>Value</span>{credForm.multiline ? <textarea rows={4} className="ci-secret" value={credForm.value} autoComplete="off" spellCheck={false} onChange={(e) => setCredForm({ ...credForm, value: e.target.value })} /> : <input type="password" value={credForm.value} autoComplete="new-password" onChange={(e) => setCredForm({ ...credForm, value: e.target.value })} />}<small className="quiet"><label className="check-row compact"><input type="checkbox" checked={credForm.multiline} onChange={(e) => setCredForm({ ...credForm, multiline: e.target.checked })} /><span>Multi-line value (a PEM key pastes as is; every line is masked in logs)</span></label></small></label>
               <label><span>Scope</span><select value={credForm.scope} onChange={(e) => setCredForm({ ...credForm, scope: e.target.value })}><option value="job">Every trusted job</option><option value="env">Named environments</option></select></label>
             </div>
             {credForm.scope === 'env' && <label><span>Environments</span><input value={credForm.envs} onChange={(e) => setCredForm({ ...credForm, envs: e.target.value })} placeholder="staging, production" /></label>}

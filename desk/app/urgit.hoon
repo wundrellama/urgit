@@ -2208,6 +2208,9 @@
 =/  lfs-deletes  *(map @uv lfs-delete)
 =/  request-count=@ud  0
 =/  pending-clay  *(unit clay-push)
+::  the CI landing the clay-push in flight carries (P3 D9): the candidate
+::  id and the tip it expects, checked again in the completion event
+=/  pending-ci-land  *(unit [id=@uv expected=oid:git pull=(unit @ud)])
 =/  pending-publish  *(unit publish-job)
 =/  peer-serving  *(map @uv peer-serve)
 =/  peer-receiving  *(map @uv peer-receive)
@@ -2268,7 +2271,7 @@
     :~  [%pass /eyre/connect %arvo %e %connect [~ /git] %urgit]
         [%pass /eyre/api-connect %arvo %e %connect [~ /apps/urgit/api] %urgit]
     ==
-  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-inflight ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
+  :_  this(state loaded, in-flight ~, lfs-deletes ~, request-count 0, pending-clay ~, pending-ci-land ~, pending-publish ~, peer-serving ~, peer-receiving ~, peer-stream-jobs ~, peer-results ~, peer-outgoing ~, peer-discoveries ~, peer-inflight ~, peer-browses ~, peer-browse-prepare-queue ~, peer-browse-serving ~, peer-forges ~, peer-activities ~, notification-activities ~, github-in-flight ~, github-results ~, webhook-in-flight ~)
   (weld requeued connect-cards)
 ::
 ++  on-poke
@@ -2847,6 +2850,9 @@
       %forge-result
     (peer-forge-result request.packet repository.packet kind.packet number.packet ok.packet message.packet result.packet)
   ::
+      %ci-approve
+    (peer-ci-approve request.packet repository.packet candidate.packet)
+  ::
       %offer
     (peer-offer-legacy offer.packet)
   ::
@@ -3165,6 +3171,25 @@
   =/  replied=(quip card _this)
     (peer-forge-reply src.bowl request.msg repository.msg kind.msg number.msg %.y 'comment added' `u.result)
   [(weld notices -.replied) +.replied]
+::
+::  a writer on another ship approves a CI candidate (P3 D9): the
+::  requester must be able to write the repository — the owner, a listed
+::  writer or a %write group seat, exactly what ci-can-write answers — and
+::  the approval itself is %urgit-ci's, poked with the requester as the
+::  actor; its ack or nack is the reply.
+::
+++  peer-ci-approve
+  |=  [request=@uv repository=@t candidate=@uv]
+  ^-  (quip card _this)
+  =/  found=(unit repository:git)  (~(get by repositories) repository)
+  ?.  ?&(?=(^ found) (repository-writable u.found src.bowl))
+    (peer-forge-reply src.bowl request repository %candidate 0 %.n 'requester cannot write the repository' ~)
+  :_  this
+  :~  :*  %pass  /ci/approve/(scot %uv request)/(scot %p src.bowl)/(scot %t repository)
+          %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+          !>(`action:ci`[%approve-candidate candidate src.bowl])
+      ==
+  ==
 ::
 ++  peer-forge-create-issue
   |=  msg=forge-create-issue:git-peer
@@ -5693,6 +5718,36 @@
       :_  this
       (api-error eyre-id 422 'ship must be a valid Urbit ID')
     (start-peer-forge-issue eyre-id u.peer u.repository u.title u.body)
+  ::  a writer's approval of an untrusted candidate on another ship's
+  ::  repository (P3 D9): sent over the peer protocol, tracked and read
+  ::  back like a forge comment (GET /peer/forge, kind candidate)
+  ::
+  ?:  ?&  =(%'POST' method)
+          ?=([%apps %urgit %api %peer %ci-approve ~] site)
+      ==
+    =/  jon=(unit json)  (api-body req)
+    ?~  jon
+      :_  this
+      (api-error eyre-id 400 'valid JSON body required')
+    =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+    =/  repository=(unit @t)  (string-at 'repository' u.jon)
+    =/  candidate-text=(unit @t)  (string-at 'candidate' u.jon)
+    =/  peer=(unit @p)  ?~(ship-text ~ (slaw %p u.ship-text))
+    =/  candidate=(unit @uv)  ?~(candidate-text ~ (slaw %uv u.candidate-text))
+    ?.  ?&(?=(^ peer) ?=(^ repository) ?=(^ candidate) (valid-repository-name u.repository))
+      :_  this
+      (api-error eyre-id 422 'ship, repository and a candidate id are required')
+    =/  request=@uv
+      `@uv`(shas %git-peer-forge (cat 3 eny.bowl request-count))
+    =.  request-count  +(request-count)
+    =.  peer-forges
+      (~(put by peer-forges) request [u.peer u.repository %candidate 0 %.y %.n 'sending the approval to the repository owner' ~])
+    :_  this
+    %+  weld
+      :~  (peer-card u.peer /peer/ci-approve/(scot %uv request) [%ci-approve request u.repository u.candidate])
+          [%pass /peer/forge-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+      ==
+    (api-json eyre-id 202 (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]]))
   ?:  ?&  =(%'POST' method)
           ?=([%apps %urgit %api %peer %forge ~] site)
       ==
@@ -8069,8 +8124,6 @@
     (refuse 'candidate is not eligible to land')
   =/  found=(unit repository:git)  (~(get by repositories) repo-name)
   ?~  found  (refuse 'repository not found')
-  ?^  binding.u.found
-    (refuse 'CI protection is not available for desk-linked repositories in this release')
   ?.  =(`expected (~(get by refs.u.found) ref))
     (refuse 'destination moved; rebase and push again')
   =/  commands=(list receive-command:git)  ~[[`expected `candidate ref]]
@@ -8087,10 +8140,65 @@
       |=  p=native-pull:git
       ?:  ?&(=(number.p u.pull) =(%open state.p))  p(state %merged)  p
     ==
-  =^  cards  this  (accept-receive ~ repo-name commands landed ~)
+  =/  landed-card=card
+    [%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%landed id])]
+  ::  a repository bound to a Clay desk (P3 D9, CI-LINKED-DESK-P1-B
+  ::  alternative A): when the landing ref is the linked branch, the
+  ::  candidate's tree goes to the desk first, the way a linked push
+  ::  does — parked as the clay-push, written by %urgit-clay, reported
+  ::  back — and the ref advances in the completion event, after the
+  ::  eligibility and the tip are checked once more.  any other ref of a
+  ::  bound repository lands in this event like a plain one.
+  ::
+  ?.  ?&(?=(^ binding.u.found) =(ref branch.u.binding.u.found))
+    =^  cards  this  (accept-receive ~ repo-name commands landed ~)
+    :_  this
+    (snoc cards landed-card)
+  ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    (refuse 'linked desk update already in progress; re-run the candidate to land it')
+  =/  files=(unit (map path octs))
+    (flatten-commit:git-clay objects.landed candidate)
+  ?~  files
+    (refuse 'linked branch must resolve to a valid desk-shaped Git commit')
+  ::  reading the desk back can crash in Clay (a mark the desk cannot
+  ::  build, e.g. a file whose mark's grad names a mark the desk lacks):
+  ::  the landing is refused with the reason, never nacked
+  ::
+  =/  tried=(each (unit nori:clay) tang)
+    %-  mule  |.
+    (clay-delta desk-name.u.binding.u.found u.files)
+  =/  delta=(unit nori:clay)  ?:(?=(%& -.tried) p.tried ~)
+  ?~  delta
+    (refuse 'unable to read linked Clay desk')
+  ?>  ?=(%& -.u.delta)
+  ?:  =(~ p.u.delta)
+    =^  cards  this
+      (accept-receive ~ repo-name commands landed `[desk-name.u.binding.u.found candidate])
+    :_  this
+    (snoc cards landed-card)
+  =/  pending=clay-push
+    =/  start-at=@da  (add now.bowl ~s1)
+    =/  timeout-at=@da  (add now.bowl ~s15)
+    :*  ''
+        %.n
+        ~
+        repo-name
+        commands
+        landed
+        desk-name.u.binding.u.found
+        branch.u.binding.u.found
+        candidate
+        u.delta
+        ~
+        start-at
+        timeout-at
+    ==
+  =.  pending-clay  `pending
+  =.  pending-ci-land  `[id expected pull]
   :_  this
-  %+  snoc  cards
-  [%pass /ci/land %agent [our.bowl %urgit-ci] %poke %ci-action !>(`action:ci`[%landed id])]
+  :~  [%pass /clay-start %arvo %b %wait start-at.pending]
+      [%pass /clay-timeout %arvo %b %wait timeout-at.pending]
+  ==
 ::
 ++  command-for-ref
   |=  [commands=(list receive-command:git) ref=@t]
@@ -9370,6 +9478,23 @@
   ::  so it may be asked again.  a nack means the ship does not run
   ::  urgit, and settles the discovery now rather than at the timer
   ::
+  ::  the answer to a writer's cross-ship approval (P3 D9): %urgit-ci's
+  ::  ack lands it, its nack carries the refusal's own words
+  ::
+  ?:  ?=([%ci %approve @ @ @ ~] wire)
+    ?.  ?=(%poke-ack -.sign)  `this
+    =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
+    =/  requester=(unit @p)  (slaw %p i.t.t.t.wire)
+    =/  repository=@t  (fall (slaw %t i.t.t.t.t.wire) i.t.t.t.t.wire)
+    ?:  |(?=(~ request) ?=(~ requester))  `this
+    =/  answer=[ok=? message=@t]
+      ?~  p.sign  [%.y 'candidate approved; the same head runs again as trusted']
+      =/  detail=@t  (tang-text u.p.sign)
+      [%.n ?:(=('' detail) 'approval refused' detail)]
+    =/  packet=packet:git-peer
+      [%forge-result u.request repository %candidate 0 ok.answer message.answer ~]
+    :_  this
+    ~[[%pass /peer/forge-result/(scot %uv u.request) %agent [u.requester %urgit] %poke %git-peer !>(packet)]]
   ?:  ?=([%peer %catalog-request @ ~] wire)
     ?.  ?=(%poke-ack -.sign)  `this
     =/  request=(unit @uv)  (slaw %uv i.t.t.wire)
@@ -9906,8 +10031,60 @@
       `this(pending-clay ~)
     =/  maybe-result=(unit [ok=? message=@t])  result.pending
     ?~  maybe-result
-      `this(pending-clay ~)
+      `this(pending-clay ~, pending-ci-land ~)
     =/  result=[ok=? message=@t]  u.maybe-result
+    ::  a CI landing (P3 D9): the desk is written; the ref advances only if
+    ::  the candidate is still eligible and the destination has not moved
+    ::  since the landing was parked — the same checks as a plain landing,
+    ::  made in the event that writes.  %urgit-ci hears %landed or
+    ::  %land-refused; no request is answered.
+    ::
+    =/  ci-land  pending-ci-land
+    ?^  ci-land
+      =/  land  u.ci-land
+      =.  pending-clay  ~
+      =.  pending-ci-land  ~
+      =/  reply
+        |=  reason=(unit @t)
+        ^-  card
+        :*  %pass  /ci/land  %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+            !>(`action:ci`?~(reason [%landed id.land] [%land-refused id.land u.reason]))
+        ==
+      ?.  ok.result
+        :_  this  ~[(reply `message.result)]
+      =/  current=(unit repository:git)  (~(get by repositories) repository.pending)
+      ?~  current
+        :_  this  ~[(reply `'repository not found')]
+      ?.  =(`expected.land (~(get by refs.u.current) branch.pending))
+        :_  this  ~[(reply `'destination moved; rebase and push again')]
+      =/  prefix=path  /(scot %p our.bowl)/urgit-ci/(scot %da now.bowl)
+      =/  live=(each ? tang)
+        %-  mule  |.
+        .^(? %gu (weld prefix /$))
+      ?.  ?&(?=(%& -.live) p.live)
+        :_  this  ~[(reply `'ci: %urgit-ci is not running; the candidate cannot be landed')]
+      =/  eligible=(each ? tang)
+        %-  mule  |.
+        ;;(? .^(* %gx (weld prefix /eligible/(scot %t repository.pending)/(scot %t branch.pending)/(scot %t (oid-text:git-codec new-oid.pending))/noun)))
+      ?.  ?&(?=(%& -.eligible) p.eligible)
+        :_  this  ~[(reply `'candidate is not eligible to land')]
+      =/  clay-revision=(unit @ud)
+        %-  mole
+        |.(ud:.^(cass:clay %cw /(scot %p our.bowl)/[desk-name.pending]/(scot %da now.bowl)))
+      =/  applied=repository:git
+        (update-binding-success applied.pending new-oid.pending clay-revision now.bowl)
+      =.  repositories  (~(put by repositories) repository.pending applied)
+      =/  push-data=json  (push-event-json commands.pending)
+      =/  clay-data=json
+        %-  pairs:enjs:format
+        :~  ['desk' s+desk-name.pending]
+            ['commit' s+(oid-text:git-codec new-oid.pending)]
+        ==
+      :_  this
+      :~  [%pass /webhook/push %agent [our.bowl %urgit] %poke %git-webhook-event !>([repository.pending %push push-data])]
+          [%pass /webhook/clay-sync %agent [our.bowl %urgit] %poke %git-webhook-event !>([repository.pending %clay-sync clay-data])]
+          (reply ~)
+      ==
     =.  repositories
       ?.  ok.result  repositories
       =/  clay-revision=(unit @ud)

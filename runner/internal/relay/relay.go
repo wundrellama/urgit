@@ -83,6 +83,31 @@ func truncate(s string, n int) string {
 // Mask replaces a released credential value in act's output (D4).
 const Mask = "***"
 
+// ScrubForms expands released values to the forms Scrub masks: each
+// value whole, and each of its lines of at least eight characters — a
+// PEM key or a JSON credential prints line by line, and act masks none
+// of it (P3 D9, CI-P2-SECRET-1).
+func ScrubForms(values []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(v string) {
+		if v == "" || seen[v] {
+			return
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	for _, v := range values {
+		add(v)
+		for _, line := range strings.Split(strings.ReplaceAll(v, "\r\n", "\n"), "\n") {
+			if len(line) >= 8 {
+				add(line)
+			}
+		}
+	}
+	return out
+}
+
 // Scrub returns a reader over the stream with every occurrence of every
 // value replaced by Mask, line by line, so neither the relay nor the
 // saved stream ever carries a released credential value. act masks its

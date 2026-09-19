@@ -25,7 +25,8 @@
 #   P17  app/urgit.hoon      land-candidate skips the expected-tip compare
 #                            (apply-receive's own old-tip check still refuses, with the wrong reason)
 #   P18  app/urgit.hoon      handle-receive-pack skips write-authorized
-#   P19  app/urgit-ci.hoon   %set-ci-protected accepts a desk-linked repo
+#   (P19's mutant — the desk-linked refusal skipped — is gone: P3 D9 lands a
+#   desk-linked repository through the desk, and P19 is a positive row)
 #   P20  runner daemon.go    act runs on the unprojected workflow
 source "$(dirname "$0")/env.sh"
 cd "$ROOT"
@@ -75,9 +76,6 @@ edits = [
  ("P18", "desk/app/urgit.hoon",
   "  ?.  (write-authorized u.found req)\n    :_  this\n    %-  give-http\n    :*  eyre-id\n        401\n        ~[['content-type' 'text/plain'] ['www-authenticate' 'Basic realm=\"git\"']]\n        `(text:git-codec 'repository authentication required\\0a')\n",
   "  ?.  %.y\n    :_  this\n    %-  give-http\n    :*  eyre-id\n        401\n        ~[['content-type' 'text/plain'] ['www-authenticate' 'Basic realm=\"git\"']]\n        `(text:git-codec 'repository authentication required\\0a')\n"),
- ("P19", "desk/app/urgit-ci.hoon",
-  "    ?:  linked.u.u.tip\n      ~|  linked-refusal\n      !!\n",
-  "    ?:  %.n\n      ~|  linked-refusal\n      !!\n"),
  ("P20", "runner/internal/daemon/daemon.go",
   "\tprojected, err := plan.Project(original, a.Job, a.Attempt, a.Workflow)\n",
   "\tprojected, err := original, error(nil)\n"),
@@ -122,7 +120,6 @@ PY
       P14) echo "daemon exited non-zero: FAIL (observed: running pid" ;;
       P17) echo "verdict-reason: FAIL (observed: 'candidate object is missing from the store'" ;;
       P18) echo "no credentials -> 401: FAIL (observed: 200" ;;
-      P19) echo "linked repo not protected: FAIL (observed: %.y" ;;
       P20) echo "event job does not match the assignment" ;;
       *) echo "mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
