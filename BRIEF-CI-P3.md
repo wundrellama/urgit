@@ -191,7 +191,17 @@ short these are boxed as "not started", never half-built.
 
 - `desk/app/urgit-ci.hoon`, `desk/sur/ci.hoon` (`revoked`, `labels`, `repos` fields; `runs-on` on the plan's job; the action union), `desk/mar/ci-action.hoon`, **`desk/lib/ci-plan.hoon` and `desk/gen/ci-plan-vector.hoon`** (the plan parser and its vectors — `runs-on`/`timeout-minutes` are decoded there, rider 2): yours.
 - `desk/app/urgit.hoon`: **only** D9's linked-desk work (S6), fenced to the receive tail as
-  CI-LINKED-DESK-P1-B names it; nothing for S0–S5.
+  CI-LINKED-DESK-P1-B names it; nothing for S0–S5. **Rider 4 (astra §5) — for R16 only, the fence
+  also admits:** `desk/sur/git-peer.hoon` for ONE additive `packet` variant carrying the
+  repository and candidate id (no other mold change); `desk/mar/git-peer.hoon` only as the mold's
+  consequence; `%urgit`'s `++handle-peer` dispatch (`urgit.hoon:2768`) for that variant and the
+  reply plumbing that reports acceptance/refusal to the requester. The receiving arm derives the
+  actor from `src.bowl` — never from the packet — and forwards to the existing local
+  `%urgit-ci` `%approve-candidate` action, which keeps its `ci-can-write` check unchanged. The
+  requester's packet carries no actor field; a packet that tries is malformed. R16 proves a real
+  second-ship refusal as a non-writer, then approval as a listed writer, with a named
+  actor-substitution RED (a forged actor in the packet, or the request arriving from a ship that
+  is not the actor) before GREEN. The `%ci-action` route stays local-only (`urgit-ci.hoon:80`).
 - `runner/`: `labels` in the TOML + `x-ci-labels` on enroll/poll, `runs-on` in the plan (D2b), D2's 401-on-revoke exit, **D6(g)'s ownership labels in `sandbox/docker.go` (labels and the `Orphans` filter ONLY — not the `Sandbox` interface, not `Prepare/Run`) and the 401 split in `ship/client.go` + `daemon.go`'s `Reconcile`**, D6's re-offer handling (idempotent claim already exists),
   D9's scrub. Nothing in the sandbox interface.
 - `fe/`: the Runners section (with labels and the repository picker), `runs-on` on job rows, the live channel, the storage pip, first-run states, tests.
@@ -324,3 +334,4 @@ fire, commit what is green, record the row `provider-blocked, not run`, and stop
 
 - **Rider 2 (astra §2–§3, opus §2 + §4; 2026-09-19 10:50).** Fence gains `desk/lib/ci-plan.hoon` + `desk/gen/ci-plan-vector.hoon` (the parser lives there). Matrix refusal RETAINED; `runs-on` literal forms only, expressions refused at plan time — the brief's "expanded as act already does" was wrong (astra ran `act -l` on the matrix fixture: one row). `stale` = `stale-after` (~m5), one number; the daemon polls at capacity so `last-seen` is liveness (opus §2 finding). Opus §4(iii)'s three re-offer readings stand as D6(e). Opus §1/§3 were answered in-brief; no change.
 - **Rider 3 (astra §4; 2026-09-19 13:12).** Two runners on one Docker daemon: B's restart reconciled A's sandbox, got the ship's correct 401 for a foreign attempt, and the client read it as `enrollment lost` → exit 3 (astra's reproduction, `.scratch/ci-p3/box4-reconcile.py`). Ratified **B — fix it, bounded**, over documenting one-runner-per-daemon: ownership label on every sandbox object, `Orphans` filters on it, the client distinguishes `attempt authentication required` from enrollment loss. D6(g); fence widened to `docker.go` labels/`Orphans` and `client.go`/`Reconcile`. The harness stays on shared Docker so R11b exercises the fix.
+- **Rider 4 (astra §5; 2026-09-19 18:40).** D9's cross-ship approve needs a `%git-peer` packet variant and `%urgit`'s peer dispatch, which the §3 fence excluded (it admitted `urgit.hoon` for the linked-desk receive tail only). Fence widened exactly that far; actor from `src.bowl`, never the packet; local `%approve-candidate` + `ci-can-write` unchanged; actor-substitution RED named. Both chairs are judged on this fence at the pick.
