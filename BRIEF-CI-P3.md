@@ -100,7 +100,7 @@ the daemon's restart (it is ship state).
 **D3 — Runners panel** (Settings → new section, above Protected branches). A table: short id,
 capacity, sandbox, **labels**, **repositories (any / n named)**, `enrolled` age, `last-seen` age, running count, and a state pip: `minted`
 (never enrolled), `healthy` (seen < 2× poll interval), `stale` (seen ≥ 2× — the CI-DELIVERY-1
-re-offer window), `revoked`. Buttons: **Mint token** (modal: the token in a copy field with
+re-offer window), `refused` (signature/key refusal; re-enroll to clear), `revoked`. Buttons: **Mint token** (modal: the token in a copy field with
 "shown once" language and the config snippet beside it; closing the modal is the last time it
 is readable), per-row **Expire** / **Revoke** with a confirm, **Rotate CI key** (calls
 `%rotate-ci-key`, now allow-listed; every enrolled daemon's next assignment fails signature
@@ -134,8 +134,14 @@ the footer's LAN address, so the row that proves (a) runs its fetch from **a sec
 **D6 — CI-DELIVERY-1.1** (§Recovery; the ledger's corrected statement). (a) `abandon` re-offers
 the attempt immediately to any other eligible daemon (idempotent on attempt id; the abandoning
 daemon is excluded for that attempt). (b) A daemon that abandons with a signature or key reason
-is marked `stale` at once (its `last-seen` is not refreshed by the abandon) and is not offered
-work until a successful poll. (c) An attempt with events and no result for longer than the
+is marked **`refused`** at once and is **not offered work until it re-enrolls** (the corrected
+CI-DELIVERY-1.1; rider 1 on astra §1). An ordinary bearer-authenticated poll must NOT restore it:
+the bearer is fine, the pinned CI public key is what is wrong, and only fresh enrollment
+refreshes that key. Its polls keep answering (so the operator sees it `refused` in the Runners
+panel with the reason, not `stale`); the daemon logs the refusal and the README's recovery step
+(delete the state file, re-enroll with a new token). R9's RED tripwire: after the refusal, N
+ordinary polls do not make it eligible; GREEN: another daemon lands 8/8, and re-enrollment
+restores service. (c) An attempt with events and no result for longer than the
 job's own timeout + 2 min (not ~h1) is re-offered once, then failed `%infrastructure-error
 'runner went silent'`. (d) `%revoke-daemon` (D2) uses the same path. Rows: the wrong-key
 daemon + a live push lands 8/8 with no ~h1 wait; N+1 jobs on capacity N at t+0 all complete.
@@ -299,3 +305,8 @@ fire, commit what is green, record the row `provider-blocked, not run`, and stop
 - **Provider safeguard rule (§6) applies from the first mutant.** A filed box is a successful
   outcome; stop on it. No push, no merge, no rebase, no `/tmp`.
 
+
+
+## Riders
+
+- **Rider 1 (astra §1, 2026-09-18 23:40).** D6(b) said a wrong-key daemon returns on "a successful poll"; the ledger's corrected CI-DELIVERY-1.1 says "until it re-enrolls". The ledger governs — a poll authenticates the bearer, not the pinned key. D6(b) rewritten; the Runners pip gains `refused`; R9's tripwire named. No other change.
