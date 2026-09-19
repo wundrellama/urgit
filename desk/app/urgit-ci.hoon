@@ -1996,6 +1996,10 @@
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-mint eyre-id req)
+  ?:  ?=([%apps %urgit %api %ci %storage %probe ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-storage-probe eyre-id req)
   ?:  ?=([%apps %urgit %api %ci %repository @ %candidates ~] site)
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -2826,6 +2830,35 @@
   ?.  (viewer req)
     (emit (give-error eyre-id 401 'session required'))
   (emit (give-json eyre-id 200 runners-json))
+::
+::  the storage reachability probe (D5): the store's endpoint as the ship
+::  knows it and one URL under the CI prefix for the viewer's browser to
+::  fetch.  the URL is unsigned on purpose: an unsigned read draws the
+::  store's 403, and any HTTP answer proves the endpoint reachable from
+::  the browser (and CORS-readable), where a link to 127.0.0.1 or a
+::  LAN-only host draws a NetworkError.  the ship, which has no outbound
+::  HTTP, cannot make this check itself.
+::
+++  handle-storage-probe
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  settings=settings:ci-storage  (read-settings:ci-storage our.bowl now.bowl)
+  ?~  settings
+    (emit (give-json eyre-id 200 (pairs:enjs:format ~[['configured' b+%.n]])))
+  =/  endpoint=@t  endpoint.credentials.u.settings
+  =/  host=@t  (endpoint-host:git-storage endpoint)
+  =/  bucket=@t  current-bucket.configuration.u.settings
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['configured' b+%.y]
+      ['endpoint' s+endpoint]
+      ['host' s+host]
+      ['bucket' s+bucket]
+      ['url' s+(rap 3 ~[(endpoint-scheme:git-storage endpoint) host '/' bucket '/ci/_probe'])]
+  ==
 ::
 ::  the mint (D1): the ship draws 256 bits of entropy as the token,
 ::  stores its hash on a fresh daemon record, and answers the raw token

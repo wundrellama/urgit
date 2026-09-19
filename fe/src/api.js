@@ -393,6 +393,9 @@ export const ci = {
   // clock, and the mint that answers a fresh enrollment token exactly once
   runners: () => ciRequest('/runners'),
   mint: () => ciRequest('/runners/mint', { method: 'POST', body: '{}' }),
+  // the storage reachability probe (P3 D5): the store's endpoint and one
+  // unsigned URL under the CI prefix for THIS browser to fetch
+  storageProbe: () => ciRequest('/storage/probe'),
   // the poke as JSON; the ship answers 200 {ok} or the refusal
   action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
   // the log route answers a 302 to a presigned store URL; the browser
