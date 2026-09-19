@@ -51,11 +51,19 @@ check "the record is gone from GET ci/runners" "" "$(runner_state "$ID")"
 check "the record is gone from the ship (scry)" '%.n' "$(daemon_exists "$ID")"
 enr=$(rm -rf "$RUNNER_HOME/r3"; "$P1/runner.sh" start r3 1 "$TOKEN" 2>&1 | tail -1)
 check "the expired token enrolls nothing" "1" "$(sleep 2; grep -c 'enroll token is not recognized' "$RUNNER_HOME/r3/daemon.log")"
-r=$(ci_action "{\"action\":\"expire-token\",\"id\":\"$DAEMON_A\"}")
+# an enrolled test daemon (not a: under the row's mutant the record would
+# be deleted and the pool's daemon would exit, which is another row's
+# evidence lost)
+rm -rf "$RUNNER_HOME/r3"
+T3=$(mint_token); ID3=$(mint_id)
+"$P1/runner.sh" start r3 1 "$T3" >/dev/null; sleep 3
+check "a test daemon enrolled with a second token" "healthy" "$(wait_runner_state "$ID3" healthy 20)"
+r=$(ci_action "{\"action\":\"expire-token\",\"id\":\"$ID3\"}")
 check "expire enrolled -> 409" "409" "$(status_of "$r")"
 check_contains "the refusal names the alternative" "daemon is enrolled; revoke it instead" "$(jq_of "$r" .error)"
-check "daemon a is still enrolled" "healthy" "$(runner_state "$DAEMON_A")"
+check "the enrolled daemon is still there" "healthy" "$(runner_state "$ID3")"
 check "expire an unknown id -> 409 no such daemon" "no such daemon" "$(jq_of "$(ci_action '{"action":"expire-token","id":"0v0"}')" .error)"
+retire_daemon r3
 end_row R3
 fi
 if [ "$which_row" = r4 ]; then

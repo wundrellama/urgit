@@ -614,6 +614,20 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		"-W", "/work/projected/" + a.Workflow,
 		"-j", a.Job,
 		"-P", "ubuntu-latest=" + d.cfg.ActImage,
+	}
+	// every label of the job's runs-on maps to the runner image (P3 D2b):
+	// act picks the first label it has a platform for and skips a job it
+	// has none for, so `runs-on: [self-hosted, big-mem]` must find one.
+	// the ship already matched these labels against this daemon's own.
+	if walked, err := plan.Walk(original); err == nil {
+		for _, label := range walked[a.Job].RunsOn {
+			if strings.EqualFold(label, "ubuntu-latest") {
+				continue
+			}
+			argv = append(argv, "-P", label+"="+d.cfg.ActImage)
+		}
+	}
+	argv = append(argv,
 		"--network", h.Network,
 		"--json", "--pull=false",
 		"--cache-server-path", "/work/cache",
@@ -623,7 +637,7 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		// socket, a path the daemon resolves; the sandbox's own socket is
 		// named so the job's docker is the rootless daemon by construction
 		"--container-daemon-socket", d.cfg.DockerHost,
-	}
+	)
 	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
 		argv = append(argv, "--env", e)
 	}

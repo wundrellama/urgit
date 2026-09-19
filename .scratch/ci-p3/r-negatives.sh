@@ -29,7 +29,7 @@ case "$phase" in
   *) echo "usage: r-negatives.sh red|green|all" >&2; exit 2 ;;
 esac
 marker="rneg-$phase-$(date +%s)"; "$P0/dojo.sh" "'$marker'" 60 2 >/dev/null
-"$P0/rebuild.sh" "rneg-$phase" urgit urgit-ci | tail -3 || echo "(no reload: the installed desk already matches this phase's tree)"
+"$P0/rebuild.sh" "rneg-$phase" urgit-ci | tail -3 || echo "(no reload: the installed desk already matches this phase's tree)"
 if tty_read 400 | awk -v m="'$marker'" 'index($0, m) { f = 1; next } f' | grep -q 'crud: %into event failed'; then
   echo "r-negatives.sh: the $phase build failed to commit; stopping" >&2; exit 1
 fi

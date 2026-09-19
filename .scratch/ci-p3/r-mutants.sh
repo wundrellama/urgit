@@ -48,7 +48,7 @@ edits = [
   "      %rotate-ci-key\n    =.  signing  `fresh-signing-key\n",
   "      %rotate-ci-key\n    =.  signing  signing\n"),
  ("R5b", "desk/app/urgit-ci.hoon",
-  "  =?  daemons  refusal\n",
+  "  =?  daemons  (refusal-reason reason)\n",
   "  =?  daemons  %.n\n"),
 ]
 texts = {}

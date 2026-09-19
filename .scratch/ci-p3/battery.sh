@@ -9,7 +9,7 @@
 # R4 and R5, whose mutants would mask them.
 source "$(dirname "$0")/lib.sh"
 set +e
-GROUP_A="R3 R4 R5"
+GROUP_A="R4 R5 R3"
 GROUP_B="R4b R5b"
 steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B")
 skipping="${START_AT:-}"
