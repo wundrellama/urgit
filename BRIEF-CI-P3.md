@@ -74,7 +74,7 @@ mechanisms, one seam in `select-daemon`:
 `labels = ["linux", "x64", …]`; the daemon sends the set at enroll and on every poll
 (`x-ci-labels`, comma-separated, like `x-ci-capacity`); the ship stores it on `daemon`
 (`labels=(set @t)`, `state-0` in place). The plan step records each job's `runs-on` as a set
-(a string is a one-element set; the matrix form is expanded as act already does). Selection
+(a string is a one-element set, a sequence its elements — **literal forms only**; a `${{ }}` expression in `runs-on` is refused at plan time with `runs-on expression unsupported in P3`, never left pending; **the P1 matrix refusal stands** — rider 2). Selection
 requires `runs-on ⊆ labels ∪ implicit`, where **implicit** is every daemon's standing set
 `{self-hosted, linux, ubuntu-latest, ubuntu-22.04, ubuntu-24.04, x64}` — so every workflow that
 runs today keeps running on a daemon that declares nothing. A job with no eligible daemon is
@@ -99,8 +99,7 @@ the daemon's restart (it is ship state).
 
 **D3 — Runners panel** (Settings → new section, above Protected branches). A table: short id,
 capacity, sandbox, **labels**, **repositories (any / n named)**, `enrolled` age, `last-seen` age, running count, and a state pip: `minted`
-(never enrolled), `healthy` (seen < 2× poll interval), `stale` (seen ≥ 2× — the CI-DELIVERY-1
-re-offer window), `refused` (signature/key refusal; re-enroll to clear), `revoked`. Buttons: **Mint token** (modal: the token in a copy field with
+(never enrolled), `healthy` (seen within `stale-after`, ~m5 — the scheduler's own eligibility window; ONE number), `stale` (seen ≥ `stale-after`), `refused` (signature/key refusal; re-enroll to clear), `revoked`. Buttons: **Mint token** (modal: the token in a copy field with
 "shown once" language and the config snippet beside it; closing the modal is the last time it
 is readable), per-row **Expire** / **Revoke** with a confirm, **Rotate CI key** (calls
 `%rotate-ci-key`, now allow-listed; every enrolled daemon's next assignment fails signature
@@ -143,7 +142,7 @@ panel with the reason, not `stale`); the daemon logs the refusal and the README'
 ordinary polls do not make it eligible; GREEN: another daemon lands 8/8, and re-enrollment
 restores service. (c) An attempt with events and no result for longer than the
 job's own timeout + 2 min (not ~h1) is re-offered once, then failed `%infrastructure-error
-'runner went silent'`. (d) `%revoke-daemon` (D2) uses the same path. Rows: the wrong-key
+'runner went silent'`. (d) `%revoke-daemon` (D2) uses the same path. **(e) Rider 2 readings, ratified:** an abandon with no OTHER live daemon (capacity aside — a busy other daemon means the job waits) closes the attempt as P1 does (`%infrastructure-error 'abandoned: <reason>'`; P10 asserts it); "the job's own timeout" is its `timeout-minutes` when declared, `~h1` otherwise; an assignment never fetched, whose daemon's record is stale/refused/revoked, is re-offered to another daemon (`reoffer-unfetched` — the closeout's ghost). **(f) The daemon polls at capacity too** (`select-daemon` already refuses a full daemon, so the poll is a heartbeat), so `last-seen` is always liveness and a busy quiet daemon never reads `stale`. Rows: the wrong-key
 daemon + a live push lands 8/8 with no ~h1 wait; N+1 jobs on capacity N at t+0 all complete.
 
 **D7 — First-run states.** A repo with CI required and zero non-revoked daemons: the CI tab
@@ -178,7 +177,7 @@ short these are boxed as "not started", never half-built.
 
 ## 3. Fence
 
-- `desk/app/urgit-ci.hoon`, `desk/sur/ci.hoon` (`revoked`, `labels`, `repos` fields; `runs-on` on the plan's job; the action union), `desk/mar/ci-action.hoon`: yours.
+- `desk/app/urgit-ci.hoon`, `desk/sur/ci.hoon` (`revoked`, `labels`, `repos` fields; `runs-on` on the plan's job; the action union), `desk/mar/ci-action.hoon`, **`desk/lib/ci-plan.hoon` and `desk/gen/ci-plan-vector.hoon`** (the plan parser and its vectors — `runs-on`/`timeout-minutes` are decoded there, rider 2): yours.
 - `desk/app/urgit.hoon`: **only** D9's linked-desk work (S6), fenced to the receive tail as
   CI-LINKED-DESK-P1-B names it; nothing for S0–S5.
 - `runner/`: `labels` in the TOML + `x-ci-labels` on enroll/poll, `runs-on` in the plan (D2b), D2's 401-on-revoke exit, D6's re-offer handling (idempotent claim already exists),
@@ -310,3 +309,5 @@ fire, commit what is green, record the row `provider-blocked, not run`, and stop
 ## Riders
 
 - **Rider 1 (astra §1, 2026-09-18 23:40).** D6(b) said a wrong-key daemon returns on "a successful poll"; the ledger's corrected CI-DELIVERY-1.1 says "until it re-enrolls". The ledger governs — a poll authenticates the bearer, not the pinned key. D6(b) rewritten; the Runners pip gains `refused`; R9's tripwire named. No other change.
+
+- **Rider 2 (astra §2–§3, opus §2 + §4; 2026-09-19 10:50).** Fence gains `desk/lib/ci-plan.hoon` + `desk/gen/ci-plan-vector.hoon` (the parser lives there). Matrix refusal RETAINED; `runs-on` literal forms only, expressions refused at plan time — the brief's "expanded as act already does" was wrong (astra ran `act -l` on the matrix fixture: one row). `stale` = `stale-after` (~m5), one number; the daemon polls at capacity so `last-seen` is liveness (opus §2 finding). Opus §4(iii)'s three re-offer readings stand as D6(e). Opus §1/§3 were answered in-brief; no change.
