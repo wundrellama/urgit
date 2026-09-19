@@ -77,6 +77,12 @@
 =|  state-0:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
+::  the live feed's rate limit (D4): the last-seen each runner fact
+::  carried, so a daemon's heartbeat and event touches produce a fact only
+::  every announce-every, while any other change to the record is a fact
+::  at once.  transient, like the polls.
+::
+=|  announced=(map daemon-id:ci @da)
 %-  agent:dbug
 =<
 |_  =bowl:gall
@@ -111,6 +117,7 @@
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
+  =/  before=snapshot:hc  snap:hc
   =/  =out:hc
     ?+    mark  ~|([%urgit-ci-bad-mark mark] !!)
         %ci-action
@@ -121,13 +128,39 @@
       =+  !<([eyre-id=@ta req=inbound-request:eyre] vase)
       (handle-http:hc eyre-id req)
     ==
-  [cards.out this(state state.out, polls polls.out)]
+  ::  the live feed (D4): after every event that may have changed a
+  ::  candidate, an attempt or a daemon, the changed rows go out as facts
+  ::  to whoever watches the repository or the runners.  the helper door
+  ::  with the NEW state does the diff against the snapshot taken before.
+  ::  the facts go FIRST: arvo runs each card to completion before the
+  ::  next, so a poke to %urgit that answers with %landed inside this
+  ::  event would otherwise have its fact numbered before this one's.
+  ::  (inline, not an arm: the agent door has exactly its ten.)
+  ::
+  =/  next  this(state state.out, polls polls.out)
+  =/  live  (live-facts:~(. +>.next bowl) before announced)
+  [(weld cards.live cards.out) next(announced announced.live)]
+::
+::  the live feed's paths (D4): a repository's candidates, and the runner
+::  records.  session-authorized: only this ship may watch.  the initial
+::  fact is the same JSON the GET answers, so a page that subscribes never
+::  waits for the next change to render.
 ::
 ++  on-watch
   |=  =path
   ^-  (quip card _this)
-  ?>  ?=([%http-response @ ~] path)
-  `this
+  ?:  ?=([%http-response @ ~] path)  `this
+  ?>  =(our.bowl src.bowl)
+  ?+    path  (on-watch:def path)
+      [%ci %runners ~]
+    :_  this
+    ~[[%give %fact ~ %json !>(runners-fact:hc)]]
+  ::
+      [%ci %repository @ ~]
+    =/  repo=@t  (decode-segment:hc i.t.t.path)
+    :_  this
+    ~[[%give %fact ~ %json !>((candidates-fact:hc repo))]]
+  ==
 ::
 ::  eyre leaves /http-response/<id> when the client's connection closes:
 ::  a long-poll whose daemon went away is forgotten at once, so a later
@@ -293,8 +326,11 @@
     =/  found=(unit attempt:ci)  (~(get by attempts) u.id)
     ?~  found  `this
     ?.  =(%running status.u.found)  `this
+    =/  before=snapshot:hc  snap:hc
     =/  =out:hc  (expire-attempt:hc u.found)
-    [cards.out this(state state.out, polls polls.out)]
+    =/  next  this(state state.out, polls polls.out)
+    =/  live  (live-facts:~(. +>.next bowl) before announced)
+    [(weld cards.live cards.out) next(announced announced.live)]
   ==
 ::
 ++  on-fail  on-fail:def
@@ -305,11 +341,156 @@
 ::
 |_  =bowl:gall
 +$  out  [cards=(list card) state=_state polls=_polls]
+::  what the live feed diffs against (D4): the three maps a fact can
+::  come from, as they were before the event
+::
++$  snapshot  [candidates=_candidates attempts=_attempts daemons=_daemons]
+::
+++  snap
+  ^-  snapshot
+  [candidates attempts daemons]
+::
+::  a daemon's heartbeat becomes a fact this often at most; any other
+::  change to its record is a fact at once
+::
+++  announce-every  ~s20
 ::
 ++  emit
   |=  cards=(list card)
   ^-  out
   [cards state polls]
+::
+::  the live feed (D4).  for every watched repository: each candidate of
+::  it whose record, or any of whose attempts, changed since the snapshot
+::  (the relayed-event counter aside) goes out as its full row.  for the
+::  runners path and every watched repository: each daemon record that
+::  changed, its heartbeat rate-limited, and each record that is gone.
+::
+++  live-facts
+  |=  [before=snapshot announced=(map daemon-id:ci @da)]
+  ^-  [cards=(list card) announced=(map daemon-id:ci @da)]
+  =/  paths=(set path)
+    (silt (turn ~(val by sup.bowl) |=([* =path] path)))
+  ::  each watched repository with its path as subscribed, so a fact goes
+  ::  back on exactly the path the page named
+  ::
+  =/  repo-paths=(list [repo=@t =path])
+    %+  murn  ~(tap in paths)
+    |=  =path
+    ^-  (unit [@t ^path])
+    ?.  ?=([%ci %repository @ ~] path)  ~
+    `[(decode-segment i.t.t.path) path]
+  =/  runners-watched=?  (~(has in paths) /ci/runners)
+  ?:  ?&(?=(~ repo-paths) !runners-watched)  [~ announced]
+  ::  the candidates that changed, per watched repository
+  ::
+  =/  candidate-cards=(list card)
+    %-  zing
+    %+  turn  repo-paths
+    |=  [repo=@t =path]
+    ^-  (list card)
+    %+  murn  ~(tap by candidates)
+    |=  [id=candidate-id:ci c=candidate:ci]
+    ^-  (unit card)
+    ?.  =(repo repo.c)  ~
+    ?.  (candidate-changed before id c)  ~
+    :-  ~
+    :*  %give  %fact  ~[path]  %json
+        !>((row-fact 'candidate' (scot %uv id) (candidate-json c)))
+    ==
+  ::  the daemons that changed or went away, to the runners path and
+  ::  every watched repository
+  ::
+  =/  runner-paths=(list path)
+    %+  weld  ?:(runners-watched ~[/ci/runners] ~)
+    (turn repo-paths |=([* =path] path))
+  =/  gone=(list card)
+    %+  murn  ~(tap by daemons.before)
+    |=  [id=daemon-id:ci *]
+    ^-  (unit card)
+    ?:  (~(has by daemons) id)  ~
+    :-  ~
+    :*  %give  %fact  runner-paths  %json
+        !>((pairs:enjs:format ~[['kind' s+'runner-gone'] ['id' s+(scot %uv id)]]))
+    ==
+  =/  changed=(list [id=daemon-id:ci =daemon:ci])
+    %+  skim  ~(tap by daemons)
+    |=  [id=daemon-id:ci d=daemon:ci]
+    =/  old=(unit daemon:ci)  (~(get by daemons.before) id)
+    ?~  old  %.y
+    ?:  !=(u.old(last-seen ~) d(last-seen ~))  %.y
+    ?:  =(last-seen.u.old last-seen.d)  %.n
+    ::  only the heartbeat moved: a fact when the last one is old enough
+    ::
+    ?~  last-seen.d  %.n
+    =/  last=(unit @da)  (~(get by announced) id)
+    ?~  last  %.y
+    (gte u.last-seen.d (add u.last announce-every))
+  =/  announced-next=(map daemon-id:ci @da)
+    %+  roll  changed
+    |=  [[id=daemon-id:ci d=daemon:ci] acc=_announced]
+    ?~  last-seen.d  acc
+    (~(put by acc) id u.last-seen.d)
+  =.  announced-next
+    %+  roll  ~(tap by announced-next)
+    |=  [[id=daemon-id:ci *] acc=_announced-next]
+    ?:((~(has by daemons) id) acc (~(del by acc) id))
+  =/  runner-cards=(list card)
+    %+  turn  changed
+    |=  [id=daemon-id:ci d=daemon:ci]
+    ^-  card
+    :*  %give  %fact  runner-paths  %json
+        !>((row-fact 'runner' (scot %uv id) (runner-json d)))
+    ==
+  :_  announced-next
+  :(weld candidate-cards gone runner-cards)
+::
+++  candidate-changed
+  |=  [before=snapshot id=candidate-id:ci c=candidate:ci]
+  ^-  ?
+  =/  old=(unit candidate:ci)  (~(get by candidates.before) id)
+  ?~  old  %.y
+  ?:  !=(u.old c)  %.y
+  %+  lien  attempts.c
+  |=  aid=attempt-id:ci
+  =/  new=(unit attempt:ci)  (~(get by attempts) aid)
+  =/  was=(unit attempt:ci)  (~(get by attempts.before) aid)
+  ?~  new  %.n
+  ?~  was  %.y
+  !=(u.was(events 0) u.new(events 0))
+::
+++  row-fact
+  |=  [kind=@t id=@t patch=json]
+  ^-  json
+  (pairs:enjs:format ~[['kind' s+kind] ['id' s+id] ['patch' patch]])
+::
+::  the runners path's initial fact: the list, as GET ci/runners answers
+::
+++  runners-fact
+  ^-  json
+  =/  all=json  runners-json
+  ?.  ?=([%o *] all)  all
+  [%o (~(put by p.all) 'kind' s+'runners')]
+::
+::  a repository path's initial fact: the candidate list as GET
+::  ci/repository/<name>/candidates answers it, with the runner list so
+::  the tab can say when no runner is enrolled (D7)
+::
+++  candidates-fact
+  |=  repo=@t
+  ^-  json
+  =/  page=json  (candidates-json repo ~)
+  ?.  ?=([%o *] page)  page
+  =/  runners=json
+    =/  all=json  runners-json
+    ?.  ?=([%o *] all)  ~
+    (fall (~(get by p.all) 'runners') ~)
+  :-  %o
+  %-  ~(gas by p.page)
+  :~  ['kind' s+'candidates']
+      ['runners' runners]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+  ==
 ::
 ++  connect-card
   ^-  card
@@ -2258,6 +2439,19 @@
       ['pull' ?~(pull.candidate ~ (numb:enjs:format u.pull.candidate))]
       ['verdictReason' ?~(verdict-reason.candidate ~ s+u.verdict-reason.candidate)]
       ['planned' b+?=(^ plan.candidate)]
+      :-  'plan'
+      ?~  plan.candidate  ~
+      :-  %a
+      %+  turn  u.plan.candidate
+      |=  =job:ci
+      %-  pairs:enjs:format
+      :~  ['id' s+id.job]
+          ['workflow' s+workflow.job]
+          ['stage' (numb:enjs:format stage.job)]
+          ['needs' [%a (turn needs.job |=(need=@t s+need))]]
+          ['runsOn' [%a (turn (sort ~(tap in runs-on.job) aor) |=(l=@t s+l))]]
+          ['timeoutMinutes' ?~(timeout.job ~ (numb:enjs:format u.timeout.job))]
+      ==
       ['created' (numb:enjs:format (unix-seconds created.candidate))]
       ['updated' (numb:enjs:format (unix-seconds updated.candidate))]
       :-  'attempts'
@@ -2284,6 +2478,15 @@
     =/  id=(unit @uv)  (slaw %uv u.named)
     ?~  id  ~
     (~(get by candidates) u.id)
+  (emit (give-json eyre-id 200 (candidates-json repo before)))
+::
+::  a repository's candidates newest first, at most fifty, from before
+::  the candidate `before` names when the caller gives one; the GET's
+::  page and the live feed's initial fact are this one JSON
+::
+++  candidates-json
+  |=  [repo=@t before=(unit candidate:ci)]
+  ^-  json
   =/  mine=(list candidate:ci)
     %+  sort
       %+  skim  ~(val by candidates)
@@ -2294,8 +2497,6 @@
       ==
     |=([a=candidate:ci b=candidate:ci] (gth created.a created.b))
   =/  page=(list candidate:ci)  (scag 50 mine)
-  %-  emit
-  %^  give-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['repo' s+repo]
       ['candidates' [%a (turn page candidate-json)]]

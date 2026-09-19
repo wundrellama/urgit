@@ -15,8 +15,22 @@ export const statusLabel = {
   skipped: 'superseded',
   unknown: 'unknown',
   running: 'running',
+  reoffered: 're-offered',
   'infrastructure-error': 'infra error',
 }
+
+// the Approve button's tooltip names the repository's policy for
+// untrusted revisions (P3 D7)
+export const approveHint = (policy) => policy === 'restricted'
+  ? 'Policy: run restricted checks. This candidate ran with no credentials and cannot land; approving stages the same head as trusted and runs it again with credentials.'
+  : 'Policy: wait for approval. An untrusted revision runs nothing until a writer approves it; approving stages the same head as trusted.'
+
+// the first-run message (P3 D7): CI is required somewhere in this
+// repository and no runner could take the work
+export const noRunnerMessage = (protectedRefs = [], runners = []) =>
+  protectedRefs.length > 0 && !runners.some((r) => r.enrolled && !r.revoked)
+    ? 'No runner is enrolled. Mint a token in Settings → Runners and install the daemon; every candidate staged for a CI-required branch waits until one polls.'
+    : ''
 
 // the pips under a candidate: one per job attempt (plans are the ship's
 // own step and are not shown), newest attempts last
@@ -61,13 +75,16 @@ export function duration(started, finished) {
 
 // the candidate page's job rows: the plan attempts first (the ship's
 // planning step), then every job attempt newest first, each with the
-// fields the table shows and whether a log can be opened
-export function attemptRows(attempts = []) {
+// fields the table shows, the job's runs-on from the plan (P3 D2b) and
+// whether a log can be opened
+export function attemptRows(attempts = [], plan = []) {
+  const runsOn = new Map((Array.isArray(plan) ? plan : []).map((job) => [`${job.workflow}/${job.id}`, Array.isArray(job.runsOn) ? job.runsOn : []]))
   return attempts.map((attempt) => ({
     id: attempt.attempt,
     kind: attempt.kind,
     job: attempt.kind === 'plan' ? 'plan' : attempt.job || '',
     workflow: attempt.workflow || '',
+    runsOn: attempt.kind === 'job' ? runsOn.get(`${attempt.workflow}/${attempt.job}`) || [] : [],
     daemon: attempt.daemon ? String(attempt.daemon).slice(0, 12) : (attempt.status === 'skipped' ? '—' : ''),
     status: attempt.status,
     trust: attempt.trust,
