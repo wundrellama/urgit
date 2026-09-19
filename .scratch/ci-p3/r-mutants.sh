@@ -69,7 +69,7 @@ edits = [
   "  =/  again=?\n    ?~  found  %.n\n    ?:  %.y  %.n\n"),
  ("R11b", "runner/internal/sandbox/docker.go",
   "\t\tif owner == \"\" || (d.Owner != \"\" && owner == d.Owner) {\n",
-  "\t\tif true {\n"),
+  "\t\tif owner == \"\" || true {\n"),
  ("R11b", "runner/internal/ship/client.go",
   "\t\tif strings.Contains(resp.Error(), \"attempt authentication required\") {\n",
   "\t\tif false {\n"),
