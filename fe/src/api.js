@@ -389,6 +389,10 @@ export const ci = {
   policy: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/policy`),
   credentials: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/credentials`),
   key: () => ciRequest('/key'),
+  // the Runners panel (P3 D1/D3): every daemon record with the ship's
+  // clock, and the mint that answers a fresh enrollment token exactly once
+  runners: () => ciRequest('/runners'),
+  mint: () => ciRequest('/runners/mint', { method: 'POST', body: '{}' }),
   // the poke as JSON; the ship answers 200 {ok} or the refusal
   action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
   // the log route answers a 302 to a presigned store URL; the browser

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ci, waitForPeerBrowse, waitForPeerTransfer } from '../api'
-import CiTab from './CiTab'
+import CiTab, { useStorageProbe } from './CiTab'
+import RunnersSection from './Runners'
+import { probeMessage } from '../storageProbe'
 import { ciActions, credentialFormError, parseEnvs } from '../ci'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
@@ -1068,6 +1070,24 @@ function Settings({ repo, onMutate }) {
     setBusy(label); setError(''); setCredError('')
     try { await ci.action(body); await loadCi(); await onMutate() } catch (cause) { setError(cause.message) } finally { setBusy('') }
   }
+  // the CI required toggle (P3 D5 b, D7): a refusal (no object store, no
+  // tip, a desk-linked repository) is shown at the toggle itself; turning
+  // it on runs the storage probe, and a red probe is a warning under the
+  // toggle, not a refusal — the daemon may still reach the store
+  const storageProbe = useStorageProbe()
+  const [toggleError, setToggleError] = useState({})
+  const [toggleWarning, setToggleWarning] = useState({})
+  async function ciRequiredToggle(ref, on) {
+    setBusy(`ci-${ref}`); setToggleError((e) => ({ ...e, [ref]: '' })); setToggleWarning((w) => ({ ...w, [ref]: '' }))
+    try {
+      await ci.action(ciActions.setCiProtected(repo.name, ref, on))
+      await loadCi(); await onMutate()
+      if (on) {
+        const state = await storageProbe.run()
+        if (state === 'unreachable' || state === 'cors') setToggleWarning((w) => ({ ...w, [ref]: probeMessage(state, storageProbe.host) }))
+      }
+    } catch (cause) { setToggleError((e) => ({ ...e, [ref]: cause.message })) } finally { setBusy('') }
+  }
   async function addCredential(event) {
     event.preventDefault()
     const problem = credentialFormError(credForm)
@@ -1365,6 +1385,7 @@ function Settings({ repo, onMutate }) {
           </div>
           <div className="form-actions split"><button className="text-button" disabled={!nextRole} onClick={() => setGroupRoles((rows) => [...rows, { role: nextRole.id, capability: 'read' }])}>Add role</button><div>{repo.groupPolicy && <button className="text-button danger-text" onClick={() => act('clear-group-policy', () => api.setGroupPolicy(repo.name, null))}>Clear</button>} <button className="button" disabled={busy || !canSaveGroupPolicy} onClick={saveGroupPolicy}>{busy === 'group-policy' ? 'Saving…' : 'Save'}</button></div></div>
         </div>
+        <RunnersSection />
         <div className="subsection">
           <div className="section-title"><div><h3>Protected branches</h3><p>Protected branches accept fast-forward updates, but reject force-pushes and deletion.</p></div></div>
           <div className="branch-policy-list">
@@ -1373,7 +1394,7 @@ function Settings({ repo, onMutate }) {
               const ciRequired = Boolean(ciPolicy?.ciProtected?.includes(entry.name))
               return <div className="ci-branch-policy" key={entry.name}>
                 <label className="check-row compact"><input type="checkbox" checked={protectedBranch} onChange={(event) => act(`protected-${entry.name}`, () => api.setProtected(repo.name, entry.name, event.target.checked))} /><span><strong>{entry.name.replace('refs/heads/', '')}</strong><small>{protectedBranch ? 'Fast-forward updates only.' : 'Force-push and deletion allowed.'}</small></span></label>
-                <label className="check-row compact ci-required"><input type="checkbox" checked={ciRequired} disabled={busy !== '' || !ciPolicy} onChange={(event) => ciAct(`ci-${entry.name}`, ciActions.setCiProtected(repo.name, entry.name, event.target.checked))} /><span><strong>CI required</strong><small>{ciRequired ? 'Pushes and merges are staged as candidates and land only when the checks pass.' : 'Not gated by CI.'}</small></span></label>
+                <label className="check-row compact ci-required"><input type="checkbox" checked={ciRequired} disabled={busy !== '' || !ciPolicy} onChange={(event) => ciRequiredToggle(entry.name, event.target.checked)} /><span><strong>CI required</strong><small>{ciRequired ? 'Pushes and merges are staged as candidates and land only when the checks pass.' : 'Not gated by CI.'}</small>{toggleError[entry.name] && <small className="field-error">{toggleError[entry.name]}</small>}{toggleWarning[entry.name] && <small className="field-error ci-toggle-warning">{toggleWarning[entry.name]}</small>}</span></label>
               </div>
             })}
             {!(repo.refs || []).some((entry) => entry.name.startsWith('refs/heads/')) && <small className="quiet">No branches yet.</small>}
