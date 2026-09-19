@@ -2,15 +2,16 @@
 //
 // The keys are the contract from BRIEF-CI-P1 D7: ship_url, enroll_token
 // (consumed once), sandbox, docker_host, act_binary, act_image, capacity,
-// work_dir, state_file. The microvm keys (image_path, cpus, memory_mib,
-// disk_mib) are parsed into the sandbox Spec even though that backend is
-// not available in this release.
+// work_dir, state_file, plus P3's labels. The microvm keys (image_path,
+// cpus, memory_mib, disk_mib) are parsed into the sandbox Spec even though
+// that backend is not available in this release.
 package config
 
 import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -28,6 +29,11 @@ type Config struct {
 	// the CI public key to verify assignments and grants with, as an
 	// operator-pinned override of the one enrollment recorded (D5)
 	CIPublicKey string `toml:"ci_public_key"`
+	// the labels this daemon declares (CI-P3-SCHED-A): sent at enrollment
+	// and on every poll; the ship matches a job's runs-on against them
+	// plus its implicit set. which repositories the daemon may run is the
+	// ship's to say (the Runners panel), never a key here.
+	Labels []string `toml:"labels"`
 
 	// microvm backend (P2): parsed, never used in this release
 	ImagePath string `toml:"image_path"`
@@ -72,6 +78,21 @@ func Load(path string) (*Config, error) {
 	if c.Sandbox == "docker-rootless" && c.DockerHost == "" {
 		problems = append(problems, errors.New("docker_host is required for the docker-rootless sandbox"))
 	}
+	seen := map[string]bool{}
+	labels := c.Labels[:0]
+	for _, l := range c.Labels {
+		l = strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
+		}
+		if strings.ContainsAny(l, ", \t") {
+			problems = append(problems, fmt.Errorf("label %q: labels carry no commas or spaces", l))
+			continue
+		}
+		seen[l] = true
+		labels = append(labels, l)
+	}
+	c.Labels = labels
 	if len(problems) > 0 {
 		return nil, errors.Join(problems...)
 	}

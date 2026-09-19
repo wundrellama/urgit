@@ -1,0 +1,24 @@
+#!/bin/bash
+# The P3 table (BRIEF-CI-P3 §4), after the P0, P1 and P2 batteries or on
+# a fresh pair: p3-setup, the rows in stage order, the mutant RED and
+# GREEN phases per negative group, then the foreground suites. Every
+# step's output also lands in $TMP/p3-<step>.log. Stops at the first step
+# that exits non-zero. START_AT=<step> resumes a run at that step.
+# The negative groups: a row is never turned red by another row's mutant —
+# R4b (the revoke's re-offer) and R5b (the refusal de-list) run apart from
+# R4 and R5, whose mutants would mask them.
+source "$(dirname "$0")/lib.sh"
+set +e
+GROUP_A="R3 R4 R5"
+GROUP_B="R4b R5b"
+steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B")
+skipping="${START_AT:-}"
+for step in "${steps[@]}"; do
+  if [ -n "$skipping" ]; then [ "$step" = "$skipping" ] && skipping="" || continue; fi
+  cmd=${step%% *}; args=""; [ "$step" != "$cmd" ] && args=${step#* }
+  printf '\n\n################ %s  (%s)\n' "$step" "$(date -Is)"
+  "$P3/$cmd.sh" $args 2>&1 | tee "$TMP/p3-${step// /-}.log"
+  rc=${PIPESTATUS[0]}
+  [ "$rc" = 0 ] || { echo "battery.sh: $step exited $rc; stopping" >&2; exit "$rc"; }
+done
+echo; echo "battery.sh: all steps ran ($(date -Is))"

@@ -10,27 +10,30 @@ import (
 )
 
 // the needs/if walk on both ERPit workflows: the four job-level gates,
-// their needs lists, no matrix anywhere (suite.yml:13 says so)
+// their needs lists, no matrix anywhere (suite.yml:13 says so); every
+// ERPit job runs on ubuntu-latest and declares its timeout-minutes (P3:
+// the ship matches the label and bounds the deadline with the timeout)
 func TestWalkERPit(t *testing.T) {
+	ubuntu := []string{"ubuntu-latest"}
 	cases := []struct {
 		file string
 		want map[string]JobInfo
 	}{
 		{"suite.yml", map[string]JobInfo{
-			"plan":       {Needs: []string{}},
-			"structural": {Needs: []string{}},
-			"suite":      {Needs: []string{"plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "suite", Literal: "true"}},
+			"plan":       {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
+			"structural": {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 10},
+			"suite":      {Needs: []string{"plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "suite", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 45},
 		}},
 		{"fixtures.yml", map[string]JobInfo{
-			"pins":    {Needs: []string{}},
-			"plan":    {Needs: []string{}},
-			"replay":  {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "replay", Literal: "true"}},
-			"erasure": {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "erasure", Literal: "true"}},
-			"duo":     {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "duo", Literal: "true"}},
+			"pins":    {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
+			"plan":    {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
+			"replay":  {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "replay", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
+			"erasure": {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "erasure", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
+			"duo":     {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "duo", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
 		}},
 		{"fixture-chain.yml", map[string]JobInfo{
-			"a": {Needs: []string{}},
-			"b": {Needs: []string{"a"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "a", Output: "go", Literal: "true"}},
+			"a": {Needs: []string{}, RunsOn: ubuntu},
+			"b": {Needs: []string{"a"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "a", Output: "go", Literal: "true"}, RunsOn: ubuntu},
 		}},
 	}
 	for _, c := range cases {
@@ -45,6 +48,21 @@ func TestWalkERPit(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %+v, want %+v", c.file, got, c.want)
 		}
+	}
+}
+
+// runs-on as a list, and as an expression the ship will find no daemon for
+func TestWalkRunsOnList(t *testing.T) {
+	data := []byte("on: push\njobs:\n  big:\n    runs-on: [self-hosted, big-mem]\n    timeout-minutes: 3\n    steps: [{run: true}]\n  expr:\n    runs-on: ${{ matrix.os }}\n    steps: [{run: true}]\n")
+	got, err := Walk(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"self-hosted", "big-mem"}; !reflect.DeepEqual(got["big"].RunsOn, want) || got["big"].TimeoutMinutes != 3 {
+		t.Errorf("big: got %+v", got["big"])
+	}
+	if want := []string{"${{ matrix.os }}"}; !reflect.DeepEqual(got["expr"].RunsOn, want) {
+		t.Errorf("expr: got %+v", got["expr"])
 	}
 }
 

@@ -1,13 +1,14 @@
-# urgit-runner configuration (BRIEF-CI-P1 D7). Copy to
+# urgit-runner configuration (BRIEF-CI-P1 D7, P3 D1). Copy to
 # /etc/urgit-runner.toml, mode 0600: the enrollment token is a credential
-# until the first start consumes it.
+# until the first start consumes it. The ship's web interface (Settings →
+# Runners → Mint token) shows the first three lines ready to paste.
 
 # the ship's HTTP origin; the daemon reaches /apps/urgit/api/ci and /git
 ship_url = "http://127.0.0.1:8080"
 
-# minted on the ship with `:urgit-ci|mint-enroll-token`, pasted once; the
-# daemon enrolls with it on the first start, writes daemon_id and bearer
-# to state_file, and never writes the token anywhere
+# minted in the ship's web interface, shown once, pasted once; the daemon
+# enrolls with it on the first start, writes daemon_id and bearer to
+# state_file, and never writes the token anywhere
 enroll_token = "0v..."
 
 # the one sandbox backend this release ships: container isolation on a
@@ -24,6 +25,13 @@ act_image = "catthehacker/ubuntu:act-latest"
 
 # concurrent attempts this daemon offers the ship
 capacity = 1
+
+# the labels this daemon declares; a job runs here only when every label in
+# its `runs-on` is one of these or one of the implicit set every runner
+# stands for (self-hosted, linux, ubuntu-latest, ubuntu-22.04,
+# ubuntu-24.04, x64). Which repositories this runner may take is set on the
+# ship (Settings → Runners), never here.
+labels = []
 
 # checkouts, projections and act streams; one directory per attempt
 work_dir = "/var/lib/urgit-runner/work"

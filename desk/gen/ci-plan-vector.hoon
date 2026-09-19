@@ -115,6 +115,47 @@
       %-  plan-json
       (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"matrix":true')
     ::
+      ::  P3 (CI-P3-SCHED-A, rider 2): runs-on as a string or a list is
+      ::  the job's label set, timeout-minutes its deadline bound; absent
+      ::  is the empty set and no timeout; an expression is refused
+      ::
+      :-  'runs-on: a string is a one-element set, a list its elements, absent is empty'
+      =/  planned=(each (list job:ci) @t)
+        %-  check
+        %-  plan-json
+        %-  rap  :-  3
+        :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"runs-on":"ubuntu-latest"')  ','
+            (job-json 'b' 'chain.yml' '1' '["a"]' cond-eq ',"runs-on":["self-hosted","big-mem","self-hosted"],"timeout-minutes":3')  ','
+            (job-json 'pass' 'pass.yml' '0' '[]' 'null' '')
+        ==
+      ?.  ?=(%& -.planned)  %.n
+      ?&  =((silt ~['ubuntu-latest']) runs-on:(snag 0 p.planned))
+          =(~ timeout:(snag 0 p.planned))
+          =((silt ~['self-hosted' 'big-mem']) runs-on:(snag 1 p.planned))
+          =(`3 timeout:(snag 1 p.planned))
+          =(~ runs-on:(snag 2 p.planned))
+      ==
+    ::
+      :-  'runs-on expression refused at plan time'
+      .=  'runs-on expression unsupported in P3 (job a in chain.yml)'
+      %-  reason
+      %-  plan-json
+      (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"runs-on":"${{ matrix.os }}"')
+    ::
+      :-  'runs-on expression inside a list refused too'
+      .=  'runs-on expression unsupported in P3 (job a in chain.yml)'
+      %-  reason
+      %-  plan-json
+      (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"runs-on":["self-hosted","${{ inputs.label }}"]')
+    ::
+      :-  'timeout-minutes 0 or non-numeric is no timeout'
+      =/  planned=(each (list job:ci) @t)
+        %-  check
+        %-  plan-json
+        (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"timeout-minutes":0')
+      ?.  ?=(%& -.planned)  %.n
+      =(~ timeout:(snag 0 p.planned))
+    ::
       :-  'unknown condition version (v 2)'
       .=  'job b in chain.yml: unknown condition version'
       %-  reason

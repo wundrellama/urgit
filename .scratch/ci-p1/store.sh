@@ -2,7 +2,9 @@
 # usage: store.sh start|ready|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>
 # The object-store fixture (BRIEF-CI-P2 §5, astra §3): RustFS (Apache-2.0,
 # SigV4; the store NativePlanet ships by default) as ONE rootless container
-# on the harness Docker daemon, on the footer's port ($STORE_PORT), data
+# on the harness Docker daemon, on the footer's port ($STORE_PORT, bound
+# on 0.0.0.0 so a second machine can reach it — BRIEF-CI-P3 D5/R7; the
+# ship's %storage endpoint names $STORE_ADVERTISE, see ci-p1/env.sh), data
 # under $STORE_DATA, one PRIVATE bucket ($STORE_BUCKET: no anonymous policy,
 # so an unsigned read answers 403), and an access key minted once per
 # fixture into $TMP/store.env (mode 0600; git-ignored). Every read the rows
@@ -18,7 +20,8 @@
 #   stop       remove the container (part of shutdown); the data dir stays
 #   status     container state and the bucket's object count
 #   configure  the %storage-action pokes that point the fixture ship at it
-#              (the P0 recipe: endpoint, both keys, bucket, region, service)
+#              (the P0 recipe: endpoint = $STORE_ENDPOINT, both keys, bucket,
+#              region, service)
 #   head/get/ls/anon  signed HEAD, signed GET to a file, signed list of a
 #              prefix (keys one per line), and an UNSIGNED GET (the status)
 source "$(dirname "$0")/env.sh"
@@ -51,7 +54,7 @@ case "${1:-status}" in
       # rootless Docker and cannot write a bind-mounted host directory;
       # container root maps to this user, which owns $STORE_DATA
       $DK run -d --name "$STORE_NAME" --user 0:0 \
-        -p "127.0.0.1:$STORE_PORT:9000" \
+        -p "0.0.0.0:$STORE_PORT:9000" \
         -e "RUSTFS_ACCESS_KEY=$STORE_KEY" -e "RUSTFS_SECRET_KEY=$STORE_SECRET" \
         -e RUSTFS_CONSOLE_ENABLE=false -e RUSTFS_VOLUMES=/data -e RUSTFS_OBS_LOGGER_LEVEL=warn \
         -v "$STORE_DATA:/data" "$STORE_IMAGE" >/dev/null
@@ -87,7 +90,7 @@ case "${1:-status}" in
     load_keys
     poke="$P0/poke.sh"
     for act in \
-      "[%set-endpoint '$STORE_URL']" \
+      "[%set-endpoint '$STORE_ENDPOINT']" \
       "[%set-access-key-id '$STORE_KEY']" \
       "[%set-secret-access-key '$STORE_SECRET']" \
       "[%set-current-bucket '$STORE_BUCKET']" \

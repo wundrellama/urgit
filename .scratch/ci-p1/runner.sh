@@ -6,7 +6,9 @@
 # token enrolls; without one the state file must exist (the restart path).
 # `stop` sends TERM, `kill` sends KILL (P11), both by the recorded pid and
 # verified through /proc/<pid>/cmdline. Extra PATH entries in $RUNNER_PATH
-# come first (P12 wraps docker that way).
+# come first (P12 wraps docker that way). P3: $RUNNER_LABELS (a TOML
+# array body, `"linux", "big-mem"`) writes the daemon's `labels` and
+# $RUNNER_EXTRA appends raw lines (a wrong ci_public_key, R5/R9).
 source "$(dirname "$0")/env.sh"
 cmd="${1:?usage}"; name="${2:?name}"; home="$RUNNER_HOME/$name"
 pid_of() { cat "$home/pid" 2>/dev/null || true; }   # no pid file (never started): empty, not an exit under set -e
@@ -25,6 +27,8 @@ capacity = $capacity
 work_dir = "$home/work"
 state_file = "$home/state.json"
 TOML
+  [ -n "${RUNNER_LABELS:-}" ] && printf 'labels = [%s]\n' "$RUNNER_LABELS" >> "$home/config.toml"
+  [ -n "${RUNNER_EXTRA:-}" ] && printf '%s\n' "$RUNNER_EXTRA" >> "$home/config.toml"
   chmod 600 "$home/config.toml"
 }
 case "$cmd" in

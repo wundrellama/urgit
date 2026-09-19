@@ -34,6 +34,8 @@
       matrix=?
       events=(list @t)
       environment=(unit @t)
+      runs-on=(set @t)
+      timeout=(unit @ud)
   ==
 +$  wire-plan  [oid=@t workflows=(list @t) jobs=(list wire-job)]
 ::
@@ -133,7 +135,31 @@
     ?~  value  ~
     ?:  =('' u.value)  ~
     value
-  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events environment]
+  ::  the job's `runs-on` as a set (CI-P3-SCHED-A): a string is a
+  ::  one-element set, a list its elements; absent is the empty set, which
+  ::  every daemon covers
+  ::
+  =/  runs-on=(set @t)
+    =/  value=(unit json)  (~(get by fields) 'runs-on')
+    ?~  value  ~
+    ?:  ?=([%s *] u.value)  ?:(=('' p.u.value) ~ (silt ~[p.u.value]))
+    ?.  ?=([%a *] u.value)  ~
+    %-  silt
+    %+  murn  p.u.value
+    |=  item=json
+    ?.  ?=([%s *] item)  ~
+    ?:(=('' p.item) ~ `p.item)
+  ::  the job's `timeout-minutes` (CI-DELIVERY-1.1 c): a natural number
+  ::  of minutes when declared; anything else is no timeout
+  ::
+  =/  timeout=(unit @ud)
+    =/  value=(unit json)  (~(get by fields) 'timeout-minutes')
+    ?~  value  ~
+    ?.  ?=([%n *] u.value)  ~
+    =/  parsed=(unit @ud)  (rush p.u.value dim:ag)
+    ?~  parsed  ~
+    ?:(=(0 u.parsed) ~ parsed)
+  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events environment runs-on timeout]
 ::
 ::  the compiled condition: absent or null means run; otherwise exactly
 ::  `{"v":1,"kind":"output-eq",job,output,literal}` or
@@ -236,6 +262,12 @@
       [%| (rap 3 ~[name ': workflow ' workflow.wire-job ' is not in the plan'])]
     ?:  matrix.wire-job
       [%| (rap 3 ~['matrix unsupported in P1 (' name ')'])]
+    ::  runs-on is matched as literal labels (CI-P3-SCHED-A, rider 2): an
+    ::  expression there could never match a daemon and is refused now,
+    ::  never left pending
+    ::
+    ?:  (lien ~(tap in runs-on.wire-job) has-expression)
+      [%| (rap 3 ~['runs-on expression unsupported in P3 (' name ')'])]
     =/  missing=(unit @t)
       %+  find-first  needs.wire-job
       |=(need=@t !(~(has in ids) [workflow.wire-job need]))
@@ -253,10 +285,25 @@
     |=  =wire-job
     ^-  (unit job:ci)
     ?.  (lien events.wire-job |=(event=@t =('push' event)))  ~
-    `[id.wire-job workflow.wire-job name.wire-job stage.wire-job needs.wire-job cond.wire-job environment.wire-job]
+    :-  ~
+    :*  id.wire-job  workflow.wire-job  name.wire-job  stage.wire-job
+        needs.wire-job  cond.wire-job  environment.wire-job
+        runs-on.wire-job  timeout.wire-job
+    ==
   ?~  planned
     [%| 'no push-triggered jobs under .github/workflows']
   [%& planned]
+::
+::  whether a label carries a `${{` expression opener
+::
+++  has-expression
+  |=  label=@t
+  ^-  ?
+  =/  chars=tape  (trip label)
+  |-
+  ?~  chars  %.n
+  ?:  =("$\{\{" (scag 3 `tape`chars))  %.y
+  $(chars t.chars)
 ::
 ++  find-first
   |=  [items=(list @t) test=$-(@t ?)]

@@ -39,6 +39,10 @@ const ExitEnrollmentLost = 3
 // ExitNoCapacity is the exit status once every slot is quarantined.
 const ExitNoCapacity = 4
 
+// ExitRevoked is the exit status after the ship answers that the operator
+// revoked this daemon (P3 D2): nothing short of a new token brings it back.
+const ExitRevoked = 5
+
 type Daemon struct {
 	cfg      *config.Config
 	box      sandbox.Sandbox
@@ -73,11 +77,11 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 	}
 	if st == nil {
 		if cfg.EnrollToken == "" {
-			return nil, errors.New("no state file and no enroll_token: mint one on the ship (:urgit-ci|mint-enroll-token) and put it in the config")
+			return nil, errors.New("no state file and no enroll_token: mint one in the ship's web interface (Settings → Runners → Mint token) and put it in the config")
 		}
-		d.log.Printf("enrolling with the ship at %s", cfg.ShipURL)
+		d.log.Printf("enrolling with the ship at %s (labels %s)", cfg.ShipURL, strings.Join(cfg.Labels, ","))
 		client := ship.New(cfg.ShipURL, "")
-		enrolled, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox)
+		enrolled, err := client.Enroll(ctx, cfg.EnrollToken, cfg.Capacity, cfg.Sandbox, cfg.Labels)
 		if err != nil {
 			return nil, err
 		}
@@ -101,6 +105,7 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 	cfg.EnrollToken = ""
 	d.client = ship.New(cfg.ShipURL, st.Bearer)
 	d.client.Capacity = cfg.Capacity
+	d.client.Labels = cfg.Labels
 	d.daemonID = st.DaemonID
 	d.slots = make(chan struct{}, cfg.Capacity)
 	for i := 0; i < cfg.Capacity; i++ {
@@ -111,8 +116,8 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 
 // Banner is the startup disclosure (CI-SANDBOX-1-B).
 func (d *Daemon) Banner() string {
-	return fmt.Sprintf("urgit-runner: daemon %s, ship %s, capacity %d, act %s, sandbox: %s",
-		d.daemonID, d.cfg.ShipURL, d.cfg.Capacity, act.Version, d.box.Name())
+	return fmt.Sprintf("urgit-runner: daemon %s, ship %s, capacity %d, labels [%s], act %s, sandbox: %s",
+		d.daemonID, d.cfg.ShipURL, d.cfg.Capacity, strings.Join(d.cfg.Labels, " "), act.Version, d.box.Name())
 }
 
 // Reconcile (D7 c): every sandbox left from a previous life is destroyed
@@ -152,23 +157,38 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// Run polls until the context ends, the enrollment is lost, or every
-// slot is quarantined. The exit status is the caller's to use.
+// Run polls until the context ends, the enrollment is lost or revoked, or
+// every slot is quarantined. The exit status is the caller's to use.
+//
+// The poll is also the heartbeat (P3 D6 f): it runs at capacity too, so
+// the ship's `last-seen` is always liveness and a busy daemon never reads
+// stale. The ship's scheduler hands a full daemon nothing; an operator's
+// %assign can, and such an assignment waits here for a slot.
 func (d *Daemon) Run(ctx context.Context) int {
 	var wg sync.WaitGroup
+	// running work is cancelled when the ship revokes this daemon: the
+	// ship has re-offered every attempt it held, and its bearer is gone
+	workCtx, cancelWork := context.WithCancel(ctx)
+	defer cancelWork()
 	for {
 		if d.remainingCapacity() == 0 {
 			d.log.Printf("capacity 0: every slot is quarantined (%s); stopping", strings.Join(d.quarantined, ", "))
 			wg.Wait()
 			return ExitNoCapacity
 		}
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			wg.Wait()
 			return 0
-		case <-d.slots:
 		}
 		assignment, err := d.client.Poll(ctx, d.daemonID)
+		if errors.Is(err, ship.ErrRevoked) {
+			// the operator revoked this daemon (P3 D2): whatever it was
+			// running has been offered to another daemon; it stops here
+			d.log.Printf("revoked by the ship; stopping (a new enrollment token is the only way back)")
+			cancelWork()
+			wg.Wait()
+			return ExitRevoked
+		}
 		if errors.Is(err, ship.ErrUnauthorized) {
 			d.log.Printf("enrollment lost; re-enroll with a fresh token")
 			wg.Wait()
@@ -176,17 +196,14 @@ func (d *Daemon) Run(ctx context.Context) int {
 		}
 		if err != nil {
 			if ctx.Err() != nil {
-				d.slots <- struct{}{}
 				wg.Wait()
 				return 0
 			}
 			d.log.Printf("poll: %v; retrying in 5 s", err)
-			d.slots <- struct{}{}
 			time.Sleep(5 * time.Second)
 			continue
 		}
 		if assignment == nil {
-			d.slots <- struct{}{}
 			continue
 		}
 		// an assignment the ship did not sign, or signed with a key other
@@ -194,23 +211,26 @@ func (d *Daemon) Run(ctx context.Context) int {
 		// is logged and the attempt abandoned with it
 		if err := d.verifyAssignment(assignment); err != nil {
 			d.log.Printf("[%s %s] assignment %s refused: %v; no work", assignment.Kind, assignment.Attempt, assignment.ID, err)
-			d.fail(ctx, assignment, "assignment refused: "+err.Error(), func(format string, args ...any) {
-				d.log.Printf("[%s %s] "+format, append([]any{assignment.Kind, assignment.Attempt}, args...)...)
-			})
-			d.slots <- struct{}{}
+			d.refuse(assignment, "assignment refused: "+err.Error())
 			continue
 		}
 		// the ship offers a delivered assignment again when its attempt
-		// shows no activity; one this process is already running is ignored
+		// shows no activity; one this process is already running (or
+		// waiting for a slot) is ignored
 		if !d.claim(assignment.Attempt) {
 			d.log.Printf("assignment %s for attempt %s is already running here; ignored", assignment.ID, assignment.Attempt)
-			d.slots <- struct{}{}
 			continue
 		}
 		wg.Add(1)
 		go func(a *ship.Assignment) {
 			defer wg.Done()
-			keep := d.handle(ctx, a)
+			select {
+			case <-workCtx.Done():
+				d.release(a.Attempt)
+				return
+			case <-d.slots:
+			}
+			keep := d.handle(workCtx, a)
 			d.release(a.Attempt)
 			if keep {
 				d.slots <- struct{}{}
@@ -353,6 +373,21 @@ func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
 	return keep
 }
 
+// refuse gives a refused assignment back to the ship whatever its kind
+// (CI-DELIVERY-1.1 b): a refusal over the pinned key is an abandon, never
+// a plan error — the ship de-lists this daemon and re-offers the attempt.
+func (d *Daemon) refuse(a *ship.Assignment, reason string) {
+	d.log.Printf("[%s %s] no result: %s", a.Kind, a.Attempt, reason)
+	rctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := d.client.Abandon(rctx, a.Attempt, reason)
+	if err != nil {
+		d.log.Printf("[%s %s] abandon POST failed: %v", a.Kind, a.Attempt, err)
+		return
+	}
+	d.log.Printf("[%s %s] abandon POST -> %d", a.Kind, a.Attempt, resp.Status)
+}
+
 // fail reports that no result is coming. A plan attempt gets the reason
 // as its (refused) plan; a job attempt is abandoned (D8).
 func (d *Daemon) fail(ctx context.Context, a *ship.Assignment, reason string, logf func(string, ...any)) {
@@ -434,6 +469,11 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		Matrix      bool       `json:"matrix"`
 		Events      []string   `json:"events"`
 		Environment string     `json:"environment,omitempty"`
+		// the job's runs-on as a list (a string is one element) and its
+		// timeout-minutes; the ship matches labels and bounds the
+		// deadline with them (CI-P3-SCHED-A, CI-DELIVERY-1.1)
+		RunsOn         []string `json:"runs-on"`
+		TimeoutMinutes int      `json:"timeout-minutes,omitempty"`
 	}
 	body := struct {
 		OID       string    `json:"oid"`
@@ -470,9 +510,13 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			if info.Needs == nil {
 				info.Needs = []string{}
 			}
+			if info.RunsOn == nil {
+				info.RunsOn = []string{}
+			}
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
 				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
+				RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes,
 			})
 		}
 		logf("act -l %s: %d job(s)", file, len(listed))
