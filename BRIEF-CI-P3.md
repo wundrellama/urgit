@@ -142,7 +142,19 @@ panel with the reason, not `stale`); the daemon logs the refusal and the README'
 ordinary polls do not make it eligible; GREEN: another daemon lands 8/8, and re-enrollment
 restores service. (c) An attempt with events and no result for longer than the
 job's own timeout + 2 min (not ~h1) is re-offered once, then failed `%infrastructure-error
-'runner went silent'`. (d) `%revoke-daemon` (D2) uses the same path. **(e) Rider 2 readings, ratified:** an abandon with no OTHER live daemon (capacity aside — a busy other daemon means the job waits) closes the attempt as P1 does (`%infrastructure-error 'abandoned: <reason>'`; P10 asserts it); "the job's own timeout" is its `timeout-minutes` when declared, `~h1` otherwise; an assignment never fetched, whose daemon's record is stale/refused/revoked, is re-offered to another daemon (`reoffer-unfetched` — the closeout's ghost). **(f) The daemon polls at capacity too** (`select-daemon` already refuses a full daemon, so the poll is a heartbeat), so `last-seen` is always liveness and a busy quiet daemon never reads `stale`. Rows: the wrong-key
+'runner went silent'`. (d) `%revoke-daemon` (D2) uses the same path. **(e) Rider 2 readings, ratified:** an abandon with no OTHER live daemon (capacity aside — a busy other daemon means the job waits) closes the attempt as P1 does (`%infrastructure-error 'abandoned: <reason>'`; P10 asserts it); "the job's own timeout" is its `timeout-minutes` when declared, `~h1` otherwise; an assignment never fetched, whose daemon's record is stale/refused/revoked, is re-offered to another daemon (`reoffer-unfetched` — the closeout's ghost). **(f) The daemon polls at capacity too** (`select-daemon` already refuses a full daemon, so the poll is a heartbeat), so `last-seen` is always liveness and a busy quiet daemon never reads `stale`. **(g) Rider 3 — shared-Docker reconciliation is ownership-aware
+(astra §4; ratified B):** two runners on one rootless Docker daemon is a supported deployment.
+Every sandbox object the backend creates (`docker.go:71,74,80` — network, volume, runner
+container) carries a second label `urgit-ci-daemon=<daemon-id>`, and `Orphans` (`docker.go:192`)
+filters on BOTH labels so a runner never inspects or destroys another runner's sandbox. The ship
+client stops mapping every 401 to `ErrUnauthorized` (`client.go:171,297`): a 401 whose body is
+`attempt authentication required` (the ship's foreign-attempt answer, `urgit-ci.hoon:1677`) is a
+distinct `ErrNotOurs` that `Reconcile` (`daemon.go:129`) treats as "leave it, not mine"; only a
+401 on poll/enroll/own-attempt paths means enrollment lost. Pre-existing unlabelled sandboxes
+(from P1/P2 daemons) are still reaped by a runner that finds no owner label — one line, so an
+upgrade does not orphan a stuck container forever. R11b's RED is exactly astra's reproduction:
+restart B while A holds a sandbox → B must NOT exit 3, must NOT touch A's network, and must poll
+within one interval; GREEN with the binding intact. Rows: the wrong-key
 daemon + a live push lands 8/8 with no ~h1 wait; N+1 jobs on capacity N at t+0 all complete.
 
 **D7 — First-run states.** A repo with CI required and zero non-revoked daemons: the CI tab
@@ -180,7 +192,7 @@ short these are boxed as "not started", never half-built.
 - `desk/app/urgit-ci.hoon`, `desk/sur/ci.hoon` (`revoked`, `labels`, `repos` fields; `runs-on` on the plan's job; the action union), `desk/mar/ci-action.hoon`, **`desk/lib/ci-plan.hoon` and `desk/gen/ci-plan-vector.hoon`** (the plan parser and its vectors — `runs-on`/`timeout-minutes` are decoded there, rider 2): yours.
 - `desk/app/urgit.hoon`: **only** D9's linked-desk work (S6), fenced to the receive tail as
   CI-LINKED-DESK-P1-B names it; nothing for S0–S5.
-- `runner/`: `labels` in the TOML + `x-ci-labels` on enroll/poll, `runs-on` in the plan (D2b), D2's 401-on-revoke exit, D6's re-offer handling (idempotent claim already exists),
+- `runner/`: `labels` in the TOML + `x-ci-labels` on enroll/poll, `runs-on` in the plan (D2b), D2's 401-on-revoke exit, **D6(g)'s ownership labels in `sandbox/docker.go` (labels and the `Orphans` filter ONLY — not the `Sandbox` interface, not `Prepare/Run`) and the 401 split in `ship/client.go` + `daemon.go`'s `Reconcile`**, D6's re-offer handling (idempotent claim already exists),
   D9's scrub. Nothing in the sandbox interface.
 - `fe/`: the Runners section (with labels and the repository picker), `runs-on` on job rows, the live channel, the storage pip, first-run states, tests.
 - `runner/README.md`: D8. `specs/native-ci.md`: CI-DELIVERY-1.1 as spec text under §Recovery.
@@ -311,3 +323,4 @@ fire, commit what is green, record the row `provider-blocked, not run`, and stop
 - **Rider 1 (astra §1, 2026-09-18 23:40).** D6(b) said a wrong-key daemon returns on "a successful poll"; the ledger's corrected CI-DELIVERY-1.1 says "until it re-enrolls". The ledger governs — a poll authenticates the bearer, not the pinned key. D6(b) rewritten; the Runners pip gains `refused`; R9's tripwire named. No other change.
 
 - **Rider 2 (astra §2–§3, opus §2 + §4; 2026-09-19 10:50).** Fence gains `desk/lib/ci-plan.hoon` + `desk/gen/ci-plan-vector.hoon` (the parser lives there). Matrix refusal RETAINED; `runs-on` literal forms only, expressions refused at plan time — the brief's "expanded as act already does" was wrong (astra ran `act -l` on the matrix fixture: one row). `stale` = `stale-after` (~m5), one number; the daemon polls at capacity so `last-seen` is liveness (opus §2 finding). Opus §4(iii)'s three re-offer readings stand as D6(e). Opus §1/§3 were answered in-brief; no change.
+- **Rider 3 (astra §4; 2026-09-19 13:12).** Two runners on one Docker daemon: B's restart reconciled A's sandbox, got the ship's correct 401 for a foreign attempt, and the client read it as `enrollment lost` → exit 3 (astra's reproduction, `.scratch/ci-p3/box4-reconcile.py`). Ratified **B — fix it, bounded**, over documenting one-runner-per-daemon: ownership label on every sandbox object, `Orphans` filters on it, the client distinguishes `attempt authentication required` from enrollment loss. D6(g); fence widened to `docker.go` labels/`Orphans` and `client.go`/`Reconcile`. The harness stays on shared Docker so R11b exercises the fix.
