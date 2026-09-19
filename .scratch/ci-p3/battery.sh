@@ -11,8 +11,12 @@ source "$(dirname "$0")/lib.sh"
 set +e
 GROUP_A="R4 R5 R3"
 GROUP_B="R4b R5b"
-GROUP_C="R9 R10 R11b"
-steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r2-r6 r2" "r2-r6 r6" "r9-r11 r11a" "r9-r11 r11b" "r7-r8 r7" "r7-r8 r8" "r9-r11 r9" "r9-r11 r10" "r9-r11 r11" r12 "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B" "r-negatives red $GROUP_C" "r-negatives green $GROUP_C" foreground)
+# R11b's mutant is the pre-rider-3 daemon, which exits 3 at any start
+# beside another runner's sandbox — it would kill R10's daemon b, so it
+# is a group of its own; both REDs run before the one GREEN of C and D
+GROUP_C="R9 R10"
+GROUP_D="R11b"
+steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r2-r6 r2" "r2-r6 r6" "r9-r11 r11a" "r9-r11 r11b" "r7-r8 r7" "r7-r8 r8" "r9-r11 r9" "r9-r11 r10" "r9-r11 r11" r12 "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B" "r-negatives red $GROUP_C" "r-negatives red $GROUP_D" "r-negatives green $GROUP_C $GROUP_D" foreground)
 skipping="${START_AT:-}"
 for step in "${steps[@]}"; do
   if [ -n "$skipping" ]; then [ "$step" = "$skipping" ] && skipping="" || continue; fi
