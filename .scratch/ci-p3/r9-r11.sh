@@ -55,7 +55,18 @@ echo "-- pushed $OID: candidate $CID"
 for _ in $(seq 1 30); do grep -q 'no result: assignment refused: signature does not verify' "$RUNNER_HOME/b/daemon.log" && break; sleep 5; done
 echo "-- b's first refusal after $(( $(date +%s) - T0 )) s"
 check "the ship marked b refused" "refused" "$(wait_runner_state "$DAEMON_B" refused 30)"
-st=$(wait_cand "$CID" '%passed|%failed|%unknown' 3000)
+# the run, watched: a second refusal by b means the ship offered it work
+# after de-listing it (the mutant's effect, CI-DELIVERY-1.1 b): the row
+# fails at once rather than waiting the run out
+st=""; for _ in $(seq 1 600); do
+  st=$(cand_status "$CID"); [[ "$st" =~ ^(%passed|%failed|%unknown)$ ]] && break
+  if [ "$(grep -c 'no result: assignment refused: signature does not verify' "$RUNNER_HOME/b/daemon.log")" -ge 2 ]; then
+    echo "R9 RED: the refused daemon was offered work again"
+    check "b refused exactly once: offered nothing after its refusal (N ordinary polls did not restore it)" "1" "$(grep -c 'no result: assignment refused: signature does not verify' "$RUNNER_HOME/b/daemon.log")"
+    retire_daemon b; end_row R9; exit 1
+  fi
+  sleep 5
+done
 T1=$(date +%s)
 echo "-- candidate $st after $(( T1 - T0 )) s"
 check "candidate %passed" '%passed' "$st"
@@ -108,18 +119,27 @@ sleep 60
 check "one minute on, the attempt is still running (the deadline has not come)" '%running' "$(att_status "$S1")"
 st=$(wait_att "$S1" '%reoffered|%infrastructure-error|%passed' 240)
 echo "-- $st after $(( $(date +%s) - T0 )) s"
+# b is resumed the moment the ship has re-offered: its act finished its
+# sleep long ago inside the container, so b reads the stream, uploads and
+# posts its result at once — late, against a closed attempt — with a few
+# seconds of its own deadline (the same timeout + 2 min) still to run
+kill -CONT "$BPID" && echo "-- SIGCONT to daemon b at $(date -Is); it reads the finished stream and posts"
 check "the attempt is re-offered after the timeout + 2 min, not closed" '%reoffered' "$st"
 check_contains "with the silent reason" "runner went silent; re-offered" "$(att_reason "$S1")"
+for _ in $(seq 1 60); do grep -q "$S1.*result .* POST\|$S1.*abandon POST" "$RUNNER_HOME/b/daemon.log" && break; sleep 1; done
+echo "-- b: $(grep "$S1" "$RUNNER_HOME/b/daemon.log" | grep -E 'ship refused event|result .* POST|abandon POST|act exited' | tail -3 | cut -c1-140 | tr '\n' ' ')"
+# the late lines — the job's own result line among them — meet the closed
+# attempt: the ship refuses each with 'attempt is closed'; the daemon
+# claims only a jobResult the ship accepted, so its final word is an
+# abandon, answered without touching the re-offered attempt
+check "b's late report was refused: the ship answered its lines 'attempt is closed'" "yes" "$([ "$(grep "$S1" "$RUNNER_HOME/b/daemon.log" | grep -c 'ship refused event: {"error":"attempt is closed"}')" -ge 1 ] && echo yes || echo no)"
+check "b claimed no result (its jobResult line was refused with the rest)" "1" "$(grep "$S1" "$RUNNER_HOME/b/daemon.log" | grep -cE 'no result: act exited 0 without a jobResult')"
+check "the late report did not change the attempt" '%reoffered' "$(att_status "$S1")"
 S2=""; for _ in $(seq 1 60); do for a in $(cand_attempt_ids "$CID"); do [ "$a" != "$S1" ] && [ "$(att_kind "$a")" = "%job" ] && S2="$a"; done; [ -n "$S2" ] && break; sleep 2; done
 check "the fresh attempt went to a" "$DAEMON_A" "$(att_daemon "$S2")"
 check "it passed on a" '%passed' "$(wait_att "$S2" '%passed|%failed|%infrastructure-error' 400)"
 check "the candidate passed" '%passed' "$(wait_cand "$CID" '%passed|%failed|%unknown' 60)"
 check "landed: master = the candidate" "$OID" "$(repo_master)"
-kill -CONT "$BPID" && echo "-- SIGCONT to daemon b at $(date -Is); its act finishes the sleep and posts"
-for _ in $(seq 1 120); do grep -q "$S1.*result .* POST\|$S1.*abandon POST\|$S1.*no result" "$RUNNER_HOME/b/daemon.log" && break; sleep 2; done
-echo "-- b: $(grep "$S1" "$RUNNER_HOME/b/daemon.log" | grep -E 'result .* POST|abandon POST|no result' | tail -1 | cut -c1-160)"
-check "b's late result was refused 409 attempt is closed" "1" "$(grep "$S1" "$RUNNER_HOME/b/daemon.log" | grep -cE '(result|abandon).* (POST -> )?409.*attempt is closed|409 attempt is closed')"
-check "the late result did not change the attempt" '%reoffered' "$(att_status "$S1")"
 check "b's events after the re-offer were refused, not counted (events unchanged)" "yes" "$([ "$(att_events "$S1")" -lt 20 ] && echo yes || echo no)"
 retire_daemon b
 end_row R10
@@ -213,7 +233,25 @@ echo "-- pushed to $OTHER: candidate $OCID"
 sleep 40
 check "forty seconds on, the other repository's candidate has no attempt (the bound daemon is idle and never selected; the pool daemon is full)" "0" "$(cand_attempt_ids "$OCID" | wc -l)"
 check "the bound daemon is idle (running 0)" "0" "$(runner_field "$BOUND" .running)"
-"$P1/runner.sh" stop "$BOUND_NAME" >/dev/null; "$P1/runner.sh" start "$BOUND_NAME" | head -1; sleep 3
+# the restart beside the other daemon's live sandbox (D6 g, rider 3): on
+# one Docker daemon the restarting runner must reconcile ITS OWN
+# leftovers only — never ask the ship about the other's attempt, never
+# read the ship's foreign-attempt 401 as enrollment lost, never touch the
+# other's network — and poll again within one window
+NET="ci-$SLOW"
+check "the busy daemon's sandbox network exists before the restart" "1" "$($DK network ls --format '{{.Name}}' | grep -cx "$NET")"
+check "it carries the owner label of the busy daemon" "$FREE" "$($DK network inspect -f '{{index .Labels "urgit-ci-daemon"}}' "$NET")"
+"$P1/runner.sh" stop "$BOUND_NAME" >/dev/null
+BEFORE_SEEN=$(runner_field "$BOUND" .lastSeen)
+"$P1/runner.sh" start "$BOUND_NAME" | head -1; sleep 5
+LOG="$RUNNER_HOME/$BOUND_NAME/daemon.log"
+check "the restarted daemon is running (no exit 3)" "running" "$("$P1/runner.sh" status "$BOUND_NAME" | head -1 | cut -d' ' -f1)"
+check "its log has no 'enrollment lost'" "0" "$(runner_log "$BOUND_NAME" | grep -c 'enrollment lost')"
+check "it never asked the ship about the other daemon's attempt (no reconcile line for its network)" "0" "$(runner_log "$BOUND_NAME" | grep -c "reconcile $NET")"
+check "the other daemon's network is untouched" "1" "$($DK network ls --format '{{.Name}}' | grep -cx "$NET")"
+for _ in $(seq 1 30); do [ "$(runner_field "$BOUND" .lastSeen)" != "$BEFORE_SEEN" ] && break; sleep 1; done
+check "it polled within one window (last-seen advanced)" "yes" "$([ "$(runner_field "$BOUND" .lastSeen)" != "$BEFORE_SEEN" ] && echo yes || echo no)"
+[ "$(runner_log "$BOUND_NAME" | grep -c 'enrollment lost')" -ge 1 ] && echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost"
 check "after the restart the binding is intact (ship state)" "[\"$REPO\"]" "$(runner_field "$BOUND" '.repos | tojson')"
 check "still no attempt for the other repository" "0" "$(cand_attempt_ids "$OCID" | wc -l)"
 check "unbind in the panel -> 200" "200" "$(status_of "$(ci_action "{\"action\":\"set-daemon-repos\",\"id\":\"$BOUND\",\"repos\":null}")")"

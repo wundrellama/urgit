@@ -21,10 +21,21 @@
 #   R5b  app/urgit-ci.hoon   an abandon over a signature/key reason does not
 #                            mark the daemon refused (CI-DELIVERY-1.1 b): the
 #                            scheduler keeps it eligible
+#   R9   app/urgit-ci.hoon   the same de-listing dropped, under the ghost row:
+#                            the wrong-key daemon is offered work again after
+#                            its refusal (its second refusal ends the row)
+#   R10  app/urgit-ci.hoon   a silent attempt is not re-offered at its
+#                            deadline: it closes as an infrastructure error
+#                            and the candidate is unknown
+#   R11b sandbox/docker.go + ship/client.go   the pre-rider-3 daemon: Orphans
+#                            lists every urgit-ci network whoever owns it, and
+#                            the client reads the ship's foreign-attempt 401 as
+#                            enrollment lost — a restart beside another
+#                            runner's sandbox exits 3 (two edits, one row)
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null || { echo "r-mutants.sh: $PWD is not a git work tree"; exit 1; }
-FILES=(desk/app/urgit-ci.hoon desk/lib/ci-plan.hoon desk/lib/ci-event.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go)
+FILES=(desk/app/urgit-ci.hoon desk/lib/ci-plan.hoon desk/lib/ci-event.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go runner/internal/sandbox/docker.go runner/internal/ship/client.go)
 case "${1:-}" in
   apply)
     if ! git diff --quiet -- "${FILES[@]}"; then
@@ -50,6 +61,18 @@ edits = [
  ("R5b", "desk/app/urgit-ci.hoon",
   "  =?  daemons  (refusal-reason reason)\n",
   "  =?  daemons  %.n\n"),
+ ("R9", "desk/app/urgit-ci.hoon",
+  "  =?  daemons  (refusal-reason reason)\n",
+  "  =?  daemons  %.n\n"),
+ ("R10", "desk/app/urgit-ci.hoon",
+  "  =/  again=?\n    ?~  found  %.n\n    ?:  silent-before  %.n\n",
+  "  =/  again=?\n    ?~  found  %.n\n    ?:  %.y  %.n\n"),
+ ("R11b", "runner/internal/sandbox/docker.go",
+  "\t\tif owner == \"\" || (d.Owner != \"\" && owner == d.Owner) {\n",
+  "\t\tif true {\n"),
+ ("R11b", "runner/internal/ship/client.go",
+  "\t\tif strings.Contains(resp.Error(), \"attempt authentication required\") {\n",
+  "\t\tif false {\n"),
 ]
 texts = {}
 for row, path, old, new in edits:
@@ -80,6 +103,9 @@ PY
       R4b) echo "the attempt on b is re-offered, not left running: FAIL (observed: %running" ;;
       R5)  echo "daemon a refused the assignment after the rotation: FAIL (observed: 0" ;;
       R5b) echo "the ship de-listed a: the panel reads refused: FAIL (observed: healthy" ;;
+      R9)  echo "R9 RED: the refused daemon was offered work again" ;;
+      R10) echo "the attempt is re-offered after the timeout + 2 min, not closed: FAIL (observed: %infrastructure-error" ;;
+      R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;
       *) echo "r-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

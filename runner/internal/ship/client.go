@@ -22,6 +22,12 @@ import (
 // knows: the daemon's enrollment is gone.
 var ErrUnauthorized = errors.New("ship answered 401: enrollment lost")
 
+// ErrNotOurs is the ship's 401 for an attempt that belongs to another
+// daemon (`attempt authentication required`): this daemon's bearer is
+// fine, the attempt is simply not its own. Reconcile leaves such a
+// sandbox alone (P3 D6 g); nothing reads it as enrollment lost.
+var ErrNotOurs = errors.New("ship answered 401: not this daemon's attempt")
+
 // ErrRevoked is the ship answering 401 because the operator revoked this
 // daemon (P3 D2): the daemon logs it and exits; only a fresh enrollment
 // with a new token brings it back.
@@ -313,6 +319,11 @@ func (c *Client) AttemptStatus(ctx context.Context, attempt string) (status stri
 	case http.StatusNotFound:
 		return "", false, nil
 	case http.StatusUnauthorized:
+		// the ship's foreign-attempt answer is not enrollment loss: the
+		// bearer authenticated, the attempt is another daemon's
+		if strings.Contains(resp.Error(), "attempt authentication required") {
+			return "", false, ErrNotOurs
+		}
 		return "", false, ErrUnauthorized
 	case http.StatusOK:
 		var answer struct {

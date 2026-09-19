@@ -54,7 +54,10 @@ run_row() {  # <name> <script> [args]
   local name="$1"; shift
   local log="$TMP/rneg-$phase-$name.log"
   "$@" > "$log" 2>&1
-  local verdict; verdict=$(grep -E "^${name%b}: (PASS|FAIL)$" "$log" | tail -1 | awk '{print $2}')
+  # R4b and R5b re-run R4's and R5's scripts under their own mutants;
+  # R11b is a row of its own
+  local label="$name"; case "$name" in R4b) label=R4 ;; R5b) label=R5 ;; esac
+  local verdict; verdict=$(grep -E "^$label: (PASS|FAIL)$" "$log" | tail -1 | awk '{print $2}')
   [ -z "$verdict" ] && verdict=FAIL
   grep -E '^  .*: (PASS|FAIL)' "$log" | cut -c1-150
   if [ "$phase" = red ]; then
@@ -80,6 +83,9 @@ for r in "${ROWS[@]}"; do
     R4b) run_row R4b "$P3/r1-r5.sh" r4 ;;
     R5)  run_row R5  "$P3/r1-r5.sh" r5 ;;
     R5b) run_row R5b "$P3/r1-r5.sh" r5 ;;
+    R9)  run_row R9  "$P3/r9-r11.sh" r9 ;;
+    R10) run_row R10 "$P3/r9-r11.sh" r10 ;;
+    R11b) run_row R11b "$P3/r9-r11.sh" r11b ;;
     *) echo "r-negatives.sh: unknown row $r" >&2 ;;
   esac
   # a row that re-enrolled a (R5) rewrote p3.env; the next row reads it

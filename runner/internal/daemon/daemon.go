@@ -93,6 +93,11 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (*Daemon, 
 	} else {
 		d.log.Printf("state file %s present: daemon %s, no re-enrollment", cfg.StateFile, st.DaemonID)
 	}
+	// the sandbox objects carry this daemon's id from here on (P3 D6 g),
+	// so a restart reconciles its own leftovers and no other runner's
+	if docker, ok := box.(*sandbox.Docker); ok {
+		docker.Owner = st.DaemonID
+	}
 	d.ciKey = st.CIPublicKey
 	if cfg.CIPublicKey != "" {
 		d.ciKey = cfg.CIPublicKey
@@ -131,6 +136,13 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 	for _, id := range orphans {
 		attempt := strings.TrimPrefix(id, "ci-")
 		status, found, err := d.client.AttemptStatus(ctx, attempt)
+		if errors.Is(err, ship.ErrNotOurs) {
+			// another daemon's attempt on a shared Docker daemon (an
+			// unlabelled leftover the owner filter let through): not
+			// this runner's to destroy, and not enrollment loss
+			d.log.Printf("reconcile %s: attempt belongs to another daemon; left alone", id)
+			continue
+		}
 		if errors.Is(err, ship.ErrUnauthorized) {
 			return err
 		}
@@ -385,7 +397,7 @@ func (d *Daemon) refuse(a *ship.Assignment, reason string) {
 		d.log.Printf("[%s %s] abandon POST failed: %v", a.Kind, a.Attempt, err)
 		return
 	}
-	d.log.Printf("[%s %s] abandon POST -> %d", a.Kind, a.Attempt, resp.Status)
+	d.log.Printf("[%s %s] abandon POST -> %s", a.Kind, a.Attempt, resp.Error())
 }
 
 // fail reports that no result is coming. A plan attempt gets the reason
@@ -400,7 +412,7 @@ func (d *Daemon) fail(ctx context.Context, a *ship.Assignment, reason string, lo
 			logf("plan error POST failed: %v", err)
 			return
 		}
-		logf("plan error POST -> %d", resp.Status)
+		logf("plan error POST -> %s", resp.Error())
 		return
 	}
 	resp, err := d.client.Abandon(rctx, a.Attempt, reason)
@@ -408,7 +420,7 @@ func (d *Daemon) fail(ctx context.Context, a *ship.Assignment, reason string, lo
 		logf("abandon POST failed: %v", err)
 		return
 	}
-	logf("abandon POST -> %d", resp.Status)
+	logf("abandon POST -> %s", resp.Error())
 }
 
 // gitCheckout clones the repository from the ship's Git endpoint and
@@ -658,6 +670,15 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		d.fail(ctx, a, "act start: "+err.Error(), logf)
 		return
 	}
+	// the deadline bounds act's run (ctx kills it); reporting what act
+	// did — the relay of its last lines, the upload, the result — gets a
+	// short grace past it, so a job that finished right at the deadline
+	// is reported and the ship decides (it refuses a closed attempt,
+	// CI-DELIVERY-1.1), rather than abandoned for a context that expired
+	// between act's last line and the result
+	rctx, rcancel := reportingContext(ctx)
+	defer rcancel()
+	ctx = rctx
 	streamPath := filepath.Join(d.cfg.WorkDir, a.Attempt+".act.jsonl")
 	streamLog, _ := os.Create(streamPath)
 	tee := io.TeeReader(relay.Scrub(stream, values), streamLog)
@@ -691,6 +712,18 @@ func (d *Daemon) runJob(ctx context.Context, a *ship.Assignment, h sandbox.Handl
 		return
 	}
 	logf("result %s POST -> %s", summary.JobResult, resp.Error())
+}
+
+// reportingContext outlives the attempt's own deadline by two minutes
+// (and is cancelled with it when the daemon stops): act is bound by the
+// deadline; telling the ship what happened is not.
+func reportingContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	grace := 2 * time.Minute
+	if deadline, ok := ctx.Deadline(); ok {
+		rctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline.Add(grace))
+		return rctx, cancel
+	}
+	return context.WithCancel(ctx)
 }
 
 // usableGrants is the assignment's grants minus the ones the daemon
