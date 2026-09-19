@@ -131,6 +131,16 @@ A checkpoint excludes repository objects, LFS payloads, store bytes, credential 
 
 Restore is explicit. Install the desk, import the checkpoint into a paused `%urgit-ci`, review the manifest and diff, then apply. Runners re-enroll. The recovered ship certifies a new CI key. Credential references show "needs re-entry". Old approvals and leases do not become live again. Recovery writes never trigger a workflow or a webhook.
 
+### Runner loss
+
+A runner that gives up, goes silent, or is revoked never holds a job to its hour-long deadline. An attempt is closed once and re-offered as a fresh attempt on another daemon; the attempt id is the idempotency key throughout, so a late event or result for a closed attempt is refused as closed, never merged.
+
+An `abandon` releases the attempt at once. When another eligible daemon exists — enrolled, seen recently, neither refused nor revoked, and not the daemon that abandoned — the job is offered again on it: immediately when it has capacity, else at the next scheduling opportunity. The abandoning daemon is never offered that job again. When no other daemon exists the attempt closes as an infrastructure error carrying the daemon's reason, which is what a single-runner installation saw before this rule.
+
+A daemon that abandons for a signature or key reason — the assignment was unsigned, signed for another recipient, or does not verify against the key it pinned — is marked `refused` at once and is offered no work until it re-enrolls. An ordinary bearer-authenticated poll does not restore it: the bearer is fine, the pinned CI public key is what is wrong, and only fresh enrollment refreshes that key. Its polls keep answering, so the operator sees it `refused` with the reason rather than `stale`. Recovery is the daemon's re-enrollment: delete its state file and start it with a new token.
+
+An attempt with events and no result for longer than the job's own `timeout-minutes` plus two minutes is offered again once on another daemon, then failed `%infrastructure-error 'runner went silent'`. A job that declares no timeout keeps the default deadline. An assignment its daemon never fetched is offered again as soon as that daemon's record is stale, refused, or revoked. Revocation of a daemon closes and re-offers everything it was running through the same path.
+
 ## Packaging
 
 `%urgit-ci` is a fourth agent in the desk beside `%urgit`, `%urgit-clay`, and `%urgit-fileserver`. Its persisted state starts at `%0`. `%urgit` changes in three places: the protected-ref gate, candidate materialization, and the staged-write handoff. `%urgit` scries `%urgit-ci` for landing eligibility. `%urgit-ci` pokes `%urgit` to materialize a candidate. Git objects never leave `%urgit`. `%urgit-ci` binds its own API base under `/apps/urgit/api` and the runner assignment channel. Both agents rebind their Eyre routes on every load.
