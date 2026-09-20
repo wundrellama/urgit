@@ -65,16 +65,41 @@ cause (harness or product, say which), commit, and re-run from the top — the r
 attempt as a `## Stop` section (T3's shape). A pass on a resumed run is a qualified pass and is
 recorded as such; the final line of the record says which kind you got.
 
-**T7 — The record and the done banner.** `p3-live-table.md` complete in T3's shape with T6's
+**T7 — The record and the done banner (after T8).** `p3-live-table.md` complete in T3's shape with T6's
 verdict; `QUESTIONS-CI-P3.md` untouched except a final `## Close-out` paragraph naming T1–T6 by
 commit; `git status` clean; both piers shut down by `/proc` pid (the `## Final shutdown` table);
 print the banner.
 
+**T8 — urgit's own tests as urgit-ci jobs (the dogfood row; ruled 2026-09-20).** urgit has no
+workflow of its own: its Go tests, its frontend tests, and its 23 Hoon vector generators
+(`desk/gen/*-vector.hoon`, each prints `passed=N of=M` and returns `%.y`/`%.n`) run only from a
+developer's shell. Add `.github/workflows/urgit.yml` with three jobs on `runs-on: ubuntu-latest`
+(the daemon maps it to its `act` image, `catthehacker/ubuntu:act-latest`, which carries Go and
+Node): `go-test` (`cd runner && go vet ./... && go test -race ./...`), `fe-test` (`cd fe && npm ci
+&& npm test`), and `hoon-vectors`, which boots a fresh fake ship inside the job, mounts the desk,
+and runs every `+<name>-vector`, failing the job on any `%.n`. For the ship, copy erpit's proven
+composite actions (`/var/home/michael/workspace/urbit/erpit/.github/actions/urbit-toolchain` and
+`boot-fake-ship`, read-only source — they run erpit's 8/8 on this CI today) into
+`.github/actions/` and pin the same runtime and pill they pin; the vector loop is a step that
+types `+<name>-vector` into the dojo (via the same conn/tmux primitives those actions use) and
+greps the printed `passed=N of=M` and the final `%.y`. Keep every job under 20 minutes; the
+live batteries (P0–P3, the mutant phases) are NOT this workflow — they stay `cold.sh`, and a
+comment at the top of the yml says so and why (two ships + a nested runner + rootless Docker
+is the P4 sandbox's problem). **Row R18:** on your fresh pair, push this tree's `master` to the
+ship's own `urgit` repository with CI required; the candidate plans three jobs, all three land
+`%passed`, the Hoon job's log shows every vector's `passed=N of=M` with no failures line; RED:
+break one vector fixture (a wrong expected reason string) → `hoon-vectors` fails, the candidate
+is `%failed` with the vector's name in the log; restore → lands. The workflow file ships in the
+tree (it is the product's own CI); the composite actions ship with it. `README.md` at the repo
+root (not `runner/README.md`) gains a two-line "CI" section naming the workflow and that it runs
+on urgit-ci. One commit for the workflow + actions, one for R18 in the harness + record.
+
 ## Fence
 
 `desk/app/urgit-ci.hoon` (T2's event handler only, if needed); `.scratch/ci-p3/` and
-`.scratch/p3-live-table.md`; the two comment lines and the README line T4 names. Nothing else in
-`desk/`, `runner/`, or `fe/`. No push, no merge, no rebase, no `/tmp`. Box in
+`.scratch/p3-live-table.md`; the two comment lines and the README line T4 names; **T8's
+`.github/workflows/urgit.yml`, `.github/actions/*`, and the root `README.md` CI section**.
+Nothing else in `desk/`, `runner/`, or `fe/`. No push, no merge, no rebase, no `/tmp`. Box in
 `QUESTIONS-CI-P3.md` (`## §<n>`) and stop on anything outside this list; a box is a successful
 outcome. Provider-safeguard rule from BRIEF-CI-P3 §6 applies (the mutant phases have tripped it
 on both providers; a second fire = commit what is green, record the row `provider-blocked, not
