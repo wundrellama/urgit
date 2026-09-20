@@ -44,6 +44,11 @@
 #                            second landing parks over the first's clay-push
 #                            and one or both vanish, passed and unlanded
 #                            with no reason
+#   R17  app/urgit.hoon      the peer push's guard put back to the pre-rider-5
+#                            `=(^ pending-clay)` (never true): a peer push that
+#                            completes while a plain push is parked overwrites
+#                            it — the peer push reports ok and the parked
+#                            push's held response is never sent
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null || { echo "r-mutants.sh: $PWD is not a git work tree"; exit 1; }
@@ -91,6 +96,9 @@ edits = [
  ("R16", "desk/app/urgit.hoon",
   "          !>(`action:ci`[%approve-candidate candidate src.bowl])\n",
   "          !>(`action:ci`[%approve-candidate candidate our.bowl])\n"),
+ ("R17", "desk/app/urgit.hoon",
+  "      ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))\n        (peer-push-finish flight transfer %.n 'another Clay operation is in progress')\n",
+  "      ?:  ?|(=(^ pending-clay) =(^ pending-publish))\n        (peer-push-finish flight transfer %.n 'another Clay operation is in progress')\n"),
  ("R14", "desk/app/urgit.hoon",
   "  ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n",
   "  ?:  %.n\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n"),
@@ -129,6 +137,7 @@ PY
       R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;
       R16) echo "R16 RED: actor substitution" ;;
       R14) echo "the other candidate was refused with a reason, not dropped: FAIL (observed: ~" ;;
+      R17) echo "the peer push was refused with the receive path's message: FAIL (observed: true" ;;
       *) echo "r-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;

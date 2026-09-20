@@ -2664,7 +2664,7 @@
     =/  updated=repository:git
       u.existing(objects objects.flight, refs (~(put by refs.u.existing) head.u.existing u.incoming))
     ?^  binding.updated
-      ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+      ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
         (peer-push-finish flight transfer %.n 'another Clay operation is in progress')
       =/  files=(unit (map path octs))
         (flatten-commit:git-clay objects.updated u.incoming)
@@ -6590,7 +6590,7 @@
       =.  repositories  (~(put by repositories) name applied)
       :_  this
       (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
-    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
     =/  clay-files=(unit (map path octs))
@@ -6681,7 +6681,7 @@
       =.  repositories  (~(put by repositories) name applied)
       :_  this
       (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec commit.u.snapped)]]))
-    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
     =/  clay-files=(unit (map path octs))
@@ -7533,7 +7533,7 @@
       :_  this
       (api-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['commit' s+(oid-text:git-codec merge-oid)]]))
     ?>  ?=(^ binding.applied)
-    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
     =/  files=(unit (map path octs))
@@ -7737,7 +7737,7 @@
     ?~  binding.u.found
       :_  this
       (api-error eyre-id 409 'repository is not bound to a Clay desk')
-    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
     =/  jon=(unit json)  (api-body req)
@@ -7760,7 +7760,7 @@
     ?~  binding.u.found
       :_  this
       (api-error eyre-id 409 'repository is not bound to a Clay desk')
-    ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+    ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
       :_  this
       (api-error eyre-id 409 'another Clay operation is in progress')
     =/  head-oid=(unit oid:git)
