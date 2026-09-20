@@ -30,7 +30,10 @@ Every row ran on `~sud`/`~tug` by script, nothing typed. The observed columns ar
 | S9 | this record (`.scratch/p3-live-table.md`) | — |
 | close-out T1 | `65f7333` R6a — the watch-authorization row, astra's `s3-watch-auth.py` on the footer env; the footer's env rewrite | R6a RED 1/1 (tripwire), GREEN 1/1; step PASS on the build pair |
 | close-out T2 | `bb693fc` R15b — the ship-side scrub with the daemon bypassed, astra's R15SHIP in `r14-r16.sh`'s shape; no product change (the ship already scrubs independently) | R15b RED 1/1, GREEN 1/1; step PASS on the build pair |
-| close-out T3 | this record's shape: `## Stop <k>` per stop, `## Final shutdown`, `## Fresh-pair battery`, `## Deviations` for the rest | — |
+| close-out T3 | `1948e02` this record's shape: `## Stop <k>` per stop, `## Final shutdown`, `## Fresh-pair battery`, `## Deviations` for the rest | — |
+| close-out T4 | `7755267` the two ledger-id comments in words; the README's one GroundSeg mention the only one; the sweep of the upstream diff empty | — |
+| close-out T5 | `197a046` comment-only: six ship-named comments in `ci-p3` → roles; `dojo_value "head` empty over P0–P3; `839x|sud|tug` clean in `ci-p3` | — |
+| close-out T6 | the cold run on `~mex`/`~ryt` from fresh piers — a log, not a commit; this record's `## Close-out cold run` and `## Final shutdown` | `cold.sh: every step ran (2026-09-20T18:20:02-05:00)`, one launch, no stop |
 
 ## Table
 
@@ -51,7 +54,7 @@ Every row ran on `~sud`/`~tug` by script, nothing typed. The observed columns ar
 | R11a | PASS | b declares `big-mem`: the big-mem job ran on b, the plain job on a; the gpu job waits with **`no runner has labels [gpu]`** on the candidate row, in the candidates route and in a feed fact; c declaring `gpu` enrolls → the gpu job assigned **3 s** later, passed, candidate passed, `'landed'`; the job rows carry runs-on from the plan · `.scratch/tmp/p3-r9-r11-r11a.log` |
 | R11b | PASS | b bound to `ci-p3`; a full (capacity 1, the slow job); a push to another repository: no attempt in 40 s, b idle; b restarted beside a's live sandbox (rider 3): running, no `enrollment lost`, never asked about a's attempt, a's network untouched, polled within the window, the binding intact; unbound → b took the plan **2 s** later, passed, landed · `.scratch/tmp/p3-r9-r11-r11b.log` |
 | R12 | PASS | 47/47 checks of the README against the tree and the routes (the S6 commit lists them) · `.scratch/tmp/p3-r12.log` |
-| R13 | PASS | the cold run, fresh piers, `cold.sh` (four launches; the three stops and the two resumptions in Deviations): **P0** H1–H15 (14 rows, `h*.log`), negatives RED 7/7 (H9–H15) GREEN 7/7, foreground; **P1** P1–P20 PASS (P19 landing through the desk on the fixed guard), negatives RED 12/12 with tripwires (P1 P7 P8 P9 P10 P11 P12 P13-overlap P14 P17 P18 P20) GREEN 12/12, foreground; **P2** Q2–Q19 PASS (Q12 re-anchored), negatives A RED 9/9 GREEN 9/9, B 1/1 both, C 1/1 both, foreground; **P3** R1–R12, R14–R17 PASS, negatives A 3/3, B 2/2, C 2/2 + D 1/1 (GREEN 3/3), E 3/3 — every RED with its tripwire, every GREEN whole — foreground (`npm test`, `go test`, the plan vectors 31/31); the shutdown by /proc pid. `cold.log`; the per-step files `h*.log`, `p*.log`/`neg-*.log`, `p2-*.log`/`qneg-*.log`, `p3-*.log`/`rneg-*.log` under `.scratch/tmp/` |
+| R13 | PASS | the cold run, fresh piers, `cold.sh` (four launches; the three stops and the two resumptions in Deviations): **P0** H1–H15 (14 rows, `h*.log`), negatives RED 7/7 (H9–H15) GREEN 7/7, foreground; **P1** P1–P20 PASS (P19 landing through the desk on the fixed guard), negatives RED 12/12 with tripwires (P1 P7 P8 P9 P10 P11 P12 P13-overlap P14 P17 P18 P20) GREEN 12/12, foreground; **P2** Q2–Q19 PASS (Q12 re-anchored), negatives A RED 9/9 GREEN 9/9, B 1/1 both, C 1/1 both, foreground; **P3** R1–R12, R14–R17 PASS, negatives A 3/3, B 2/2, C 2/2 + D 1/1 (GREEN 3/3), E 3/3 — every RED with its tripwire, every GREEN whole — foreground (`npm test`, `go test`, the plan vectors 31/31); the shutdown by /proc pid. `cold.log`; the per-step files `h*.log`, `p*.log`/`neg-*.log`, `p2-*.log`/`qneg-*.log`, `p3-*.log`/`rneg-*.log` under `.scratch/tmp/`. **Close-out (T6):** the same battery, with R6a and R15b as steps and in group A, re-run whole on `~mex`/`~ryt` from fresh piers in ONE launch, 12:37:07 → 18:20:02, no stop and no resumption — P0 RED 7/7 GREEN 7/7; P1 rows 4/4, 5/5, 5/5, RED 12/12 GREEN 12/12; P2 Q2–Q19 PASS, A 9/9 both ways, B 1/1, C 1/1; P3 R1–R17 (20 rows) PASS, A **5/5** both ways, B 2/2, C 2/2 + D 1/1 with GREEN 3/3, E 3/3; every foreground clean; the shutdown by `/proc` pid — `## Close-out cold run` below; this worktree's `.scratch/tmp/cold.log` (3573 lines) and its `p3-*.log`/`rneg-*.log` |
 | R14 | PASS | a fresh desk (`%r14-<ts>`, `|new-desk`) bound through the API → 200, the ci-ref peek `linked`; CI required on the linked repository → **200** (the P1 refusal gone), the ref CI-protected; a push (desk-shaped: `sys.kelvin`, `mar/{txt,yml,mime,hoon,kelvin,noun}`, the workflow) staged as a candidate, master unmoved at the push; the candidate `%passed`, `%urgit-ci` heard `%landed` (`'landed'`), master = the candidate, the desk advanced a revision (1 → 2) and holds the candidate's file, the binding records the landed commit (`git-to-clay`); a second candidate on the landed tip passed and landed the same way; two candidates passing together on the linked ref (the race P19's cold run found): exactly one landed (master = it), the other refused **`linked desk update already in progress; re-run the candidate to land it`**, not dropped · `.scratch/tmp/p3-r14-r16-r14.log` |
 | R15 | PASS | `%set-credential` with a two-line value (a PEM-shaped pair) → **200**, listed; the pem job `%passed`, the grant released; the step printed both lines (the secret reached the job whole); line one 0×, line two 0× in the daemon's saved stream, the mask present; neither line in the bucket object; the ship's recorded output `'***'`; the candidate route carries no line of the value · `.scratch/tmp/p3-r14-r16-r15.log` |
 | R15b | PASS | (close-out T2: astra's `s8-live.py` R15SHIP on the footer env, in `r14-r16.sh`'s shape) a two-line credential set; a `fixture-wait` job running on daemon a with act's lines relayed; four RAW events posted to `POST ci/attempt/<id>/event` with a's bearer, the daemon bypassed — line one alone, line two alone, line one inside ordinary text, the whole value — each **202**, the ship's event count +4; the attempt's outputs (scry) hold **`'***'`, `'***'`, `'key: *** (end)'`, `'***'`**, neither line anywhere in them nor in the candidate route; the real job passes and the candidate lands. The ship scrubs independently of the daemon today (`handle-event` → `scrub:ci-event` over `credential-values`, whole value + every line ≥ 8 chars), so no product change. RED (`r-mutants.sh` R15b: `credential-values`' per-line forms dropped, `` `~[value.c]``): lines one and two and the in-text form persisted raw (only the whole value masked) — `R15b RED: the ship persisted a raw credential line`; restored → masked, 1/1. Measured on the build pair (`.scratch/tmp/p3-r14-r16-r15b.log`, `rneg-{red,green}-R15b.log`); the cold run re-runs it as a step and in group A |
@@ -110,7 +113,27 @@ The pick's cold run (launch 4), `.scratch/ci-p3/shutdown.sh` at 01:32:00, every 
 
 `cold.sh: every step ran (2026-09-20T01:32:11-05:00)`. The tree was clean at `01e668a`.
 
-The close-out's shutdowns (its build pair before T6, its cold-run pair after) are added here by T6/T7.
+**The close-out's build pair**, shut down before T6 by `.scratch/ci-p3/shutdown.sh` at 12:36 (`.scratch/tmp/before-cold/shutdown-build-pair.log`), then its piers moved aside as `/var/home/michael/piers/urgit-ci-p3c-{mex,ryt}.build` so the cold run could boot the footer's names fresh:
+
+| Process | Pid | Outcome |
+|---|---|---|
+| runner a (`/proc/2773288/cmdline` = `urgit-runner -config …/runner/a/config.toml`) | `2773288` | TERM, stopped |
+| store container `urgit-ci-store-mex` | `2753874` (`/usr/bin/rustfs /data`) | removed, pid gone, data kept |
+| `~ryt` king | `2748796` (serf `2749960`) | SIGTERM, all pier pids gone at 12:36:16, tmux `ci-p3-closeout-ryt` ended with the ship, pier retained (214M) |
+| `~mex` king | `2746183` (serf `2747521`) | SIGTERM, all pier pids gone at 12:36:19, tmux `ci-p3-closeout-mex` ended with the ship, pier retained (219M) |
+| rootless `dockerd` | `2753197` | TERM, gone, `.scratch/tmp/docker-data` released, `/run/user/1000/ci-p3-closeout` down |
+
+**The close-out's cold run**, `.scratch/ci-p3/shutdown.sh` at 18:19:52 as the run's last step (`cold.log` 3540–3573):
+
+| Process | Pid | Outcome |
+|---|---|---|
+| runners c, r1, r2, r3, a, b | — | not running (retired by their rows; a stopped by the last negatives phase) |
+| store container `urgit-ci-store-mex` | `2818692` (`/proc/2818692/cmdline = /usr/bin/rustfs /data`) | removed, pid gone, data kept under `.scratch/tmp/store-data` |
+| `~ryt` king | `2813504` (serf `2814844`) | SIGTERM, all pier pids gone at 18:19:55, tmux `ci-p3-closeout-ryt` ended with the ship, pier retained (237M) |
+| `~mex` king | `2810665` (serf `2812174`) | SIGTERM, all pier pids gone at 18:19:58, tmux `ci-p3-closeout-mex` ended with the ship, pier retained (1.6G) |
+| rootless `dockerd` | `2818091` | TERM, gone, `.scratch/tmp/docker-data` released, `/run/user/1000/ci-p3-closeout` down |
+
+`cold.sh: every step ran (2026-09-20T18:20:02-05:00)`. The pair is restarted once more on its retained piers for R18 (T8) and shut down again the same way; that table is T7's.
 
 ## Fresh-pair battery
 
@@ -236,6 +259,70 @@ cold.sh: every step ran (2026-09-20T07:10:32-05:00)
 
 The verdict this section carries: P0 negatives RED 7/7 GREEN 7/7; P1 rows 4/4, 5/5, 5/5, negatives RED 12/12 GREEN 12/12; P2 negatives A RED 9/9 GREEN 9/9, B (Q5) 1/1 both, C (Q8) 1/1 both; P3 negatives A RED 3/3 GREEN 3/3, B RED 2/2 GREEN 2/2, C RED 2/2 and D RED 1/1 with GREEN C+D 3/3, E RED 3/3 GREEN 3/3; every foreground clean; the shutdown by `/proc` pid; `cold.sh: every step ran` — the clean gate, independent of the chair's own run.
 
+## Close-out cold run
+
+The close-out's own battery (T6): `.scratch/ci-p3/cold.sh` unmodified except the two rows T1/T2 added to `battery.sh`'s step list and group A, launched once at 12:37:07 on 2026-09-20 from the footer's fresh piers (`~mex` :8420, `~ryt` :8421, neither existed; `boot.sh` with `--loom 34`, no `-p`; rootless Docker `/run/user/1000/ci-p3-closeout`, RustFS `urgit-ci-store-mex` on 8422 advertised at 127.0.0.1 for P0–P2 and 192.168.1.229 for P3, `DAEMON_CAPACITY=3`), through the P0, P1, P2 and P3 batteries and the shutdown, to `cold.sh: every step ran` at 18:20:02 — **no stop, no resumption, so no `## Stop` section of its own; a pass of the unqualified kind.** The log is this worktree's `.scratch/tmp/cold.log` (3573 lines); its phase and verdict lines (`<worktree>` for this worktree's path):
+
+```
+################ cold battery: ships ~mex :8420 (/var/home/michael/piers/urgit-ci-p3c-mex, tmux ci-p3-closeout-mex) and ~ryt :8421 (/var/home/michael/piers/urgit-ci-p3c-ryt), rootless /run/user/1000/ci-p3-closeout, store http://127.0.0.1:8422 advertised as http://127.0.0.1:8422 for P0-P2 and http://192.168.1.229:8422 for P3, DAEMON_CAPACITY=3  (2026-09-20T12:37:07-05:00)
+################ <worktree>/.scratch/ci-p0/battery.sh  (2026-09-20T12:39:00-05:00)
+################ negatives red  (2026-09-20T12:41:00-05:00)
+== red: PASS=0 () FAIL=7 (H9 H10 H11 H12 H13 H14 H15) of 7 rows; build: MUTATED
+################ negatives green  (2026-09-20T12:42:28-05:00)
+== green: PASS=7 (H9 H10 H11 H12 H13 H14 H15) FAIL=0 () of 7 rows; build: clean (real build)
+################ foreground  (2026-09-20T12:43:46-05:00)
+################ <worktree>/.scratch/ci-p1/battery.sh  (2026-09-20T12:43:53-05:00)
+== rows: PASS=4 (P6 P7 P8 P9) FAIL=0 ()
+== rows: PASS=5 (P10 P11 P12 P13 P14) FAIL=0 ()
+== rows: PASS=5 (P16 P17 P18 P19 P20) FAIL=0 ()
+################ negatives red  (2026-09-20T13:23:28-05:00)
+== red: FAIL-with-tripwire=12 (P1 P7 P8 P9 P10 P11 P12 P13-overlap P17 P18 P20 P14) FAIL-wrong-reason=0 () PASS=0 () of 12 rows; build: MUTATED
+################ negatives green  (2026-09-20T14:03:07-05:00)
+== green: PASS=12 (P1 P7 P8 P9 P10 P11 P12 P13-overlap P17 P18 P20 P14) FAIL=0 () of 12 rows; build: clean (real build)
+################ foreground  (2026-09-20T14:10:30-05:00)
+== vectors failing: 0; go steps failing: 0
+################ <worktree>/.scratch/ci-p2/battery.sh  (2026-09-20T14:11:04-05:00)
+################ q-negatives red Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16 Q19  (2026-09-20T14:49:15-05:00)
+== red: FAIL-with-tripwire=9 (Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16 Q19) FAIL-wrong-reason=0 () PASS=0 () of 9 rows; build: MUTATED
+################ q-negatives green Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16 Q19  (2026-09-20T15:05:46-05:00)
+== green: PASS=9 (Q4 Q5a Q6 Q10 Q11 Q12 Q13 Q16 Q19) FAIL=0 () of 9 rows; build: clean (real build)
+################ q-negatives red Q5  (2026-09-20T15:11:55-05:00)
+== red: FAIL-with-tripwire=1 (Q5) FAIL-wrong-reason=0 () PASS=0 () of 1 rows; build: MUTATED
+################ q-negatives green Q5  (2026-09-20T15:19:31-05:00)
+== green: PASS=1 (Q5) FAIL=0 () of 1 rows; build: clean (real build)
+################ q-negatives red Q8  (2026-09-20T15:27:00-05:00)
+== red: FAIL-with-tripwire=1 (Q8) FAIL-wrong-reason=0 () PASS=0 () of 1 rows; build: MUTATED
+################ q-negatives green Q8  (2026-09-20T15:34:35-05:00)
+== green: PASS=1 (Q8) FAIL=0 () of 1 rows; build: clean (real build)
+################ foreground  (2026-09-20T15:42:06-05:00)
+== vectors failing: 0; go steps failing: 0
+################ p3_battery  (2026-09-20T15:42:34-05:00)
+################ r-negatives red R4 R5 R3 R6a R15b  (2026-09-20T16:23:36-05:00)
+== red: FAIL-with-tripwire=5 (R4 R5 R3 R6a R15b) FAIL-wrong-reason=0 () PASS=0 () of 5 rows; build: MUTATED
+################ r-negatives green R4 R5 R3 R6a R15b  (2026-09-20T16:31:38-05:00)
+== green: PASS=5 (R4 R5 R3 R6a R15b) FAIL=0 () of 5 rows; build: clean (real build)
+################ r-negatives red R4b R5b  (2026-09-20T16:38:01-05:00)
+== red: FAIL-with-tripwire=2 (R4b R5b) FAIL-wrong-reason=0 () PASS=0 () of 2 rows; build: MUTATED
+################ r-negatives green R4b R5b  (2026-09-20T16:56:45-05:00)
+== green: PASS=2 (R4b R5b) FAIL=0 () of 2 rows; build: clean (real build)
+################ r-negatives red R9 R10  (2026-09-20T17:01:55-05:00)
+== red: FAIL-with-tripwire=2 (R9 R10) FAIL-wrong-reason=0 () PASS=0 () of 2 rows; build: MUTATED
+################ r-negatives red R11b  (2026-09-20T17:32:26-05:00)
+== red: FAIL-with-tripwire=1 (R11b) FAIL-wrong-reason=0 () PASS=0 () of 1 rows; build: MUTATED
+################ r-negatives green R9 R10 R11b  (2026-09-20T17:42:27-05:00)
+== green: PASS=3 (R9 R10 R11b) FAIL=0 () of 3 rows; build: clean (real build)
+################ r-negatives red R16 R14 R17  (2026-09-20T18:14:55-05:00)
+== red: FAIL-with-tripwire=3 (R16 R14 R17) FAIL-wrong-reason=0 () PASS=0 () of 3 rows; build: MUTATED
+################ r-negatives green R16 R14 R17  (2026-09-20T18:17:41-05:00)
+== green: PASS=3 (R16 R14 R17) FAIL=0 () of 3 rows; build: clean (real build)
+################ foreground  (2026-09-20T18:19:24-05:00)
+== vectors failing: 0; go steps failing: 0
+################ <worktree>/.scratch/ci-p3/shutdown.sh  (2026-09-20T18:19:52-05:00)
+cold.sh: every step ran (2026-09-20T18:20:02-05:00)
+```
+
+Every row of every battery passed as a step (P0 H1–H15 ran; P1 P1–P20; P2 Q2–Q19; P3 R1–R17 with R6a and R15b); every RED counted its tripwire and every GREEN was whole; the three foregrounds clean (23 vectors, `npm test` 145/145, `go test`/`-race`/vet/gofmt, the live Docker boundary, the static binary). R6a in the run: both foreign subscribes `err` with the watch-ack naming the guard, no diff, the own-session control a fact (`p3-r2-r6-r6a.log`); under group A's mutant both `ok` — `R6a RED: foreign ship watch accepted` (`rneg-red-R6a.log`). R15b in the run: the four raw events 202, the outputs `'***'`, `'***'`, `'key: *** (end)'`, `'***'`, the job passed and the candidate landed (`p3-r14-r16-r15b.log`); under the mutant the raw lines persisted — `R15b RED: the ship persisted a raw credential line` (`rneg-red-R15b.log`).
+
 ## Deviations
 
 Every derivation was built as written unless listed here. Each departure cites what made it. The riders are the operator's: rider 1 (`f45de4c`, D6(b) → re-enroll), rider 2 (`98f7caf`, the fence, the matrix refusal, `stale` = `stale-after`, the heartbeat, the re-offer readings — the answers to `QUESTIONS-CI-P3.md` §2 and §4), rider 3 (`ada93e3`, D6(g) ownership-aware reconciliation, astra §4). The five boxes in `QUESTIONS-CI-P3.md` stay as the record, none open: §1 (Eyre's channel carries `%urgit-ci`'s facts — anticipated by the brief, answered in the tree), §2 (the stale constant — ruled by rider 2 `98f7caf`), §3 (`%rotate-ci-key` re-signs the certificate — anticipated, R5), §4 (the fence, the matrix refusal, the re-offer readings — ruled by rider 2), §5 (the six never-true `pending-clay` guards — ruled by rider 5 `bceeb01`, applied in `1b0fd07`); rider 3 (`ada93e3`) and rider 4 (`627644d`) were rulings on astra's boxes that this tree carries (D6(g); the R16 fence).
@@ -268,3 +355,5 @@ Every derivation was built as written unless listed here. Each departure cites w
 - **Harness — the P3 mutants.** Five files (`urgit-ci.hoon`, `ci-plan.hoon`, `ci-event.hoon`, `daemon.go`, `relay.go`) plus rider 3's two (`docker.go`, `client.go`); four groups so no row is turned red by another row's mutant: A = R4 R5 R3 (R3 expires a test daemon's record, not the pool's, so the pool survives its own mutant), B = R4b R5b, C = R9 R10, D = R11b (its mutant — the pre-rider-3 daemon — exits 3 at any start beside another runner's sandbox and killed R10's daemon under one group). R9 ends at once on a second refusal under its mutant. R11b's mutant is two edits, one row. The rebuild waits for `%urgit-ci` alone (the P3 mutants never touch `%urgit`; P2's wait for a reload of `%urgit` cost five minutes a phase).
 - **Harness — a stopped test daemon is a ghost.** Its record stays selectable for `stale-after`; R1's first run handed R4's slow job to R1's stopped daemon. Rows retire their test daemons (`revoke-daemon` + `expire-token`) and `wait_live_only` before a push.
 - **Harness — three self-inflicted re-runs.** Editing a row script while a phase ran it corrupted that run (bash reads incrementally): R4's first re-run, RED B's summary, and the S8 edits to the mutant files during the group C GREEN (its `status` line read MUTATED for a clean build; the ship and daemon had been built two minutes before the edits). Noted in memory; the cold run touches nothing.
+
+**Verdict (T6): an unqualified pass — one launch, no stop, no resumption; `cold.sh: every step ran (2026-09-20T18:20:02-05:00)`.**
