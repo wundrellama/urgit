@@ -33,7 +33,7 @@ marker="rneg-$phase-$(date +%s)"; "$P0/dojo.sh" "'$marker'" 60 2 >/dev/null
 # mutants are %urgit's, every other row's is %urgit-ci's; a phase mixing
 # them waits for both
 agents=(); case " ${ROWS[*]} " in *" R16 "*|*" R14 "*|*" R17 "*) agents+=(urgit) ;; esac
-case " ${ROWS[*]} " in *" R3 "*|*" R4 "*|*" R4b "*|*" R5 "*|*" R5b "*|*" R6a "*|*" R9 "*|*" R10 "*|*" R11b "*) agents+=(urgit-ci) ;; esac
+case " ${ROWS[*]} " in *" R3 "*|*" R4 "*|*" R4b "*|*" R5 "*|*" R5b "*|*" R6a "*|*" R9 "*|*" R10 "*|*" R11b "*|*" R15b "*) agents+=(urgit-ci) ;; esac
 "$P0/rebuild.sh" "rneg-$phase" "${agents[@]}" | tail -3 || echo "(no reload: the installed desk already matches this phase's tree)"
 if tty_read 400 | awk -v m="'$marker'" 'index($0, m) { f = 1; next } f' | grep -q 'crud: %into event failed'; then
   echo "r-negatives.sh: the $phase build failed to commit; stopping" >&2; exit 1
@@ -89,6 +89,7 @@ for r in "${ROWS[@]}"; do
     R5)  run_row R5  "$P3/r1-r5.sh" r5 ;;
     R5b) run_row R5b "$P3/r1-r5.sh" r5 ;;
     R6a) run_row R6a "$P3/r2-r6.sh" r6a ;;
+    R15b) run_row R15b "$P3/r14-r16.sh" r15b ;;
     R9)  run_row R9  "$P3/r9-r11.sh" r9 ;;
     R10) run_row R10 "$P3/r9-r11.sh" r10 ;;
     R11b) run_row R11b "$P3/r9-r11.sh" r11b ;;

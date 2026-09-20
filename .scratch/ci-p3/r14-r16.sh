@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: r14-r16.sh r14|r15|r16
+# usage: r14-r16.sh r14|r15|r15b|r16
 # Rows R14-R16 (BRIEF-CI-P3 D9, S8): the linked-desk landing, the
 # per-line scrub, the cross-ship approve.
 #   R14  a repository bound to a Clay desk is CI-protected (no longer
@@ -12,6 +12,13 @@
 #        to a trusted job that prints it line by line, and no line of it
 #        reaches the daemon's saved stream, the bucket object or the ship's
 #        recorded output — each line masked, not only the whole
+#   R15b the ship's scrub is its own, not the daemon's (D9: "on daemon and
+#        ship"): RAW events carrying the credential's lines are posted to
+#        the ship's event route with the daemon's bearer — the daemon
+#        bypassed, as a modified or malicious daemon would — and the ship
+#        masks every line before it persists a set-output: no raw line in
+#        the attempt's outputs, `***` for each. Ported from astra's
+#        s8-live.py R15SHIP on the footer env.
 #   R16  the second galaxy, a listed writer, approves an untrusted
 #        candidate through the peer protocol; a non-writer galaxy is
 #        refused with the ship's reason
@@ -141,6 +148,59 @@ check "the ship's recorded output is masked" "'***'" "$(dojo_value "(~(got by ou
 check "the candidate route carries no line of the value" "0" "$(body_of "$(ci_get "/candidate/$CID")" | grep -cF -e "$L1" -e "$L2")"
 ci_action "{\"action\":\"delete-credential\",\"repo\":\"$REPO\",\"name\":\"PEM\"}" >/dev/null
 end_row R15
+fi
+if [ "$which_row" = r15b ]; then
+row "R15b: raw events posted to the ship's event route, bypassing the daemon — the ship's own scrub masks every line of a two-line credential before it persists"
+L1="r15b-BEGIN-PRIVATE-$TS-aaaaaaaa"; L2="r15b-secret-line-two-$TS-bbbbbbbb"
+VALUE="$L1\n$L2"
+r=$(ci_action "{\"action\":\"set-credential\",\"repo\":\"$REPO\",\"name\":\"PEMB\",\"value\":\"$VALUE\",\"scope\":\"job\",\"envs\":[]}")
+check "a two-line value is accepted" "200" "$(status_of "$r")"
+# a job that stays running long enough to inject under (fixture-wait:
+# sleep 45); the daemon's own stream is real, the injected lines are not
+sync_clone; set_workflows fixture-wait.yml
+printf 'r15b %s\n' "$(date -Is)" >> "$CLONE/README.md"
+push_commit "ci-p3 R15b: a job to inject raw events under"
+AID=$(wait_for_attempt "$CID" wait 180)
+echo "-- the wait attempt $AID"
+BEARER=$(jq -r .bearer "$RUNNER_HOME/a/state.json")
+check "daemon a's bearer read from its state file" "1" "$(printf '%s' "$BEARER" | grep -cE '^0v[0-9a-v.]+$')"
+# the attempt must be live: running, with act's own lines already relayed
+# (so the projection name the ship saw is the daemon's, and the injected
+# lines name the same job)
+DETAIL=""
+for _ in $(seq 1 90); do DETAIL=$(body_of "$(ci_get "/attempt/$AID" "$BEARER")"); [ "$(printf '%s' "$DETAIL" | jq -r '.status == "running" and .events > 0' 2>/dev/null)" = true ] && break; sleep 1; done
+check "the wait job is running on a with act's lines relayed" "running" "$(printf '%s' "$DETAIL" | jq -r .status)"
+PN=$(printf '%s' "$DETAIL" | jq -r '.["projection-name"] // "fixture-wait"')
+N0=$(printf '%s' "$DETAIL" | jq -r .events)
+echo "-- events before the injection: $N0; projection name $PN"
+# the raw lines, each as a set-output the ship would persist: line one
+# alone, line two alone, line one inside ordinary text, and the whole value
+inject() {  # <name> <text>
+  printf '%s' "$2" | python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps({"job": sys.argv[1]+"/wait", "jobID": "wait", "time": "2026-09-20T12:00:00Z", "msg": t, "command": "set-output", "name": sys.argv[2], "arg": t}))' "$PN" "$1" > "$TMP/r15b-event.json"
+  "$api" POST "/ci/attempt/$AID/event" "@$TMP/r15b-event.json" "$BEARER" | cut -c1-60
+}
+check "raw line one posted to the event route with a's bearer -> 202" "202" "$(inject raw0 "$L1" | cut -d' ' -f1)"
+check "raw line two -> 202" "202" "$(inject raw1 "$L2" | cut -d' ' -f1)"
+check "line one inside ordinary text -> 202" "202" "$(inject raw2 "key: $L1 (end)" | cut -d' ' -f1)"
+check "the whole value on one event -> 202" "202" "$(inject raw3 "$(printf '%s\n%s' "$L1" "$L2")" | cut -d' ' -f1)"
+check "the ship counted the four injected events" "$((N0 + 4))" "$(jq_of "$(ci_get "/attempt/$AID" "$BEARER")" .events)"
+OUT=$(dojo_value "outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))" 60 | tr -d '\n' | sed 's/  */ /g')
+echo "-- the attempt's outputs (scry): $(printf '%s' "$OUT" | cut -c1-200)"
+check "line one is not in the ship's outputs" "0" "$(printf '%s' "$OUT" | grep -cF "$L1")"
+check "line two is not in the ship's outputs" "0" "$(printf '%s' "$OUT" | grep -cF "$L2")"
+check "raw0 (line one alone) persisted masked" "'***'" "$(dojo_value "(~(got by outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))) 'raw0')" | one "^'.*'$")"
+check "raw1 (line two alone) persisted masked" "'***'" "$(dojo_value "(~(got by outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))) 'raw1')" | one "^'.*'$")"
+check "raw2 (line one inside text) persisted with the line masked" "'key: *** (end)'" "$(dojo_value "(~(got by outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))) 'raw2')" | one "^'.*'$")"
+check "raw3 (the whole value) persisted masked" "'***'" "$(dojo_value "(~(got by outputs:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$AID/noun))) 'raw3')" | one "^'.*'$")"
+if [ "$(printf '%s' "$OUT" | grep -cF -e "$L1" -e "$L2")" != 0 ]; then
+  echo "R15b RED: the ship persisted a raw credential line — the daemon was bypassed and the ship's own scrub did not mask it"
+fi
+check "the candidate route carries no line of the value" "0" "$(body_of "$(ci_get "/candidate/$CID")" | grep -cF -e "$L1" -e "$L2")"
+# the injected events did not disturb the real job: it finishes and lands
+check "the wait job passed" '%passed' "$(wait_att "$AID" '%passed|%failed|%infrastructure-error' 300)"
+check "the candidate landed" "'landed'" "$(for _ in $(seq 1 30); do [ "$(cand_reason "$CID")" = "'landed'" ] && break; sleep 2; done; cand_reason "$CID")"
+ci_action "{\"action\":\"delete-credential\",\"repo\":\"$REPO\",\"name\":\"PEMB\"}" >/dev/null
+end_row R15b
 fi
 if [ "$which_row" = r16 ]; then
 row "R16: the second galaxy, a listed writer, approves an untrusted candidate over the peer protocol; a galaxy that cannot write is refused"
