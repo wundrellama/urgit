@@ -74,6 +74,28 @@ PUSH2=$(git push origin master 2>&1 | tail -3); CID2=$(printf '%s' "$PUSH2" | gr
 st2=$(wait_cand "$CID2" '%passed|%failed|%unknown' 300)
 check "the second candidate passed and landed too (its base was the landed tip)" "'landed'" "$(for _ in $(seq 1 30); do [ "$(cand_reason "$CID2")" = "'landed'" ] && break; sleep 2; done; cand_reason "$CID2")"
 check "master = the second candidate" "$OID2" "$(REPO=$LINKED repo_master)"
+echo "-- two candidates passing together on the linked ref: one clay-push at a time"
+# the in-progress guard: the first landing parks the clay-push, the second
+# is refused with its reason (already in progress, or destination moved
+# once the first landed) — never parked over the first, never dropped
+# (P19's cold run found the receive path's `=(^ pending-clay)` never true:
+# the second landing overwrote the first's parked push and both vanished)
+printf 'r14 race p %s\n' "$(date -Is)" >> notes.txt; git add -A; git commit -qm "ci-p3 R14: race p"; OIDP=$(git rev-parse HEAD)
+CIDP=$(git push origin master 2>&1 | grep -o 'staged as ci candidate 0v[0-9a-v.]*' | sed 's/.*candidate //')
+printf 'r14 race q %s\n' "$(date -Is)" >> notes.txt; git add -A; git commit -qm "ci-p3 R14: race q"; OIDQ=$(git rev-parse HEAD)
+CIDQ=$(git push origin master 2>&1 | grep -o 'staged as ci candidate 0v[0-9a-v.]*' | sed 's/.*candidate //')
+check "both pushes staged" "yes yes" "$([ -n "$CIDP" ] && echo yes || echo no) $([ -n "$CIDQ" ] && echo yes || echo no)"
+wait_cand "$CIDP" '%passed|%failed|%unknown' 300 >/dev/null; wait_cand "$CIDQ" '%passed|%failed|%unknown' 300 >/dev/null
+sleep 20
+RP=$(cand_reason "$CIDP"); RQ=$(cand_reason "$CIDQ"); M=$(REPO=$LINKED repo_master)
+echo "-- p ($CIDP): $RP; q ($CIDQ): $RQ; master $M"
+landed=""; other=""
+[ "$RP" = "'landed'" ] && { landed="${landed}p"; other="$RQ"; }
+[ "$RQ" = "'landed'" ] && { landed="${landed}q"; other="$RP"; }
+[ -z "$landed" ] && other="$RP $RQ"
+check "exactly one of the two landed" "1" "${#landed}"
+check "master = the landed candidate" "$([ "$landed" = p ] && echo "$OIDP" || echo "$OIDQ")" "$M"
+check "the other candidate was refused with a reason, not dropped" "refused" "$(printf '%s' "$other" | grep -qE "already in progress|destination moved" && echo refused || echo "$other")"
 "$api" POST "/repository/$LINKED/unbind" '{}' | cut -c1-20
 end_row R14
 fi
@@ -167,7 +189,10 @@ check "the owner refused: ok false" "false" "$(printf '%s' "$result" | jq -r .ok
 check "with the reason" "requester cannot write the repository" "$(printf '%s' "$result" | jq -r .message)"
 sleep 3
 check "the candidate stays untrusted and pending" "%untrusted %pending" "$(cand_trust "$UC2") $(cand_status "$UC2")"
-[ "$(printf '%s' "$result" | jq -r .ok)" = true ] && echo "R16 RED: a galaxy that cannot write approved a candidate"
+# rider 4's named actor-substitution case: the request arrived from a ship
+# that is not the actor it would need to be (~$SHIP2, no writer), and the
+# receiving arm acted for someone else — the owner
+[ "$(printf '%s' "$result" | jq -r .ok)" = true ] && echo "R16 RED: actor substitution — the request from ~$SHIP2, which cannot write $REPO, was approved: the receiving arm acted for a ship other than src.bowl"
 # tidy: the second untrusted candidate stays pending; nothing else to undo
 end_row R16
 fi

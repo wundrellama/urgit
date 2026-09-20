@@ -94,7 +94,7 @@ if [ "$(dojo_value '(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now)))
 else
   "$dojo" '|new-desk %scratch' 120 3 | tail -1
 fi
-LINKED=ci-p1-linked
+LINKED=${P19_LINKED:-ci-p1-linked}
 "$api" POST /repositories "{\"name\":\"$LINKED\",\"publicRead\":true}" | cut -c1-30
 L="$TMP/clone-linked"; rm -rf "$L"; mkdir -p "$L"; cd "$L"; git init -q -b master .; git config user.name p19; git config user.email p19@example; git config http.cookieFile "$JAR"
 git remote add origin "$URL/git/$LINKED"; echo seed > README.md; git add -A; git commit -qm seed; git push -q origin master 2>&1 | tail -1
@@ -102,14 +102,17 @@ git remote add origin "$URL/git/$LINKED"; echo seed > README.md; git add -A; git
 check "linked repo reports linked=%.y" "%.y" "$(dojo_value ".^((unit [tip=@ux linked=?]) %gx /=urgit=/ci-ref/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | tr -d '\n' | grep -oE '%\.[yn]' | tail -1)"
 "$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]" 60 3 | tail -1 >/dev/null
 check "CI protection accepted for the linked repo (P3 D9: it lands through the desk)" '%.y' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
-# a push to the CI-protected linked repository: staged, run, landed through
-# the desk (the repository is desk-shaped, as a linked repository must be:
-# sys.kelvin, the marks, the workflow — R14 of the P3 table has the
-# derivation; a README.md-only repository is refused by Clay)
+# the repository is made desk-shaped by a plain push while unprotected (a
+# linked repository must be: sys.kelvin, the marks, the workflow — R14 of
+# the P3 table has the derivation; a README.md-only repository is refused
+# by Clay); that push lands directly through the receive tail's clay path.
+# then, protected again, a push is staged, run, and landed through the desk
+"$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.n]" 60 3 | tail -1 >/dev/null
 mkdir -p "$L/.github/workflows" "$L/mar"; cp "$ROOT/desk/tests/ci/fixture-pass.yml" "$L/.github/workflows/"
 for m in txt yml mime hoon kelvin noun; do cp "$ROOT/desk/mar/$m.hoon" "$L/mar/"; done; cp "$ROOT/desk/sys.kelvin" "$L/sys.kelvin"
 ( cd "$L" && git rm -q README.md && echo seed > notes.txt && git add -A && git commit -qm "nineteen: desk-shaped" && git push -q origin master 2>&1 | tail -1 )
-"$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.n]" 60 3 | tail -1 >/dev/null
+SEED_OID=$(git -C "$L" rev-parse HEAD)
+check "the desk-shaped seed landed directly (unprotected, through the desk)" "$SEED_OID" "$(for _ in $(seq 1 20); do [ "$(REPO=$LINKED repo_master)" = "$SEED_OID" ] && break; sleep 2; done; REPO=$LINKED repo_master)"
 "$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]" 60 3 | tail -1 >/dev/null
 ( cd "$L" && printf 'nineteen %s\n' "$(date -Is)" >> notes.txt && git add -A && git commit -qm "nineteen: a candidate on the linked repo" )
 L_OID=$(git -C "$L" rev-parse HEAD)

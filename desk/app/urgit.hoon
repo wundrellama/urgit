@@ -8154,7 +8154,12 @@
     =^  cards  this  (accept-receive ~ repo-name commands landed ~)
     :_  this
     (snoc cards landed-card)
-  ?:  ?|(=(^ pending-clay) =(^ pending-publish))
+  ::  one clay-push at a time: a second landing while one is parked is
+  ::  refused with its reason, never parked over the first (the receive
+  ::  path's `=(^ pending-clay)` is a bare-wing comparison that is never
+  ::  true; a loobean test, so the subject is not refined for the =^ below)
+  ::
+  ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))
     (refuse 'linked desk update already in progress; re-run the candidate to land it')
   =/  files=(unit (map path octs))
     (flatten-commit:git-clay objects.landed candidate)
@@ -10013,7 +10018,7 @@
     ?~  maybe-pending  `this
     =/  pending=clay-push  u.maybe-pending
     ?^  error.sign-arvo
-      `this(pending-clay ~)
+      `this(pending-clay ~, pending-ci-land ~)
     =/  report-at=@da  (add now.bowl ~s1)
     =.  pending  pending(result `[%.n 'Clay update timed out without a result'])
     =.  pending-clay  `pending
@@ -10027,11 +10032,27 @@
     =/  maybe-pending=(unit clay-push)  pending-clay
     ?~  maybe-pending  `this
     =/  pending=clay-push  u.maybe-pending
+    ::  a report with nothing to report (a timer error, no result) ends the
+    ::  clay-push; a CI landing parked on it is refused with the reason
+    ::  rather than left passed and unlanded with none (P3 D9)
+    ::
+    =/  dropped
+      |=  reason=@t
+      ^-  (quip card _this)
+      =/  ci-land  pending-ci-land
+      =.  pending-clay  ~
+      =.  pending-ci-land  ~
+      ?~  ci-land  `this
+      :_  this
+      :~  :*  %pass  /ci/land  %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+              !>(`action:ci`[%land-refused id.u.ci-land reason])
+          ==
+      ==
     ?^  error.sign-arvo
-      `this(pending-clay ~)
+      (dropped 'Clay update was not reported; re-run the candidate to land it')
     =/  maybe-result=(unit [ok=? message=@t])  result.pending
     ?~  maybe-result
-      `this(pending-clay ~, pending-ci-land ~)
+      (dropped 'Clay update ended without a result; re-run the candidate to land it')
     =/  result=[ok=? message=@t]  u.maybe-result
     ::  a CI landing (P3 D9): the desk is written; the ref advances only if
     ::  the candidate is still eligible and the destination has not moved
