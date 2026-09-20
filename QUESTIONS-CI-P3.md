@@ -135,3 +135,36 @@ strikes any of it, that paragraph changes with the code.
 **Ask.** (i) Is `desk/lib/ci-plan.hoon` in the fence (and `ci-plan-vector.hoon`, if its fixtures
 should carry `runs-on`)? (ii) Does P3 keep the matrix refusal? (iii) Do the three re-offer readings
 above stand?
+
+## §5 `%urgit`'s six `=(^ pending-clay)` guards are never true — outside the fence
+
+**Read.** `desk/app/urgit.hoon` guards a second Clay operation with
+`?:  ?|(=(^ pending-clay) =(^ pending-publish))` at six sites that predate P3 (`4b0c782`,
+`ca0d139`, `9fab1f5`, August; lines 2667, 6593, 6684, 7536, 7740, 7763 today): the peer push into
+a bound repository, the web merges, the API's bind/publish paths. A bare `^` in `.=` is not a
+pattern test; it is a wing (the dojo on `~sud`: `=(^ `(unit @)`~)` → `%.n`, `=(^ [~ 1])` → `%.n`,
+`=(^ [0 0])` → `%.n`), so the comparison is false whatever `pending-clay` holds and the guard
+never fires. The working form is `?=(^ …)` (line 4076, `%publish-desk`, uses `?^`) or the loobean
+`!=(~ …)`.
+
+**Tried.** D9's linked landing (S8, `578515a`) copied the six-site pattern for its own guard, and
+the cold run's P19 found it: two candidates on one linked ref passed two seconds apart; the second
+landing parked over the first's clay-push (its `pending-clay` and `pending-ci-land` overwritten
+between the ack and the report), the first's report found no result and dropped both, the desk
+held the first's tree at a new revision, master did not move, and both candidates stayed
+`%passed` with no verdict reason. Reproduced on demand (`.scratch/tmp/p3-r14-fix.log`'s race block,
+R14): under the copied guard one landed and the other vanished; under `!=(~ …)` the second is
+refused `linked desk update already in progress; re-run the candidate to land it` and the first
+lands (`b6199e9`; R14's race block and the R14 mutant of group E prove it both ways). The
+consequence at the six pre-existing sites is the same shape: a second peer push, web merge or
+publish into a bound repository while one is parked overwrites the first's clay-push, and the
+first's requester is answered by the second's result or by nothing.
+
+**Did.** Fixed the one site D9 owns (in the fence: the receive tail) and left the six alone: the
+§3 fence admits `urgit.hoon` for D9's receive tail only. Nothing in P3's rows or in the P0–P2
+batteries exercises two concurrent Clay operations at those sites, so the cold run does not
+depend on this box; it is recorded for the pick.
+
+**Ask.** Should the six pre-existing guards take the same one-token change (`!=(~ …)`) in P3 —
+seven sites in one commit, one row proving a concurrent linked peer push refused — or stay for
+the owner of `%urgit`'s receive path? The chair proceeds without it.
