@@ -128,7 +128,9 @@ printf 'r5 %s\n' "$(date -Is)" >> README.md
 push_commit "ci-p3 R5: after the rotation"
 PA=""; for _ in $(seq 1 45); do PA=$(cand_attempt_ids "$CID" | tail -1); [ -n "$PA" ] && break; sleep 2; done
 echo "-- first attempt $PA ($(att_kind "$PA"))"
-check "daemon a refused the assignment after the rotation" "1" "$(for _ in $(seq 1 30); do grep -q "$PA.*assignment refused: " "$RUNNER_HOME/a/daemon.log" && break; sleep 2; done; grep "$PA" "$RUNNER_HOME/a/daemon.log" | grep -c 'assignment refused: signature does not verify')"
+# the refusal line is the daemon's `no result:`; since S5 the daemon also
+# logs the ship's answer to its abandon, which echoes the reason
+check "daemon a refused the assignment after the rotation" "1" "$(for _ in $(seq 1 30); do grep -q "$PA.*assignment refused: " "$RUNNER_HOME/a/daemon.log" && break; sleep 2; done; grep "$PA" "$RUNNER_HOME/a/daemon.log" | grep -c 'no result: assignment refused: signature does not verify')"
 check "the ship de-listed a: the panel reads refused" "refused" "$(wait_runner_state "$DAEMON_A" refused 30)"
 check_contains "with the reason" "assignment refused: signature does not verify" "$(runner_field "$DAEMON_A" .refused)"
 check "a keeps polling (last-seen fresh) yet stays refused after N polls" "refused" "$(sleep 30; runner_state "$DAEMON_A")"
