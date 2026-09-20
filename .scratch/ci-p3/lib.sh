@@ -111,3 +111,34 @@ wait_fact() {
     if channel_facts "$1" | jq -e "$2" >/dev/null 2>&1; then return 0; fi; sleep 1
   done; return 1
 }
+# channel_responses <file> <response>: every event of one response kind
+# (`subscribe`, `diff`, `quit`, `poke`) as it arrived, one per line
+channel_responses() { grep -E '^data:' "$1" | sed 's/^data: *//' | jq -c "select(.response == \"$2\")" 2>/dev/null; }
+# ---- the foreign watcher (R6a; astra's s3-watch-auth.py, on the footer env) ----
+# foreign_channel_open <path> <file> [seconds]: a session on the SECOND
+# galaxy opens ITS Eyre channel and subscribes to ~$SHIP's %urgit-ci fact
+# path with `ship: $SHIP` — a real remote Gall watch over the network, the
+# shape any other ship could try — and streams the channel's events into
+# <file> for <seconds> (default 90). Prints `<curl pid> <channel url>`;
+# the row deletes the channel with foreign_channel_delete <url>.
+foreign_channel_open() {
+  local path="$1" file="$2" secs="${3:-90}"
+  local url2="http://127.0.0.1:$PORT2" jar2="$TMP/cookies-$SHIP2.txt"
+  [ -s "$jar2" ] || SHIP_ROLE=2 "$api" GET /repositories >/dev/null
+  local ch="$url2/~/channel/$(date +%s)-r6a$RANDOM"
+  local code; code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar2" -X PUT "$ch" -H 'content-type: application/json' \
+    --data "[{\"id\":1,\"action\":\"subscribe\",\"ship\":\"$SHIP\",\"app\":\"urgit-ci\",\"path\":\"$path\"}]")
+  [ "$code" = 204 ] || { echo "foreign_channel_open: the subscribe PUT on ~$SHIP2's channel answered $code" >&2; return 1; }
+  : > "$file"
+  ( curl -s -N --max-time "$secs" -b "$jar2" "$ch" >> "$file" 2>/dev/null ) &
+  echo "$! $ch"
+}
+foreign_channel_delete() {
+  curl -s -o /dev/null -b "$TMP/cookies-$SHIP2.txt" -X PUT "$1" -H 'content-type: application/json' --data '[{"id":2,"action":"delete"}]'
+}
+# wait_response <file> <response> <seconds>: until an event of that kind
+wait_response() {
+  local i; for i in $(seq 1 "$3"); do
+    [ -n "$(channel_responses "$1" "$2")" ] && return 0; sleep 1
+  done; return 1
+}

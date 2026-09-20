@@ -1,7 +1,7 @@
 #!/bin/bash
-# usage: r2-r6.sh r2|r6
-# Rows R2 and R6 (BRIEF-CI-P3 D4, S3): the live channel. The row is the
-# browser's subscriber: it opens Eyre's channel with the ship session,
+# usage: r2-r6.sh r2|r6|r6a
+# Rows R2, R6 and R6a (BRIEF-CI-P3 D4, S3): the live channel. The row is
+# the browser's subscriber: it opens Eyre's channel with the ship session,
 # subscribes to %urgit-ci's fact path, and reads what arrives — never a
 # GET after the subscribe, so every state it sees came unasked.
 #   R2  subscribe /ci/runners; mint a token -> a runner fact `minted`
@@ -11,6 +11,15 @@
 #       candidate pending (staged), then planned, each attempt running then
 #       passed, the verdict passed, 'landed' — with no read; delete the
 #       channel -> the fallback read (Refresh) still answers the list
+#   R6a the watch authorization (D4: an on-watch from a non-our ship is
+#       refused, urgit-ci.hoon's `?> =(our.bowl src.bowl)`), over the
+#       wire: a session on the SECOND galaxy subscribes to this ship's
+#       /ci/runners and /ci/repository/<repo> through its own Eyre channel
+#       with `ship: <this ship>`; each subscribe must come back `err` and
+#       the channel must never deliver a `diff`. The same path from our
+#       own session answers a fact in the same row, so the refusal is
+#       authorization, not a dead path. Ported from astra's
+#       s3-watch-auth.py on the footer env (no literal port or code file).
 source "$(dirname "$0")/lib.sh"
 which_row="${1:-r2}"
 if [ "$which_row" = r2 ]; then
@@ -61,5 +70,30 @@ kill "$PID" 2>/dev/null; sleep 1
 r=$(ci_get "/repository/$REPO/candidates")
 check "Refresh's read still answers 200 with the landed candidate" "landed" "$(jq_of "$r" ".candidates[] | select(.id == \"$CID\") | .verdictReason")"
 end_row R6
+fi
+if [ "$which_row" = r6a ]; then
+row "R6a: a watch from the second galaxy ~$SHIP2 on ~$SHIP's CI fact paths is refused before any fact — /ci/runners and /ci/repository/$REPO"
+for path in /ci/runners "/ci/repository/$REPO"; do
+  STREAM="$TMP/r6a-${path##*/}.sse"
+  read -r PID CH <<< "$(foreign_channel_open "$path" "$STREAM" 90)" || exit 1
+  echo "-- ~$SHIP2's channel ${CH##*/} subscribed to [~$SHIP %urgit-ci] $path"
+  wait_response "$STREAM" subscribe 60
+  SUB=$(channel_responses "$STREAM" subscribe | head -1)
+  echo "-- the subscribe response: $(printf '%s' "$SUB" | cut -c1-160)"
+  check "$path: ~$SHIP answered the foreign watch (a subscribe response arrived)" "1" "$(printf '%s' "$SUB" | grep -c '"response":"subscribe"')"
+  check "$path: the subscribe came back with err" "err" "$(printf '%s' "$SUB" | jq -r 'if .err then "err" else "accepted" end' 2>/dev/null)"
+  sleep 5
+  check "$path: the channel never delivered a diff (no fact reached ~$SHIP2)" "0" "$(channel_responses "$STREAM" diff | wc -l)"
+  if [ "$(channel_responses "$STREAM" diff | wc -l)" != 0 ] || [ "$(printf '%s' "$SUB" | jq -r 'if .err then "err" else "accepted" end' 2>/dev/null)" = accepted ]; then
+    echo "R6a RED: foreign ship watch accepted for $path — ~$SHIP2's subscription to [~$SHIP %urgit-ci] $path was not refused"
+  fi
+  foreign_channel_delete "$CH"; kill "$PID" 2>/dev/null
+done
+# the control: the same paths from our own session answer a fact at once
+STREAM="$TMP/r6a-own.sse"
+PID=$(channel_open /ci/runners "$STREAM" 30) || exit 1
+check "the control — our own session's watch of /ci/runners answers a fact" "yes" "$(wait_fact "$STREAM" 'select(.kind == "runners")' 15 && echo yes || echo no)"
+kill "$PID" 2>/dev/null
+end_row R6a
 fi
 [ "$NFAIL" = 0 ]

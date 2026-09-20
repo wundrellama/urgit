@@ -21,6 +21,10 @@
 #   R5b  app/urgit-ci.hoon   an abandon over a signature/key reason does not
 #                            mark the daemon refused (CI-DELIVERY-1.1 b): the
 #                            scheduler keeps it eligible
+#   R6a  app/urgit-ci.hoon   on-watch's `?> =(our.bowl src.bowl)` gone: a
+#                            watch from any ship on the CI fact paths is
+#                            accepted and the second galaxy receives a fact
+#                            (the close-out's port of astra's watch mutant)
 #   R9   app/urgit-ci.hoon   the same de-listing dropped, under the ghost row:
 #                            the wrong-key daemon is offered work again after
 #                            its refusal (its second refusal ends the row)
@@ -81,6 +85,9 @@ edits = [
  ("R9", "desk/app/urgit-ci.hoon",
   "  =?  daemons  (refusal-reason reason)\n",
   "  =?  daemons  %.n\n"),
+ ("R6a", "desk/app/urgit-ci.hoon",
+  "  ?:  ?=([%http-response @ ~] path)  `this\n  ?>  =(our.bowl src.bowl)\n",
+  "  ?:  ?=([%http-response @ ~] path)  `this\n  ?>  %.y\n"),
  ("R10", "desk/app/urgit-ci.hoon",
   "  =/  again=?\n    ?~  found  %.n\n    ?:  silent-before  %.n\n",
   "  =/  again=?\n    ?~  found  %.n\n    ?:  %.y  %.n\n"),
@@ -132,6 +139,7 @@ PY
       R4b) echo "the attempt on b is re-offered, not left running: FAIL (observed: %running" ;;
       R5)  echo "daemon a refused the assignment after the rotation: FAIL (observed: 0" ;;
       R5b) echo "the ship de-listed a: the panel reads refused: FAIL (observed: healthy" ;;
+      R6a) echo "R6a RED: foreign ship watch accepted" ;;
       R9)  echo "R9 RED: the refused daemon was offered work again" ;;
       R10) echo "the attempt is re-offered after the timeout + 2 min, not closed: FAIL (observed: %infrastructure-error" ;;
       R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;

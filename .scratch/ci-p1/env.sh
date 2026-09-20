@@ -1,15 +1,17 @@
 #!/bin/bash
 # P1/P2/P3 harness environment: the P0 env (ship, port, pier, tmux
 # session, +code) plus the rootless Docker socket, the runner daemon paths
-# and the object store fixture from the launch footer of BRIEF-CI-P3.md
-# (the P2 close-out's state dir was /run/user/1000/ci-p2-closeout and its
-# store port 8365; the P2 build's /run/user/1000/ci-p2-opus and 8363; the
-# P1 close-out's /run/user/1000/ci-p1-closeout, the P1 build's
-# /run/user/1000/ci-p1-opus). Source this from every P1, P2 and P3 script.
+# and the object store fixture from the launch footer of
+# BRIEF-CI-P3-CLOSEOUT.md (the P3 build's state dir was
+# /run/user/1000/ci-p3-opus and its store port 8392; the P2 close-out's
+# /run/user/1000/ci-p2-closeout and 8365; the P2 build's
+# /run/user/1000/ci-p2-opus and 8363; the P1 close-out's
+# /run/user/1000/ci-p1-closeout, the P1 build's /run/user/1000/ci-p1-opus).
+# Source this from every P1, P2 and P3 script.
 source "$(dirname "${BASH_SOURCE[0]}")/../ci-p0/env.sh"
 export P0="$ROOT/.scratch/ci-p0"
 export P1="$ROOT/.scratch/ci-p1"
-export DOCKER_STATE=/run/user/1000/ci-p3-opus
+export DOCKER_STATE=/run/user/1000/ci-p3-closeout
 export DOCKER_DATA="$TMP/docker-data"
 export DOCKER_SOCK="$DOCKER_STATE/docker.sock"
 export RUNNER_BIN="$ROOT/runner/urgit-runner"
@@ -23,7 +25,7 @@ export DAEMON_CAPACITY="${DAEMON_CAPACITY:-3}"
 # the RustFS object-store fixture (BRIEF-CI-P2 §5): one rootless container
 # on the harness Docker daemon, its own port from the footer, data under
 # $TMP; store.sh writes the fixture's access key to $TMP/store.env
-export STORE_PORT=8392
+export STORE_PORT=8422
 export STORE_DATA="$TMP/store-data"
 export STORE_NAME="urgit-ci-store-$SHIP"
 export STORE_IMAGE=rustfs/rustfs:1.0.0
