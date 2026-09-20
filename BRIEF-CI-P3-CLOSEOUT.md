@@ -84,11 +84,11 @@ run`, stop).
 
 - Worktree `/var/home/michael/workspace/urbit/urgit-ci-p3-closeout`, branch `ci/p3-closeout`,
   base `01e668a`.
-- **First ship** `~mex`, HTTP port `8400`, pier `/var/home/michael/piers/urgit-ci-p3c-mex`, tmux
-  session `ci-p3-closeout-mex`. **Second ship** `~ryt`, HTTP port `8401`, pier
+- **First ship** `~mex`, HTTP port `8420`, pier `/var/home/michael/piers/urgit-ci-p3c-mex`, tmux
+  session `ci-p3-closeout-mex`. **Second ship** `~ryt`, HTTP port `8421`, pier
   `/var/home/michael/piers/urgit-ci-p3c-ryt`, session `ci-p3-closeout-ryt`. Rootless Docker state
   dir `/run/user/1000/ci-p3-closeout/`, data root `<worktree>/.scratch/tmp/docker-data`. Store
-  (RustFS) port `8402`, container `urgit-ci-store-mex`, data `<worktree>/.scratch/tmp/store-data`.
+  (RustFS) port `8422`, container `urgit-ci-store-mex`, data `<worktree>/.scratch/tmp/store-data`.
   Rewrite `SHIP/PORT/PIER` (+ `SHIP2/PORT2/PIER2`) in `.scratch/ci-p0/env.sh` and
   `DOCKER_STATE`/`STORE_PORT` in `.scratch/ci-p1/env.sh` before your first boot. Neither pier
   may exist before it. Boot as `cold.sh` does (tmux, `--loom 34`, no `-p`).
