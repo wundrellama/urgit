@@ -201,7 +201,14 @@ short these are boxed as "not started", never half-built.
   requester's packet carries no actor field; a packet that tries is malformed. R16 proves a real
   second-ship refusal as a non-writer, then approval as a listed writer, with a named
   actor-substitution RED (a forged actor in the packet, or the request arriving from a ship that
-  is not the actor) before GREEN. The `%ci-action` route stays local-only (`urgit-ci.hoon:80`).
+  is not the actor) before GREEN. The `%ci-action` route stays local-only (`urgit-ci.hoon:80`). **Rider 5 (opus §5) — the
+`pending-clay` guards:** `=(^ pending-clay)` compares against the wing `^`, not a pattern, so the
+six pre-P3 guards in `urgit.hoon` (master lines 2664, 6538, 6629, 7481, 7685, 7708 — peer push
+into a bound repo, web merges, API bind/publish) never fire and a second Clay operation overwrites
+a parked first one. Fixing them is IN the fence for both chairs: the one-token change to
+`!=(~ pending-clay)` / `!=(~ pending-publish)` (or `?=(^ …)`), all six sites plus D9's own, ONE
+commit, plus one row proving a concurrent linked peer push is refused with the existing
+"already in progress" message while the parked one completes. No other change at those sites.
 - `runner/`: `labels` in the TOML + `x-ci-labels` on enroll/poll, `runs-on` in the plan (D2b), D2's 401-on-revoke exit, **D6(g)'s ownership labels in `sandbox/docker.go` (labels and the `Orphans` filter ONLY — not the `Sandbox` interface, not `Prepare/Run`) and the 401 split in `ship/client.go` + `daemon.go`'s `Reconcile`**, D6's re-offer handling (idempotent claim already exists),
   D9's scrub. Nothing in the sandbox interface.
 - `fe/`: the Runners section (with labels and the repository picker), `runs-on` on job rows, the live channel, the storage pip, first-run states, tests.
@@ -335,3 +342,4 @@ fire, commit what is green, record the row `provider-blocked, not run`, and stop
 - **Rider 2 (astra §2–§3, opus §2 + §4; 2026-09-19 10:50).** Fence gains `desk/lib/ci-plan.hoon` + `desk/gen/ci-plan-vector.hoon` (the parser lives there). Matrix refusal RETAINED; `runs-on` literal forms only, expressions refused at plan time — the brief's "expanded as act already does" was wrong (astra ran `act -l` on the matrix fixture: one row). `stale` = `stale-after` (~m5), one number; the daemon polls at capacity so `last-seen` is liveness (opus §2 finding). Opus §4(iii)'s three re-offer readings stand as D6(e). Opus §1/§3 were answered in-brief; no change.
 - **Rider 3 (astra §4; 2026-09-19 13:12).** Two runners on one Docker daemon: B's restart reconciled A's sandbox, got the ship's correct 401 for a foreign attempt, and the client read it as `enrollment lost` → exit 3 (astra's reproduction, `.scratch/ci-p3/box4-reconcile.py`). Ratified **B — fix it, bounded**, over documenting one-runner-per-daemon: ownership label on every sandbox object, `Orphans` filters on it, the client distinguishes `attempt authentication required` from enrollment loss. D6(g); fence widened to `docker.go` labels/`Orphans` and `client.go`/`Reconcile`. The harness stays on shared Docker so R11b exercises the fix.
 - **Rider 4 (astra §5; 2026-09-19 18:40).** D9's cross-ship approve needs a `%git-peer` packet variant and `%urgit`'s peer dispatch, which the §3 fence excluded (it admitted `urgit.hoon` for the linked-desk receive tail only). Fence widened exactly that far; actor from `src.bowl`, never the packet; local `%approve-candidate` + `ci-can-write` unchanged; actor-substitution RED named. Both chairs are judged on this fence at the pick.
+- **Rider 5 (opus §5; 2026-09-19 19:20).** Opus's cold run P19 raced two landings on one linked ref and lost one: D9's guard had copied the six pre-P3 `=(^ pending-clay)` sites, which compare against the wing `^` and are never true (dojo-verified on ~sud; `?^` at line 4051 is the working form). Six sites verified on master. Ruled: fix all six + D9's in one commit, one concurrency row — a guard that never guards is a bug we now know about, not someone else's receive path.
