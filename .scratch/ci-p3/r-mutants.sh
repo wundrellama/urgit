@@ -32,10 +32,22 @@
 #                            the client reads the ship's foreign-attempt 401 as
 #                            enrollment lost — a restart beside another
 #                            runner's sandbox exits 3 (two edits, one row)
+#   R16  app/urgit.hoon      actor substitution (rider 4): the receiving arm
+#                            of %ci-approve acts for the OWNER whoever sent
+#                            the packet — a request from a ship that cannot
+#                            write the repository is approved, and the twin's
+#                            actor is the owner, not src.bowl (two edits, one
+#                            row; the mutant is %urgit's, so the phase waits
+#                            for %urgit's reload)
+#   R14  app/urgit.hoon      the linked landing's in-progress guard is gone
+#                            (the receive path's own never-true `=(^ …)`): a
+#                            second landing parks over the first's clay-push
+#                            and one or both vanish, passed and unlanded
+#                            with no reason
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null || { echo "r-mutants.sh: $PWD is not a git work tree"; exit 1; }
-FILES=(desk/app/urgit-ci.hoon desk/lib/ci-plan.hoon desk/lib/ci-event.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go runner/internal/sandbox/docker.go runner/internal/ship/client.go)
+FILES=(desk/app/urgit-ci.hoon desk/app/urgit.hoon desk/lib/ci-plan.hoon desk/lib/ci-event.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go runner/internal/sandbox/docker.go runner/internal/ship/client.go)
 case "${1:-}" in
   apply)
     if ! git diff --quiet -- "${FILES[@]}"; then
@@ -73,6 +85,15 @@ edits = [
  ("R11b", "runner/internal/ship/client.go",
   "\t\tif strings.Contains(resp.Error(), \"attempt authentication required\") {\n",
   "\t\tif false {\n"),
+ ("R16", "desk/app/urgit.hoon",
+  "  ?.  ?&(?=(^ found) (repository-writable u.found src.bowl))\n    (peer-forge-reply src.bowl request repository %candidate 0 %.n 'requester cannot write the repository' ~)\n",
+  "  ?.  ?&(?=(^ found) (repository-writable u.found our.bowl))\n    (peer-forge-reply src.bowl request repository %candidate 0 %.n 'requester cannot write the repository' ~)\n"),
+ ("R16", "desk/app/urgit.hoon",
+  "          !>(`action:ci`[%approve-candidate candidate src.bowl])\n",
+  "          !>(`action:ci`[%approve-candidate candidate our.bowl])\n"),
+ ("R14", "desk/app/urgit.hoon",
+  "  ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n",
+  "  ?:  %.n\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n"),
 ]
 texts = {}
 for row, path, old, new in edits:
@@ -106,6 +127,8 @@ PY
       R9)  echo "R9 RED: the refused daemon was offered work again" ;;
       R10) echo "the attempt is re-offered after the timeout + 2 min, not closed: FAIL (observed: %infrastructure-error" ;;
       R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;
+      R16) echo "R16 RED: actor substitution" ;;
+      R14) echo "the other candidate was refused with a reason, not dropped: FAIL (observed: ~" ;;
       *) echo "r-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac
     ;;
