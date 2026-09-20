@@ -36,7 +36,7 @@ DESK="r14-$TS"
 check "a fresh desk %$DESK" '%.y' "$(dojo_value "(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now))) %$DESK)" | one '^%\.[yn]$')"
 LINKED="ci-p3-linked-$TS"
 "$api" POST /repositories "{\"name\":\"$LINKED\",\"publicRead\":true}" | cut -c1-30
-# a desk-shaped repository (measured on ~tug: a linked push writes the
+# a desk-shaped repository (measured on the P3 build's second galaxy: a linked push writes the
 # WHOLE tree to the desk and deletes what the repository lacks, so the
 # repository carries sys.kelvin and the marks a new desk has, plus yml
 # for the workflow and mime, which yml's grad builds on — without it the

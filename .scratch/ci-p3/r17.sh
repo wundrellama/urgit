@@ -3,7 +3,7 @@
 # R17 (rider 5, opus §5): one Clay operation at a time. A plain push into a
 # bound repository parks its clay-push (a 1 s start timer, the desk write,
 # a 1 s report timer: the ref advances in the completion event); a peer
-# push from ~tug into the same repository that completes inside that
+# push from the second galaxy into the same repository that completes inside that
 # window is refused with the receive path's existing message, 'another
 # Clay operation is in progress', and the parked push completes: master
 # = its head, the desk holds its file, the peer push's commit is nowhere.
@@ -32,7 +32,7 @@ r=$("$api" POST "/repository/$LINKED/bind" "{\"desk\":\"$DESK\",\"branch\":\"ref
 check "bound to desk %$DESK through the API" "200" "$(status_of "$r")"
 check "~$SHIP2 listed as a writer of $LINKED -> 200" "200" "$(status_of "$("$api" POST "/repository/$LINKED/writers" "{\"ship\":\"~$SHIP2\",\"allowed\":true}")")"
 # the second ship's side: a native fork of the repository over the peer
-# protocol, a commit on the fork through ~tug's own git route, and the
+# protocol, a commit on the fork through the second galaxy's own git route, and the
 # peer push of that fork back into the origin
 wait_transfer() {  # <role> <transfer> <seconds>: prints "ok message" once inactive
   local t="" ; for _ in $(seq 1 "$3"); do
@@ -42,7 +42,7 @@ wait_transfer() {  # <role> <transfer> <seconds>: prints "ok message" once inact
   printf '%s %s' "$(printf '%s' "$t" | jq -r .ok)" "$(printf '%s' "$t" | jq -r .message)"
 }
 # the peer push is the long one (measured alone on this pair: ~4 s from the
-# POST to its finish event on ~sud, then its own 2 s clay-push); the plain
+# POST to its finish event on the first ship, then its own 2 s clay-push); the plain
 # push's window is ~2 s (its two timers and the write). So the peer push
 # goes first and the plain push starts DELAY seconds into it, parking for
 # the peer push's finish. A miss is diagnosed by the peer push's result:
@@ -57,9 +57,9 @@ while [ $tries -lt 5 ]; do
   echo "-- try $tries (delay $delay s): ~$SHIP2 forks $LINKED as $FORK: $(status_of "$r") transfer $FT"
   fr=$(wait_transfer 2 "$FT" 60); echo "-- the fork: $fr"
   [ "${fr%% *}" = true ] || { echo "r17: the fork did not complete: $fr"; continue; }
-  F="$TMP/clone-$FORK"; rm -rf "$F"; mkdir -p "$F"; cd "$F"; git init -q -b master .; git config user.name r17tug; git config user.email r17tug@example
+  F="$TMP/clone-$FORK"; rm -rf "$F"; mkdir -p "$F"; cd "$F"; git init -q -b master .; git config user.name r17peer; git config user.email r17peer@example
   git config http.cookieFile "$TMP/cookies-$SHIP2.txt"
-  SHIP_ROLE=2 "$P0/api.sh" GET /repositories >/dev/null   # logs ~tug's session in (the jar)
+  SHIP_ROLE=2 "$P0/api.sh" GET /repositories >/dev/null   # logs the second galaxy's session in (the jar)
   git remote add origin "http://127.0.0.1:$PORT2/git/$FORK"; git pull -q origin master 2>&1 | tail -1
   printf 'r17 peer %s try %s\n' "$(date -Is)" "$tries" >> notes.txt; git add -A; git commit -qm "r17: the peer push's commit"; PEER=$(git rev-parse HEAD)
   git push -q origin master 2>&1 | tail -1

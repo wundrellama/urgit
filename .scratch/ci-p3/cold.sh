@@ -1,6 +1,6 @@
 #!/bin/bash
 # The P3 cold battery, one command, scripts only (BRIEF-CI-P3 §5): boot
-# both fresh ships from the footer as tmux sessions (~sud, then ~tug),
+# both fresh ships from the footer as tmux sessions (the first, then the second),
 # start the rootless Docker daemon and the store fixture (asserting it
 # answers), run the P0 battery, the P1 battery, the P2 battery and the P3
 # battery, then the shutdown by /proc-verified pid. Nothing typed. Every
