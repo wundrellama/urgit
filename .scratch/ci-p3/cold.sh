@@ -33,5 +33,9 @@ for step in "${steps[@]}"; do
   $step
   rc=$?
   [ "$rc" = 0 ] || { echo "cold.sh: $step exited $rc; stopping ($(date -Is))" >&2; exit "$rc"; }
+  # START_AT names a step of the FIRST battery only: left exported, the
+  # next battery would skip every step looking for it and report "all
+  # steps ran" (the P3 battery did, 22:54, and the shutdown followed)
+  unset START_AT
 done
 echo; echo "cold.sh: every step ran ($(date -Is))"

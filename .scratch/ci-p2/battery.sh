@@ -24,4 +24,5 @@ for step in "${steps[@]}"; do
   rc=${PIPESTATUS[0]}
   [ "$rc" = 0 ] || { echo "battery.sh: $step exited $rc; stopping" >&2; exit "$rc"; }
 done
+[ -n "$skipping" ] && { echo "battery.sh: START_AT=$skipping names no step of this battery; nothing ran" >&2; exit 2; }
 echo; echo "battery.sh: all steps ran ($(date -Is))"
