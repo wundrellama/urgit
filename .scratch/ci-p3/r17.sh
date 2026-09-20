@@ -75,12 +75,19 @@ while [ $tries -lt 5 ]; do
   # bounded: under a guard that never fires the peer push's finish overwrites
   # the parked push, whose held response is never sent — git would wait for
   # ever (the R17 mutant's RED)
-  plain=$(timeout 40 git push origin master 2>&1 | tail -1); echo "-- the plain push ($(date +%T.%N | cut -c1-12)): ${plain:-(no answer within 40 s)}"
+  timeout 40 git push origin master > "$TMP/r17-plain-$tries.log" 2>&1; prc=$?
+  plain=$(tail -1 "$TMP/r17-plain-$tries.log"); echo "-- the plain push ($(date +%T.%N | cut -c1-12)): exit $prc: ${plain:-(no output)}"
   pr=$(wait_transfer 2 "$PT" 60); echo "-- the peer push's result: $pr"
   case "$pr" in
     *"another Clay operation is in progress"*) outcome="$pr"; break ;;
     *"not a fast-forward"*) echo "-- the peer push arrived after the window closed: the plain push earlier next time"; delay=$(awk -v d="$delay" 'BEGIN{printf "%.1f", d-0.7}') ;;
-    true*) echo "-- the peer push landed before the window opened: the plain push later next time"; delay=$(awk -v d="$delay" 'BEGIN{printf "%.1f", d+0.7}') ;;
+    true*)
+      # a peer push that landed: before the window opened (the plain push
+      # then refused as not a fast-forward — too early, try later), or
+      # while the plain push was parked — the guard did not fire and the
+      # parked push's held response never came (the R17 mutant's RED)
+      if [ "$prc" = 124 ]; then outcome="$pr(the parked push got no answer within 40 s)"; break; fi
+      echo "-- the peer push landed before the window opened: the plain push later next time"; delay=$(awk -v d="$delay" 'BEGIN{printf "%.1f", d+0.7}') ;;
     *) outcome="$pr"; break ;;
   esac
 done
