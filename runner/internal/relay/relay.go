@@ -86,7 +86,7 @@ const Mask = "***"
 // ScrubForms expands released values to the forms Scrub masks: each
 // value whole, and each of its lines of at least eight characters — a
 // PEM key or a JSON credential prints line by line, and act masks none
-// of it (P3 D9, CI-P2-SECRET-1).
+// of it; every line of every released value is scrubbed on both sides.
 func ScrubForms(values []string) []string {
 	var out []string
 	seen := map[string]bool{}

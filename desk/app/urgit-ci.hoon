@@ -828,9 +828,9 @@
       !!
     ::  act masks a secret only where the whole value appears on one
     ::  output line (measured on 0.2.89: a two-line secret printed line by
-    ::  line is not masked), so a multi-line value — a PEM key — is
-    ::  scrubbed line by line on both sides (P3 D9, CI-P2-SECRET-1); every
-    ::  line of at least eight characters is in the scrub set
+    ::  line is not masked), so every line of every released value is
+    ::  scrubbed on both sides, daemon and ship; every line of at least
+    ::  eight characters is in the scrub set
     ::
     =.  credentials
       (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
