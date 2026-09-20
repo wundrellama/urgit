@@ -136,7 +136,20 @@ strikes any of it, that paragraph changes with the code.
 should carry `runs-on`)? (ii) Does P3 keep the matrix refusal? (iii) Do the three re-offer readings
 above stand?
 
-## §5 `%urgit`'s six `=(^ pending-clay)` guards are never true — outside the fence
+## §5 `%urgit`'s six `=(^ pending-clay)` guards are never true — RULED (rider 5, `bceeb01`)
+
+**Ruling (rider 5, 2026-09-19 19:20).** Fix all six, in the fence for both chairs: the one-token
+change at the six sites plus D9's own, one commit, one row proving a concurrent linked peer push
+refused with the existing "already in progress" message while the parked one completes; nothing
+else at those sites. **Applied:** `1b0fd07` — the six sites read `!=(~ pending-clay)` /
+`!=(~ pending-publish)` (D9's own took that form in `b6199e9`, before the ruling; all seven are
+the same token now); R17 (`.scratch/ci-p3/r17.sh`): a peer push from `~tug` into `~sud`'s bound
+repository that completes while a plain push is parked is answered `another Clay operation is in
+progress`, the parked push completes (master = its head, the desk holds its file), the peer
+push's commit is nowhere; its mutant (the peer site back to `=(^ …)`) turns it red — the peer
+push reports ok and the parked push's held response never comes (group E). The question as it
+was asked follows.
+
 
 **Read.** `desk/app/urgit.hoon` guards a second Clay operation with
 `?:  ?|(=(^ pending-clay) =(^ pending-publish))` at six sites that predate P3 (`4b0c782`,
