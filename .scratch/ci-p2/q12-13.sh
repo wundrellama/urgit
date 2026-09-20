@@ -71,8 +71,20 @@ check_contains "the reason names the signature" "signature does not verify" "$(g
 check "daemon b prepared no sandbox (no work)" "0" "$(grep -c 'sandbox .* prepared' "$RUNNER_HOME/b/daemon.log")"
 PA=$(cand_attempt_ids "$CID" | head -1)
 check "the override attempt went to daemon b" "$DAEMON_B" "$(dojo_value "daemon:(need .^((unit attempt:ci) %gx /=urgit-ci=/attempt/$PA/noun))" | one '0v[0-9a-v.]+')"
-check "the ship recorded the refusal as the attempt's reason" '%infrastructure-error' "$(wait_att "$PA" '%infrastructure-error|%passed|%failed' 60)"
+# P3 (CI-DELIVERY-1.1 b, D6): a refused assignment is re-offered once on
+# another live daemon when the ship has one — daemon a here — and the
+# attempt closes %reoffered; only with no other live daemon does it close
+# as P2 asserted, %infrastructure-error. The reason names the signature
+# either way, and the refusing daemon is de-listed (its record refused).
+others=$(dojo_value "(lent (skim ~(val by .^((map @uv daemon:ci) %gx /=urgit-ci=/daemons/noun)) |=(d=daemon:ci ?&(!=(id.d $DAEMON_B) ?=(^ enrolled.d) ?=(^ bearer-hash.d) ?=(~ revoked.d) ?=(~ refused.d) ?=(^ last-seen.d) (lte (sub now (min now (need last-seen.d))) ~m5)))))" | grep -oE '^[0-9]+$' | tail -1)
+echo "-- other live daemon records: ${others:-?}"
+if [ "${others:-0}" -gt 0 ]; then
+  check "the ship closed b's attempt as re-offered (P3 D6: another live daemon exists)" '%reoffered' "$(wait_att "$PA" '%reoffered|%infrastructure-error|%passed|%failed' 60)"
+else
+  check "the ship recorded the refusal as the attempt's reason (no other live daemon)" '%infrastructure-error' "$(wait_att "$PA" '%infrastructure-error|%passed|%failed' 60)"
+fi
 check_contains "attempt reason names the signature" "signature does not verify" "$(att_reason "$PA")"
+check "the ship de-listed b: its record reads refused (P3 D6 b)" "refused" "$("$api" GET /ci/runners | sed 's/^[0-9]* //' | jq -r ".runners[] | select(.id == \"$DAEMON_B\") | .state")"
 "$P1/runner.sh" stop b >/dev/null 2>&1
 end_row Q12
 fi
