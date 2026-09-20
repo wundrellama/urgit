@@ -19,11 +19,15 @@ set +e
 exec > >(tee -a "$TMP/cold.log") 2>&1
 boot2() { SHIP_ROLE=2 "$P0/boot.sh"; }
 store_up() { "$store" start && "$store" ready; }
-steps=("$P0/boot.sh" boot2 "$P1/docker-rootless.sh start" store_up "$P0/battery.sh" "$P1/battery.sh" "$P2/battery.sh" "$P3/battery.sh" "$P3/shutdown.sh")
+# the P3 battery advertises the store on the LAN address (D5); this script
+# sources the P2 lib, whose env exports STORE_ADVERTISE=127.0.0.1, and the
+# P3 lib keeps a caller's value — so the P3 battery gets its own
+p3_battery() { STORE_ADVERTISE="${P3_STORE_ADVERTISE:-192.168.1.229}" "$P3/battery.sh"; }
+steps=("$P0/boot.sh" boot2 "$P1/docker-rootless.sh start" store_up "$P0/battery.sh" "$P1/battery.sh" "$P2/battery.sh" p3_battery "$P3/shutdown.sh")
 case "${COLD_FROM:-}" in
-  p3) steps=("$P3/battery.sh" "$P3/shutdown.sh")
+  p3) steps=(p3_battery "$P3/shutdown.sh")
       echo "################ cold battery RESUMED at the P3 battery (START_AT=${START_AT:-<first step>}) on the same ships ~$SHIP and ~$SHIP2  ($(date -Is))" ;;
-  p2) steps=("$P2/battery.sh" "$P3/battery.sh" "$P3/shutdown.sh")
+  p2) steps=("$P2/battery.sh" p3_battery "$P3/shutdown.sh")
       echo "################ cold battery RESUMED at the P2 battery (START_AT=${START_AT:-<first step>}) on the same ships ~$SHIP and ~$SHIP2  ($(date -Is))" ;;
   "") echo "################ cold battery: ships ~$SHIP :$PORT ($PIER, tmux $TTY) and ~$SHIP2 :$PORT2 ($PIER2), rootless $DOCKER_STATE, store $STORE_URL advertised as $STORE_ENDPOINT for P0-P2 and http://${P3_STORE_ADVERTISE:-192.168.1.229}:$STORE_PORT for P3, DAEMON_CAPACITY=$DAEMON_CAPACITY  ($(date -Is))" ;;
   *) echo "cold.sh: COLD_FROM must be p2, p3 or unset" >&2; exit 2 ;;
