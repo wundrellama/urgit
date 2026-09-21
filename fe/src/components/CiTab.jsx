@@ -191,7 +191,7 @@ function CandidatePage({ id, live, policy, onBack, onMutate }) {
         <div className="table-head ci-attempt-row"><span>Job</span><span>Daemon</span><span>Status</span><span>Started</span><span>Finished</span><span>Log</span></div>
         {rows.map((row) => (
           <div className="ci-attempt-row" key={row.id} title={row.reason}>
-            <span><strong>{row.job}</strong>{row.workflow && <small className="quiet"> {row.workflow}</small>}{row.runsOn.length > 0 && <small className="quiet ci-runs-on" title="runs-on"> · {row.runsOn.join(', ')}</small>}</span>
+            <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
             <code>{row.daemon}</code>
             <span className={`status ${statusClass(row.status)}`}>{statusLabel[row.status] || row.status}{row.reason && <small className="quiet"> · {row.reason}</small>}</span>
             <span>{row.started ? exactTime(row.started) : '—'}</span>
