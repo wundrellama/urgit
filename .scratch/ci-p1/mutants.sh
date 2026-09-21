@@ -25,7 +25,8 @@
 #   P17  app/urgit.hoon      land-candidate skips the expected-tip compare
 #                            (apply-receive's own old-tip check still refuses, with the wrong reason)
 #   P18  app/urgit.hoon      handle-receive-pack skips write-authorized
-#   P19  app/urgit-ci.hoon   %set-ci-protected accepts a desk-linked repo
+#   (P19's mutant — the desk-linked refusal skipped — is gone: P3 D9 lands a
+#   desk-linked repository through the desk, and P19 is a positive row)
 #   P20  runner daemon.go    act runs on the unprojected workflow
 source "$(dirname "$0")/env.sh"
 cd "$ROOT"
@@ -55,11 +56,11 @@ edits = [
   "      [%| (rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])]\n",
   "      $(remaining t.remaining, seen (~(put in seen) k))\n"),
  ("P10", "desk/app/urgit-ci.hoon",
-  "  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' u.reason])])\n",
-  "  =.  state  (close-attempt u.found [%job-result %success])\n"),
+  "    (close-attempt attempt [%infrastructure-error (rap 3 ~['abandoned: ' reason])])\n",
+  "    (close-attempt attempt [%job-result %success])\n"),
  ("P11", "desk/app/urgit-ci.hoon",
-  "      (close-attempt:hc u.found [%infrastructure-error 'no result arrived before the deadline'])\n",
-  "      (close-attempt:hc u.found [%job-result %success])\n"),
+  "    %+  close-attempt  attempt\n    :-  %infrastructure-error\n    ?:(silent-before 'runner went silent' 'no result arrived before the deadline')\n",
+  "    %+  close-attempt  attempt\n    [%job-result %success]\n"),
  ("P12", "runner/internal/daemon/daemon.go",
   "\td.capacity--\n",
   "\td.capacity = d.capacity\n"),
@@ -67,17 +68,14 @@ edits = [
   "\treturn attempt + \"/\" + original\n",
   "\treturn original\n"),
  ("P14", "runner/internal/ship/client.go",
-  "\tcase http.StatusUnauthorized:\n\t\treturn nil, ErrUnauthorized\n\tcase http.StatusOK:\n\t\tvar answer struct {\n\t\t\tAssignment Assignment `json:\"assignment\"`\n",
-  "\tcase http.StatusUnauthorized:\n\t\treturn nil, nil\n\tcase http.StatusOK:\n\t\tvar answer struct {\n\t\t\tAssignment Assignment `json:\"assignment\"`\n"),
+  "\t\treturn nil, ErrUnauthorized\n\tcase http.StatusOK:\n\t\tvar answer struct {\n\t\t\tAssignment Assignment `json:\"assignment\"`\n",
+  "\t\treturn nil, nil\n\tcase http.StatusOK:\n\t\tvar answer struct {\n\t\t\tAssignment Assignment `json:\"assignment\"`\n"),
  ("P17", "desk/app/urgit.hoon",
   "  ?.  =(`expected (~(get by refs.u.found) ref))\n    (refuse 'destination moved; rebase and push again')\n",
   "  ?.  %.y\n    (refuse 'destination moved; rebase and push again')\n"),
  ("P18", "desk/app/urgit.hoon",
   "  ?.  (write-authorized u.found req)\n    :_  this\n    %-  give-http\n    :*  eyre-id\n        401\n        ~[['content-type' 'text/plain'] ['www-authenticate' 'Basic realm=\"git\"']]\n        `(text:git-codec 'repository authentication required\\0a')\n",
   "  ?.  %.y\n    :_  this\n    %-  give-http\n    :*  eyre-id\n        401\n        ~[['content-type' 'text/plain'] ['www-authenticate' 'Basic realm=\"git\"']]\n        `(text:git-codec 'repository authentication required\\0a')\n"),
- ("P19", "desk/app/urgit-ci.hoon",
-  "    ?:  linked.u.u.tip\n      ~|  linked-refusal\n      !!\n",
-  "    ?:  %.n\n      ~|  linked-refusal\n      !!\n"),
  ("P20", "runner/internal/daemon/daemon.go",
   "\tprojected, err := plan.Project(original, a.Job, a.Attempt, a.Workflow)\n",
   "\tprojected, err := original, error(nil)\n"),
@@ -122,7 +120,6 @@ PY
       P14) echo "daemon exited non-zero: FAIL (observed: running pid" ;;
       P17) echo "verdict-reason: FAIL (observed: 'candidate object is missing from the store'" ;;
       P18) echo "no credentials -> 401: FAIL (observed: 200" ;;
-      P19) echo "linked repo not protected: FAIL (observed: %.y" ;;
       P20) echo "event job does not match the assignment" ;;
       *) echo "mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
     esac

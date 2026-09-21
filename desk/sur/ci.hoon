@@ -6,7 +6,9 @@
 ::    state-0 in place (D8): a log handle on the attempt, the trust class
 ::    and pull number on the candidate, the untrusted-revision policy per
 ::    repository, the credential store, the CI signing key and the ship's
-::    signing pair it is certified with.
+::    signing pair it is certified with.  P3 grows it again, in place: the
+::    daemon's revocation, refusal, labels and repository binding, the
+::    job's runs-on set and timeout, and a re-offered attempt status.
 ::
 /-  git
 |%
@@ -22,7 +24,11 @@
 +$  trust             ?(%trusted %untrusted)
 +$  result            ?(%success %failure %skipped %cancelled)
 +$  candidate-status  ?(%passed %failed %pending %skipped %unknown)
-+$  attempt-status    ?(%passed %failed %skipped %running %infrastructure-error)
+::  %reoffered is an attempt its daemon gave up, went silent on, or was
+::  revoked from (CI-DELIVERY-1.1): closed without a verdict and offered
+::  again as a fresh attempt, so it stands for nothing in a job's standing.
+::
++$  attempt-status    ?(%passed %failed %skipped %running %reoffered %infrastructure-error)
 ::
 ::  what a repository does with a revision from an untrusted actor (D3):
 ::  wait for a writer's approval, or run it at once as a restricted check
@@ -87,6 +93,10 @@
 ::  `needs` never crosses a workflow file.  .name is the workflow's real
 ::  name as `act -l` printed it from the unprojected candidate; the name
 ::  act runs a job under is the attempt's projection-name (CI-PROJECT-1.1).
+::  .runs-on is the job's `runs-on` as a set (a string is a one-element
+::  set); a daemon takes the job only when its labels and the implicit set
+::  cover it (CI-P3-SCHED-A).  .timeout is the job's `timeout-minutes`,
+::  which bounds the attempt's deadline (CI-DELIVERY-1.1) when declared.
 ::
 +$  job
   $:  id=@t
@@ -96,6 +106,8 @@
       needs=(list @t)
       cond=(unit cond)
       environment=(unit @t)
+      runs-on=(set @t)
+      timeout=(unit @ud)
   ==
 ::
 ::  a staged head for a CI-protected ref.  .candidate is the exact
@@ -129,7 +141,13 @@
 ::
 ::  a runner daemon.  a record is created when the operator mints an
 ::  enrollment token and activated when a daemon enrolls with it; the raw
-::  token and the raw bearer are never stored, only their hashes.
+::  token and the raw bearer are never stored, only their hashes.  P3:
+::  .revoked is set and .bearer-hash cleared when the operator revokes it
+::  (its next poll answers 401); .refused carries the reason it abandoned
+::  an assignment over its pinned key, and holds until it re-enrolls;
+::  .labels is what the daemon declares (its TOML, sent on every poll);
+::  .repos is the operator's binding, set on the ship and never by the
+::  daemon: ~ is the pool, [~ set] restricts it to those repositories.
 ::
 +$  daemon
   $:  id=daemon-id
@@ -141,6 +159,10 @@
       capacity=@ud
       sandbox=@t
       running=(set attempt-id)
+      revoked=(unit @da)
+      refused=(unit @t)
+      labels=(set @t)
+      repos=(unit (set @t))
   ==
 ::
 +$  assignment
@@ -232,7 +254,9 @@
   ==
 ::
 ::  pokes on the %ci-action mark.  %urgit sends %stage-candidate,
-::  %candidate-ready, %candidate-conflict, %landed and %land-refused;
+::  %candidate-ready, %candidate-conflict, %landed, %land-refused and
+::  %repository-deleted (its own state under the name goes with the
+::  repository, so a repository re-created under it has no CI history);
 ::  %urgit-ci sends %materialize-candidate and %land-candidate; the
 ::  operator sends the rest, in the dojo or as JSON through the
 ::  session-authorized POST ci/action.  %assign names a kind and, for a
@@ -240,7 +264,11 @@
 ::  %stage-candidate names the actor, whose trust class %urgit-ci decides
 ::  through %urgit's ci-can-write peek (D3), and the pull number when the
 ::  web merge staged it (D3a).  %approve-candidate names the acting ship,
-::  admitted through the same peek.
+::  admitted through the same peek.  the enrollment token is minted by the
+::  session-authorized POST ci/runners/mint alone (P3 D1: the ship draws
+::  it and answers it once); %expire-token deletes a minted, not enrolled
+::  record, %revoke-daemon clears an enrolled daemon's bearer and re-offers
+::  its work, %set-daemon-repos binds it to named repositories (D2/D2b).
 ::
 +$  action
   $%  [%set-ci-protected repo=@t ref=@t protected=?]
@@ -255,7 +283,9 @@
       [%materialize-candidate repo=@t ref=@t head=oid:git base=oid:git]
       [%candidate-ready repo=@t ref=@t head=oid:git base=oid:git candidate=oid:git]
       [%candidate-conflict repo=@t ref=@t head=oid:git base=oid:git]
-      [%mint-enroll-token token=@uv]
+      [%expire-token id=daemon-id]
+      [%revoke-daemon id=daemon-id]
+      [%set-daemon-repos id=daemon-id repos=(unit (set @t))]
       $:  %assign
           candidate=candidate-id
           daemon=daemon-id
@@ -274,5 +304,6 @@
       ==
       [%landed candidate=candidate-id]
       [%land-refused candidate=candidate-id reason=@t]
+      [%repository-deleted repository=@t]
   ==
 --

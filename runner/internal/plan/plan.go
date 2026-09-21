@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -30,6 +31,10 @@ type JobInfo struct {
 	Cond        *Cond
 	Matrix      bool
 	Environment string // the job's `environment:` name, "" when none
+	// the job's `runs-on` (a string or a list; the ship treats a string
+	// as a one-element set) and `timeout-minutes` (0 when none)
+	RunsOn         []string
+	TimeoutMinutes int
 }
 
 var outputEq = regexp.MustCompile(`^needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\s*==\s*'([^']*)'$`)
@@ -86,6 +91,31 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 			if strategy := mappingValue(job, "strategy"); strategy != nil && strategy.Kind == yaml.MappingNode {
 				if mappingValue(strategy, "matrix") != nil {
 					info.Matrix = true
+				}
+			}
+			// `runs-on: ubuntu-latest` or `runs-on: [self-hosted, big-mem]`:
+			// the labels the ship matches a daemon against (CI-P3-SCHED-A).
+			// an expression here (`${{ … }}`) is carried as written; the
+			// ship will find no daemon standing for it and say so.
+			if runsOn := mappingValue(job, "runs-on"); runsOn != nil {
+				switch runsOn.Kind {
+				case yaml.ScalarNode:
+					if runsOn.Value != "" {
+						info.RunsOn = append(info.RunsOn, runsOn.Value)
+					}
+				case yaml.SequenceNode:
+					for _, item := range runsOn.Content {
+						if item.Kind == yaml.ScalarNode && item.Value != "" {
+							info.RunsOn = append(info.RunsOn, item.Value)
+						}
+					}
+				}
+			}
+			// `timeout-minutes: 30`: the job's own bound, which the ship
+			// turns into the attempt's deadline (CI-DELIVERY-1.1 c)
+			if timeout := mappingValue(job, "timeout-minutes"); timeout != nil && timeout.Kind == yaml.ScalarNode {
+				if n, err := strconv.Atoi(strings.TrimSpace(timeout.Value)); err == nil && n > 0 {
+					info.TimeoutMinutes = n
 				}
 			}
 			// `environment: staging` or `environment: {name: staging, url: …}`;

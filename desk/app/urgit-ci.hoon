@@ -21,6 +21,16 @@
 ::    ship-certified CI key; the session-authorized ci/* routes serve the
 ::    repository page's CI tab.
 ::
+::    P3 gives the mechanisms an operator surface and closes one scheduler
+::    hole: the enrollment token is minted by the session-authorized mint
+::    route and answered once; minted tokens expire and enrolled daemons
+::    are revoked from the Runners panel; daemons declare labels and the
+::    operator binds a daemon to repositories, both read by the scheduler;
+::    an abandoned, silent or revoked attempt is re-offered on another
+::    daemon and a daemon that refuses over its pinned key is de-listed
+::    until it re-enrolls (CI-DELIVERY-1.1); the CI tab subscribes to a
+::    fact path per repository and the Runners panel to one for daemons.
+::
 ::    persisted state is state-0 and stays there in this phase.  the open
 ::    long-polls are transient and dropped on every load.
 ::
@@ -34,6 +44,27 @@
 ++  default-deadline  ~h1
 ++  plan-deadline  ~m5
 ++  stale-after  ~m5
+::  the Runners panel's pip (D3, rider 2) reads the scheduler's own
+::  window: a daemon seen within stale-after is healthy, one not seen for
+::  longer is stale — one number.  the daemon polls at capacity too (D6 f),
+::  so last-seen is always liveness.
+::
+::  a job that declares timeout-minutes gets that plus this margin as its
+::  deadline (CI-DELIVERY-1.1 c); a silent runner is re-offered at it
+::
+++  silent-margin  ~m2
+::  every daemon stands for these labels whether it declares them or not
+::  (CI-P3-SCHED-A): every workflow that runs today keeps running on a
+::  daemon that declares nothing
+::
+++  implicit-labels
+  ^-  (set @t)
+  (silt ~['self-hosted' 'linux' 'ubuntu-latest' 'ubuntu-22.04' 'ubuntu-24.04' 'x64'])
+::  the reason prefix a daemon abandons an assignment with when its pinned
+::  CI key refuses it: such a daemon is de-listed until it re-enrolls
+::
+++  refusal-prefix  'assignment refused: '
+++  revoked-refusal  'revoked by the ship'
 ++  storage-refusal  'ship object storage is not configured; CI cannot be enabled'
 ++  no-tip-refusal  'ref has no tip; push a commit before CI-protecting it'
 ++  linked-refusal  'CI protection is not available for desk-linked repositories in this release'
@@ -46,6 +77,12 @@
 =|  state-0:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
+::  the live feed's rate limit (D4): the last-seen each runner fact
+::  carried, so a daemon's heartbeat and event touches produce a fact only
+::  every announce-every, while any other change to the record is a fact
+::  at once.  transient, like the polls.
+::
+=|  announced=(map daemon-id:ci @da)
 %-  agent:dbug
 =<
 |_  =bowl:gall
@@ -80,6 +117,7 @@
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
+  =/  before=snapshot:hc  snap:hc
   =/  =out:hc
     ?+    mark  ~|([%urgit-ci-bad-mark mark] !!)
         %ci-action
@@ -90,13 +128,39 @@
       =+  !<([eyre-id=@ta req=inbound-request:eyre] vase)
       (handle-http:hc eyre-id req)
     ==
-  [cards.out this(state state.out, polls polls.out)]
+  ::  the live feed (D4): after every event that may have changed a
+  ::  candidate, an attempt or a daemon, the changed rows go out as facts
+  ::  to whoever watches the repository or the runners.  the helper door
+  ::  with the NEW state does the diff against the snapshot taken before.
+  ::  the facts go FIRST: arvo runs each card to completion before the
+  ::  next, so a poke to %urgit that answers with %landed inside this
+  ::  event would otherwise have its fact numbered before this one's.
+  ::  (inline, not an arm: the agent door has exactly its ten.)
+  ::
+  =/  next  this(state state.out, polls polls.out)
+  =/  live  (live-facts:~(. +>.next bowl) before announced)
+  [(weld cards.live cards.out) next(announced announced.live)]
+::
+::  the live feed's paths (D4): a repository's candidates, and the runner
+::  records.  session-authorized: only this ship may watch.  the initial
+::  fact is the same JSON the GET answers, so a page that subscribes never
+::  waits for the next change to render.
 ::
 ++  on-watch
   |=  =path
   ^-  (quip card _this)
-  ?>  ?=([%http-response @ ~] path)
-  `this
+  ?:  ?=([%http-response @ ~] path)  `this
+  ?>  =(our.bowl src.bowl)
+  ?+    path  (on-watch:def path)
+      [%ci %runners ~]
+    :_  this
+    ~[[%give %fact ~ %json !>(runners-fact:hc)]]
+  ::
+      [%ci %repository @ ~]
+    =/  repo=@t  (decode-segment:hc i.t.t.path)
+    :_  this
+    ~[[%give %fact ~ %json !>((candidates-fact:hc repo))]]
+  ==
 ::
 ::  eyre leaves /http-response/<id> when the client's connection closes:
 ::  a long-poll whose daemon went away is forgotten at once, so a later
@@ -248,8 +312,11 @@
     =.  polls  (~(del by polls) u.daemon)
     [(give-empty:hc eyre-id.u.waiting 204) this]
   ::
-      ::  an attempt with no result by its deadline is an infrastructure
-      ::  error; its candidate becomes unknown, never passed
+      ::  an attempt with no result by its deadline (CI-DELIVERY-1.1 c):
+      ::  offered again once on another daemon when one exists, and the
+      ::  second silence — or the first with no other daemon to take it —
+      ::  is an infrastructure error; its candidate becomes unknown, never
+      ::  passed
       ::
       [%deadline @ ~]
     ?.  ?=([%behn %wake *] sign-arvo)  (on-arvo:def wire sign-arvo)
@@ -259,11 +326,11 @@
     =/  found=(unit attempt:ci)  (~(get by attempts) u.id)
     ?~  found  `this
     ?.  =(%running status.u.found)  `this
-    =/  closed=_state
-      (close-attempt:hc u.found [%infrastructure-error 'no result arrived before the deadline'])
-    =.  state  closed
-    =/  =out:hc  (after-close:hc candidate.u.found)
-    [cards.out this(state state.out, polls polls.out)]
+    =/  before=snapshot:hc  snap:hc
+    =/  =out:hc  (expire-attempt:hc u.found)
+    =/  next  this(state state.out, polls polls.out)
+    =/  live  (live-facts:~(. +>.next bowl) before announced)
+    [(weld cards.live cards.out) next(announced announced.live)]
   ==
 ::
 ++  on-fail  on-fail:def
@@ -274,11 +341,156 @@
 ::
 |_  =bowl:gall
 +$  out  [cards=(list card) state=_state polls=_polls]
+::  what the live feed diffs against (D4): the three maps a fact can
+::  come from, as they were before the event
+::
++$  snapshot  [candidates=_candidates attempts=_attempts daemons=_daemons]
+::
+++  snap
+  ^-  snapshot
+  [candidates attempts daemons]
+::
+::  a daemon's heartbeat becomes a fact this often at most; any other
+::  change to its record is a fact at once
+::
+++  announce-every  ~s20
 ::
 ++  emit
   |=  cards=(list card)
   ^-  out
   [cards state polls]
+::
+::  the live feed (D4).  for every watched repository: each candidate of
+::  it whose record, or any of whose attempts, changed since the snapshot
+::  (the relayed-event counter aside) goes out as its full row.  for the
+::  runners path and every watched repository: each daemon record that
+::  changed, its heartbeat rate-limited, and each record that is gone.
+::
+++  live-facts
+  |=  [before=snapshot announced=(map daemon-id:ci @da)]
+  ^-  [cards=(list card) announced=(map daemon-id:ci @da)]
+  =/  paths=(set path)
+    (silt (turn ~(val by sup.bowl) |=([* =path] path)))
+  ::  each watched repository with its path as subscribed, so a fact goes
+  ::  back on exactly the path the page named
+  ::
+  =/  repo-paths=(list [repo=@t =path])
+    %+  murn  ~(tap in paths)
+    |=  =path
+    ^-  (unit [@t ^path])
+    ?.  ?=([%ci %repository @ ~] path)  ~
+    `[(decode-segment i.t.t.path) path]
+  =/  runners-watched=?  (~(has in paths) /ci/runners)
+  ?:  ?&(?=(~ repo-paths) !runners-watched)  [~ announced]
+  ::  the candidates that changed, per watched repository
+  ::
+  =/  candidate-cards=(list card)
+    %-  zing
+    %+  turn  repo-paths
+    |=  [repo=@t =path]
+    ^-  (list card)
+    %+  murn  ~(tap by candidates)
+    |=  [id=candidate-id:ci c=candidate:ci]
+    ^-  (unit card)
+    ?.  =(repo repo.c)  ~
+    ?.  (candidate-changed before id c)  ~
+    :-  ~
+    :*  %give  %fact  ~[path]  %json
+        !>((row-fact 'candidate' (scot %uv id) (candidate-json c)))
+    ==
+  ::  the daemons that changed or went away, to the runners path and
+  ::  every watched repository
+  ::
+  =/  runner-paths=(list path)
+    %+  weld  ?:(runners-watched ~[/ci/runners] ~)
+    (turn repo-paths |=([* =path] path))
+  =/  gone=(list card)
+    %+  murn  ~(tap by daemons.before)
+    |=  [id=daemon-id:ci *]
+    ^-  (unit card)
+    ?:  (~(has by daemons) id)  ~
+    :-  ~
+    :*  %give  %fact  runner-paths  %json
+        !>((pairs:enjs:format ~[['kind' s+'runner-gone'] ['id' s+(scot %uv id)]]))
+    ==
+  =/  changed=(list [id=daemon-id:ci =daemon:ci])
+    %+  skim  ~(tap by daemons)
+    |=  [id=daemon-id:ci d=daemon:ci]
+    =/  old=(unit daemon:ci)  (~(get by daemons.before) id)
+    ?~  old  %.y
+    ?:  !=(u.old(last-seen ~) d(last-seen ~))  %.y
+    ?:  =(last-seen.u.old last-seen.d)  %.n
+    ::  only the heartbeat moved: a fact when the last one is old enough
+    ::
+    ?~  last-seen.d  %.n
+    =/  last=(unit @da)  (~(get by announced) id)
+    ?~  last  %.y
+    (gte u.last-seen.d (add u.last announce-every))
+  =/  announced-next=(map daemon-id:ci @da)
+    %+  roll  changed
+    |=  [[id=daemon-id:ci d=daemon:ci] acc=_announced]
+    ?~  last-seen.d  acc
+    (~(put by acc) id u.last-seen.d)
+  =.  announced-next
+    %+  roll  ~(tap by announced-next)
+    |=  [[id=daemon-id:ci *] acc=_announced-next]
+    ?:((~(has by daemons) id) acc (~(del by acc) id))
+  =/  runner-cards=(list card)
+    %+  turn  changed
+    |=  [id=daemon-id:ci d=daemon:ci]
+    ^-  card
+    :*  %give  %fact  runner-paths  %json
+        !>((row-fact 'runner' (scot %uv id) (runner-json d)))
+    ==
+  :_  announced-next
+  :(weld candidate-cards gone runner-cards)
+::
+++  candidate-changed
+  |=  [before=snapshot id=candidate-id:ci c=candidate:ci]
+  ^-  ?
+  =/  old=(unit candidate:ci)  (~(get by candidates.before) id)
+  ?~  old  %.y
+  ?:  !=(u.old c)  %.y
+  %+  lien  attempts.c
+  |=  aid=attempt-id:ci
+  =/  new=(unit attempt:ci)  (~(get by attempts) aid)
+  =/  was=(unit attempt:ci)  (~(get by attempts.before) aid)
+  ?~  new  %.n
+  ?~  was  %.y
+  !=(u.was(events 0) u.new(events 0))
+::
+++  row-fact
+  |=  [kind=@t id=@t patch=json]
+  ^-  json
+  (pairs:enjs:format ~[['kind' s+kind] ['id' s+id] ['patch' patch]])
+::
+::  the runners path's initial fact: the list, as GET ci/runners answers
+::
+++  runners-fact
+  ^-  json
+  =/  all=json  runners-json
+  ?.  ?=([%o *] all)  all
+  [%o (~(put by p.all) 'kind' s+'runners')]
+::
+::  a repository path's initial fact: the candidate list as GET
+::  ci/repository/<name>/candidates answers it, with the runner list so
+::  the tab can say when no runner is enrolled (D7)
+::
+++  candidates-fact
+  |=  repo=@t
+  ^-  json
+  =/  page=json  (candidates-json repo ~)
+  ?.  ?=([%o *] page)  page
+  =/  runners=json
+    =/  all=json  runners-json
+    ?.  ?=([%o *] all)  ~
+    (fall (~(get by p.all) 'runners') ~)
+  :-  %o
+  %-  ~(gas by p.page)
+  :~  ['kind' s+'candidates']
+      ['runners' runners]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+  ==
 ::
 ++  connect-card
   ^-  card
@@ -454,9 +666,9 @@
   ^-  out
   ?-    -.act
       ::  CI-EMPTY-REF-1-A: every CI-protected ref has a tip, so the gate's
-      ::  "no tip to stage against" branch is unreachable.  CI-LINKED-DESK-P1:
-      ::  a repository bound to a Clay desk cannot be CI-protected, because
-      ::  its ref write is not one event.  un-protect never checks.
+      ::  "no tip to stage against" branch is unreachable.  a repository
+      ::  bound to a Clay desk lands through the clay path since P3 D9
+      ::  (CI-LINKED-DESK-P1-B alternative A).  un-protect never checks.
       ::
       %set-ci-protected
     ?.  protected.act
@@ -475,9 +687,9 @@
     ?~  u.tip
       ~|  no-tip-refusal
       !!
-    ?:  linked.u.u.tip
-      ~|  linked-refusal
-      !!
+    ::  a desk-linked repository lands through the receive tail's clay
+    ::  path since P3 D9; the ci-ref peek still says whether it is linked
+    ::
     =.  ci-protected  (~(put in ci-protected) [repo.act ref.act])
     (emit ~)
   ::
@@ -616,12 +828,10 @@
       !!
     ::  act masks a secret only where the whole value appears on one
     ::  output line (measured on 0.2.89: a two-line secret printed line by
-    ::  line is not masked), so a value with a newline is refused until
-    ::  the operator rules on per-line scrubbing (QUESTIONS-CI-P2 §2)
+    ::  line is not masked), so every line of every released value is
+    ::  scrubbed on both sides, daemon and ship; every line of at least
+    ::  eight characters is in the scrub set
     ::
-    ?:  (lien (trip value.act) |=(c=@tD =('\0a' c)))
-      ~|  'credential values must be a single line'
-      !!
     =.  credentials
       (~(put by credentials) [repo.act name.act] [value.act scope.act envs.act now.bowl])
     (emit ~)
@@ -674,12 +884,57 @@
       ==
     (emit ~)
   ::
-      %mint-enroll-token
-    =/  token-hash=@  (shas %ci-enroll token.act)
-    =/  id=daemon-id:ci  (sham [%ci-daemon token-hash])
-    ?:  (~(has by daemons) id)  ~|('enroll token already minted' !!)
-    =.  daemons  (~(put by daemons) id [id token-hash ~ now.bowl ~ ~ 1 '' ~])
+      ::  a minted, never enrolled token is deleted (D2); an enrolled
+      ::  daemon is revoked instead, and a revoked record may be removed
+      ::
+      %expire-token
+    =/  found=(unit daemon:ci)  (~(get by daemons) id.act)
+    ?~  found  ~|('no such daemon' !!)
+    ?:  ?&(?=(^ enrolled.u.found) ?=(~ revoked.u.found))
+      ~|  'daemon is enrolled; revoke it instead'
+      !!
+    =.  daemons  (~(del by daemons) id.act)
     (emit ~)
+  ::
+      ::  an enrolled daemon is revoked (D2): its bearer is cleared, so its
+      ::  next poll answers 401 and it exits; everything it was running is
+      ::  offered again on another daemon (CI-DELIVERY-1.1 d)
+      ::
+      %revoke-daemon
+    =/  found=(unit daemon:ci)  (~(get by daemons) id.act)
+    ?~  found  ~|('no such daemon' !!)
+    ?~  enrolled.u.found  ~|('daemon is not enrolled; expire its token instead' !!)
+    ?^  revoked.u.found  ~|('daemon is already revoked' !!)
+    =.  daemons
+      (~(put by daemons) id.act u.found(bearer-hash ~, revoked `now.bowl))
+    =/  released=(list attempt:ci)
+      %+  murn  ~(tap in running.u.found)
+      |=(id=attempt-id:ci (~(get by attempts) id))
+    =.  state
+      %+  roll  released
+      |=  [=attempt:ci acc=_state]
+      =.  state  acc
+      ?.  =(%running status.attempt)  state
+      (reoffer-attempt attempt 'daemon revoked; re-offered')
+    =/  touched=(list candidate-id:ci)
+      ~(tap in (silt (turn released |=(=attempt:ci candidate.attempt))))
+    =|  cards=(list card)
+    |-
+    ?^  touched
+      =/  settled=out  (settle i.touched)
+      =.  state  state.settled
+      $(touched t.touched, cards (weld cards cards.settled))
+    =/  scheduled=out  schedule
+    [(weld cards cards.scheduled) state.scheduled polls.scheduled]
+  ::
+      ::  the operator binds a daemon to named repositories (D2b): ~ is
+      ::  the pool; the daemon never declares this itself
+      ::
+      %set-daemon-repos
+    =/  found=(unit daemon:ci)  (~(get by daemons) id.act)
+    ?~  found  ~|('no such daemon' !!)
+    =.  daemons  (~(put by daemons) id.act u.found(repos repos.act))
+    schedule
   ::
       ::  the operator's assignment: a plan, or one named job, on one
       ::  named daemon, capacity notwithstanding.  the harness drives this;
@@ -729,7 +984,62 @@
     =.  candidates
       (~(put by candidates) candidate.act u.found(verdict-reason `reason.act, updated now.bowl))
     (emit ~)
+  ::
+      ::  %urgit deleted the repository: every record kept under the
+      ::  name goes with it — its candidates, their attempts and
+      ::  assignments, its CI protection, its policy, its credentials, and
+      ::  the name in every daemon's binding — so a repository re-created
+      ::  under the name has no CI history.  R18 found the gap: a passed
+      ::  candidate of the deleted repository answered the eligibility
+      ::  peek %.y and the same oid landed unstaged in the new one.  a
+      ::  daemon bound only to the deleted repository is left bound to
+      ::  nothing, not returned to the pool: the operator drew that fence
+      ::  and widens it in the panel.
+      ::
+      %repository-deleted
+    =/  gone=(set candidate-id:ci)  (repository-candidates repository.act)
+    =/  gone-attempts=(set attempt-id:ci)
+      %-  silt
+      %+  murn  ~(tap by attempts)
+      |=([id=attempt-id:ci a=attempt:ci] ?:((~(has in gone) candidate.a) `id ~))
+    =.  candidates
+      %-  malt
+      %+  skip  ~(tap by candidates)
+      |=([id=candidate-id:ci *] (~(has in gone) id))
+    =.  attempts
+      %-  malt
+      %+  skip  ~(tap by attempts)
+      |=([id=attempt-id:ci *] (~(has in gone-attempts) id))
+    =.  assignments
+      %-  malt
+      %+  skip  ~(tap by assignments)
+      |=([* a=assignment:ci] (~(has in gone) candidate.a))
+    =.  ci-protected
+      %-  silt
+      %+  skip  ~(tap in ci-protected)
+      |=([repo=@t ref=@t] =(repository.act repo))
+    =.  policies  (~(del by policies) repository.act)
+    =.  credentials
+      %-  malt
+      %+  skip  ~(tap by credentials)
+      |=([[repo=@t name=@t] *] =(repository.act repo))
+    =.  daemons
+      %-  ~(run by daemons)
+      |=  d=daemon:ci
+      =.  running.d  (~(dif in running.d) gone-attempts)
+      ?~  repos.d  d
+      d(repos `(~(del in u.repos.d) repository.act))
+    (emit ~)
   ==
+::
+::  the candidates a repository has, by name (every status)
+::
+++  repository-candidates
+  |=  repo=@t
+  ^-  (set candidate-id:ci)
+  %-  silt
+  %+  murn  ~(tap by candidates)
+  |=([id=candidate-id:ci c=candidate:ci] ?:(=(repo repo.c) `id ~))
 ::
 ::  a new attempt and its assignment, undelivered, and the deadline timer
 ::  the caller emits.  the daemon's running set grows here and shrinks in
@@ -817,18 +1127,53 @@
   =.  polls  (~(del by polls) daemon)
   (emit (give-json eyre-id.u.waiting 200 (assignment-json assignment candidate attempt)))
 ::
-::  daemon selection (D6): enrolled, seen within five minutes, below its
-::  capacity; fewest running first, then the oldest enrollment
+::  a daemon the scheduler may hand work to at all (D6, CI-DELIVERY-1.1):
+::  enrolled with a bearer, seen within five minutes, neither revoked nor
+::  refused.  capacity, labels and the repository binding are the seam
+::  below; this is the standing test alone.
+::
+++  live-daemon
+  |=  =daemon:ci
+  ^-  ?
+  ?&  ?=(^ enrolled.daemon)
+      ?=(^ bearer-hash.daemon)
+      ?=(~ revoked.daemon)
+      ?=(~ refused.daemon)
+      ?=(^ last-seen.daemon)
+      (lte (sub now.bowl (min now.bowl u.last-seen.daemon)) stale-after)
+  ==
+::
+::  the labels a daemon stands for: what it declared plus the implicit set
+::
+++  daemon-labels
+  |=  =daemon:ci
+  ^-  (set @t)
+  (~(uni in labels.daemon) implicit-labels)
+::
+::  whether a daemon may run a job of a repository (CI-P3-SCHED-A): every
+::  label the job asks for is one it stands for, and its binding, when the
+::  operator set one, names the repository
+::
+++  daemon-takes
+  |=  [=daemon:ci repo=@t runs-on=(set @t)]
+  ^-  ?
+  ?&  =(~ (~(dif in runs-on) (daemon-labels daemon)))
+      ?~(repos.daemon %.y (~(has in u.repos.daemon) repo))
+  ==
+::
+::  daemon selection (D6, D2b): a live daemon that takes the job, below
+::  its capacity, not among the excluded (the daemons that already gave
+::  this job up); fewest running first, then the oldest enrollment
 ::
 ++  select-daemon
+  |=  [repo=@t runs-on=(set @t) exclude=(set daemon-id:ci)]
   ^-  (unit daemon-id:ci)
   =/  able=(list daemon:ci)
     %+  skim  ~(val by daemons)
     |=  =daemon:ci
-    ?&  ?=(^ enrolled.daemon)
-        ?=(^ bearer-hash.daemon)
-        ?=(^ last-seen.daemon)
-        (lte (sub now.bowl (min now.bowl u.last-seen.daemon)) stale-after)
+    ?&  (live-daemon daemon)
+        !(~(has in exclude) id.daemon)
+        (daemon-takes daemon repo runs-on)
         (lth ~(wyt in running.daemon) capacity.daemon)
     ==
   ?~  able  ~
@@ -842,16 +1187,73 @@
   ?~  sorted  ~
   `id.i.sorted
 ::
+::  whether any live daemon but the excluded could take the job, capacity
+::  aside: a re-offer waits for such a daemon's capacity rather than
+::  failing, and fails only when none exists (CI-DELIVERY-1.1 a)
+::
+++  other-daemon-exists
+  |=  [repo=@t runs-on=(set @t) exclude=(set daemon-id:ci)]
+  ^-  ?
+  %+  lien  ~(val by daemons)
+  |=  =daemon:ci
+  ?&  (live-daemon daemon)
+      !(~(has in exclude) id.daemon)
+      (daemon-takes daemon repo runs-on)
+  ==
+::
+::  the labels of a job that no enrolled, unrevoked daemon stands for:
+::  the candidate's reason while it waits (D2b), empty once one enrolls
+::
+++  missing-labels
+  |=  runs-on=(set @t)
+  ^-  (list @t)
+  =/  offered=(set @t)
+    %+  roll  ~(val by daemons)
+    |=  [=daemon:ci acc=(set @t)]
+    ?.  ?&(?=(^ enrolled.daemon) ?=(~ revoked.daemon))  acc
+    (~(uni in acc) (daemon-labels daemon))
+  (sort ~(tap in (~(dif in runs-on) offered)) aor)
+::
+::  the daemons that gave a job of a candidate up (their attempts stand
+::  %reoffered): never offered that job again (CI-DELIVERY-1.1 a).  a plan
+::  is keyed by its kind alone.
+::
+++  excluded-daemons
+  |=  [=candidate:ci =kind:ci workflow=(unit @t) job=(unit @t)]
+  ^-  (set daemon-id:ci)
+  %-  silt
+  %+  murn  attempts.candidate
+  |=  id=attempt-id:ci
+  ^-  (unit daemon-id:ci)
+  =/  found=(unit attempt:ci)  (~(get by attempts) id)
+  ?~  found  ~
+  ?.  =(%reoffered status.u.found)  ~
+  ?.  =(kind kind.u.found)  ~
+  ?.  ?&(=(workflow workflow.u.found) =(job job.u.found))  ~
+  `daemon.u.found
+::
+::  the job's deadline: its own timeout-minutes plus the silent margin
+::  when it declares one (CI-DELIVERY-1.1 c), else the default hour
+::
+++  job-deadline
+  |=  =job:ci
+  ^-  @dr
+  ?~  timeout.job  default-deadline
+  (add (mul u.timeout.job ~m1) silent-margin)
+::
 ::  the scheduler (D4).  every pending, materialized candidate is
 ::  settled first: skips its plan decides are recorded and its verdict
 ::  recomputed.  then every runnable unit of work is assigned: a plan
 ::  for a candidate without one and without a plan attempt in flight;
 ::  each job the plan makes runnable that has no attempt yet.  work
 ::  waits when no daemon can take it and is offered again at the next
-::  poll, enrollment, ready candidate or closed attempt.
+::  poll, enrollment, ready candidate or closed attempt.  a job whose
+::  labels no daemon stands for waits with the reason on the candidate
+::  (D2b), never silently.
 ::
 ++  schedule
   ^-  out
+  =.  state  reoffer-unfetched
   ::  an untrusted candidate is planned only where the repository runs
   ::  restricted checks (D3); under the approval policy it waits
   ::
@@ -881,7 +1283,8 @@
   ?.  =(%pending status.candidate)  $(pending t.pending)
   ?~  plan.candidate
     ?:  (plan-in-flight candidate)  $(pending t.pending)
-    =/  chosen=(unit daemon-id:ci)  select-daemon
+    =/  chosen=(unit daemon-id:ci)
+      (select-daemon repo.candidate ~ (excluded-daemons candidate %plan ~ ~))
     ?~  chosen  $(pending t.pending)
     =^  made  state
       (create-attempt id.candidate u.chosen %plan ~ ~ plan-deadline)
@@ -891,20 +1294,147 @@
       touched  (~(put in touched) u.chosen)
     ==
   =/  runnable=(list job:ci)  (runnable-jobs candidate)
+  =|  blocked=(unit @t)
   |-
-  ?~  runnable  ^$(pending t.pending)
-  =/  chosen=(unit daemon-id:ci)  select-daemon
-  ?~  chosen  ^$(pending t.pending)
+  ?~  runnable
+    ::  the labels reason stands while a runnable job has no daemon that
+    ::  could take it, and clears when every runnable job found one
+    ::
+    =/  current=candidate:ci  (~(got by candidates) id.candidate)
+    =/  reason=(unit @t)
+      ?^  blocked  blocked
+      ?:  ?&  ?=(^ verdict-reason.current)
+              =('no runner has labels' (end [3 20] u.verdict-reason.current))
+          ==
+        ~
+      verdict-reason.current
+    =?  candidates  !=(reason verdict-reason.current)
+      (~(put by candidates) id.candidate current(verdict-reason reason, updated now.bowl))
+    ^$(pending t.pending)
+  =/  =job:ci  i.runnable
+  =/  chosen=(unit daemon-id:ci)
+    %^  select-daemon  repo.candidate  runs-on.job
+    (excluded-daemons candidate %job `workflow.job `id.job)
+  ?~  chosen
+    =/  missing=(list @t)  (missing-labels runs-on.job)
+    =?  blocked  ?&(?=(~ blocked) ?=(^ missing))
+      `(rap 3 ~['no runner has labels [' (join:ci-plan missing ', ') ']'])
+    $(runnable t.runnable)
   =^  made  state
     %:  create-attempt
       id.candidate  u.chosen  %job
-      `workflow.i.runnable  `id.i.runnable  default-deadline
+      `workflow.job  `id.job  (job-deadline job)
     ==
   %=  $
     runnable  t.runnable
     cards     (snoc cards timer.made)
     touched   (~(put in touched) u.chosen)
   ==
+::
+::  an assignment its daemon never fetched (undelivered) while that
+::  daemon's record went stale, refused or revoked is offered again on
+::  another daemon when one exists (CI-DELIVERY-1.1): the P1 ghost.  a
+::  delivered one is CI-DELIVERY-1's, offered again to its own daemon.
+::
+++  reoffer-unfetched
+  ^-  _state
+  %+  roll  ~(val by assignments)
+  |=  [=assignment:ci acc=_state]
+  =.  state  acc
+  ?^  delivered.assignment  state
+  =/  running=(unit attempt:ci)  (~(get by attempts) attempt.assignment)
+  ?~  running  state
+  ?.  =(%running status.u.running)  state
+  =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.assignment)
+  ?:  ?&(?=(^ runner) (live-daemon u.runner))  state
+  =/  found=(unit candidate:ci)  (~(get by candidates) candidate.assignment)
+  ?~  found  state
+  =/  exclude=(set daemon-id:ci)
+    %-  ~(put in (excluded-daemons u.found kind.assignment workflow.assignment job.assignment))
+    daemon.assignment
+  ?.  (other-daemon-exists repo.u.found (attempt-runs-on u.found u.running) exclude)  state
+  (reoffer-attempt u.running 'daemon stopped polling before it fetched the assignment; re-offered')
+::
+::  the runs-on set of an attempt's job, from the candidate's plan; a plan
+::  attempt asks for nothing
+::
+++  attempt-runs-on
+  |=  [=candidate:ci =attempt:ci]
+  ^-  (set @t)
+  ?.  ?=(%job kind.attempt)  ~
+  ?~  plan.candidate  ~
+  =/  planned=(unit job:ci)  (planned-job candidate workflow.attempt job.attempt)
+  ?~(planned ~ runs-on.u.planned)
+::
+++  planned-job
+  |=  [=candidate:ci workflow=(unit @t) job=(unit @t)]
+  ^-  (unit job:ci)
+  ?~  plan.candidate  ~
+  ?~  workflow  ~
+  ?~  job  ~
+  =/  wf=@t  u.workflow
+  =/  id=@t  u.job
+  |-
+  ?~  u.plan.candidate  ~
+  ?:  &(=(wf workflow.i.u.plan.candidate) =(id id.i.u.plan.candidate))
+    `i.u.plan.candidate
+  $(u.plan.candidate t.u.plan.candidate)
+::
+::  an attempt is given up without a verdict and its job offered again
+::  (CI-DELIVERY-1.1): closed %reoffered with the reason, let go by its
+::  daemon, and standing for nothing, so the scheduler assigns the job
+::  afresh — to a daemon that never gave it up — at the next opportunity.
+::  the caller settles and schedules.
+::
+++  reoffer-attempt
+  |=  [=attempt:ci reason=@t]
+  ^-  _state
+  =/  closed=attempt:ci
+    attempt(status %reoffered, reason `reason, finished `now.bowl)
+  =.  attempts  (~(put by attempts) id.attempt closed)
+  =.  daemons
+    =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.attempt)
+    ?~  runner  daemons
+    (~(put by daemons) daemon.attempt u.runner(running (~(del in running.u.runner) id.attempt)))
+  state
+::
+::  a running attempt at its deadline (CI-DELIVERY-1.1 c): offered again
+::  once on another daemon when one exists; else — or after that one
+::  re-offer — an infrastructure error.  the reason says which silence
+::  it was: a runner that started and went quiet, or one that never
+::  reported at all.
+::
+++  expire-attempt
+  |=  =attempt:ci
+  ^-  out
+  =/  found=(unit candidate:ci)  (~(get by candidates) candidate.attempt)
+  =/  silent-before=?
+    ?~  found  %.y
+    %+  lien  attempts.u.found
+    |=  id=attempt-id:ci
+    =/  earlier=(unit attempt:ci)  (~(get by attempts) id)
+    ?~  earlier  %.n
+    ?&  =(%reoffered status.u.earlier)
+        =(kind.attempt kind.u.earlier)
+        =(workflow.attempt workflow.u.earlier)
+        =(job.attempt job.u.earlier)
+        ?=(^ reason.u.earlier)
+        =('runner went silent' (end [3 18] u.reason.u.earlier))
+    ==
+  =/  again=?
+    ?~  found  %.n
+    ?:  silent-before  %.n
+    =/  exclude=(set daemon-id:ci)
+      %-  ~(put in (excluded-daemons u.found kind.attempt workflow.attempt job.attempt))
+      daemon.attempt
+    (other-daemon-exists repo.u.found (attempt-runs-on u.found attempt) exclude)
+  =.  state
+    ?:  again
+      (reoffer-attempt attempt 'runner went silent; re-offered')
+    %+  close-attempt  attempt
+    :-  %infrastructure-error
+    ?:(silent-before 'runner went silent' 'no result arrived before the deadline')
+  (after-close candidate.attempt)
 ::
 ++  plan-in-flight
   |=  =candidate:ci
@@ -915,7 +1445,8 @@
   ?&(?=(^ found) ?=(%plan kind.u.found) =(%running status.u.found))
 ::
 ::  the newest job attempt per [workflow id] is that job's standing; its
-::  recorded set-outputs are what a dependent's `if` reads
+::  recorded set-outputs are what a dependent's `if` reads.  a re-offered
+::  attempt stands for nothing: the job is owed a fresh one.
 ::
 ++  standings
   |=  =candidate:ci
@@ -928,6 +1459,7 @@
     ?.  ?=(%job kind.u.found)  acc
     ?~  workflow.u.found  acc
     ?~  job.u.found  acc
+    ?:  =(%reoffered status.u.found)  acc
     (~(put by acc) [u.workflow.u.found u.job.u.found] u.found)
   :-  %-  ~(run by newest)
       |=  =attempt:ci
@@ -937,6 +1469,7 @@
         %failed                %failed
         %skipped               %skipped
         %running               %running
+        %reoffered             %pending
         %infrastructure-error  %unknown
       ==
   (~(run by newest) |=(=attempt:ci outputs.attempt))
@@ -991,6 +1524,7 @@
       %failed                [%failed reason.u.newest]
       %skipped               [%pending ~]
       %running               [%pending ~]
+      %reoffered             [%pending ~]
       %infrastructure-error  [%unknown reason.u.newest]
     ==
   ::  a restricted check that passes is a verdict, never a landing: the
@@ -1376,10 +1910,12 @@
 ++  credential-values
   |=  repo=@t
   ^-  (list @t)
+  %-  zing
   %+  murn  ~(tap by credentials)
   |=  [[r=@t name=@t] c=credential:ci]
+  ^-  (unit (list @t))
   ?.  =(r repo)  ~
-  `value.c
+  `(scrub-forms:ci-event value.c)
 ::
 ++  attempt-json
   |=  =attempt:ci
@@ -1504,6 +2040,21 @@
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-web-action eyre-id req)
+  ::  the Runners panel (D1/D3): the daemon records, and the mint that
+  ::  answers a fresh enrollment token exactly once
+  ::
+  ?:  ?=([%apps %urgit %api %ci %runners ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-runners eyre-id req)
+  ?:  ?=([%apps %urgit %api %ci %runners %mint ~] site)
+    ?.  =(%'POST' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-mint eyre-id req)
+  ?:  ?=([%apps %urgit %api %ci %storage %probe ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-storage-probe eyre-id req)
   ?:  ?=([%apps %urgit %api %ci %repository @ %candidates ~] site)
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -1549,6 +2100,10 @@
   ?:  ?&(?=(^ u.capacity) =(0 u.u.capacity))
     (emit (give-error eyre-id 422 'capacity must be at least 1'))
   =/  sandbox=@t  (fall (string-at 'sandbox' u.jon) '')
+  ::  the labels the daemon declares (D2b): a list of strings, sent again
+  ::  on every poll; the implicit set is the ship's, never the daemon's
+  ::
+  =/  labels=(set @t)  (labels-at 'labels' u.jon)
   =/  token-hash=@  (shas %ci-enroll u.token)
   =/  matches=(list daemon:ci)
     %+  skim  ~(val by daemons)
@@ -1567,6 +2122,8 @@
       capacity     (fall u.capacity 1)
       sandbox      sandbox
       running      ~
+      labels       labels
+      refused      ~
     ==
   =.  daemons  (~(put by daemons) id.daemon next)
   =/  scheduled=out  schedule
@@ -1619,12 +2176,18 @@
     ?^  (presented-bearer-hash req)
       (emit (give-error eyre-id 401 'daemon authentication required'))
     (emit (give-error eyre-id 404 'no such daemon'))
+  ::  a revoked daemon's bearer authenticates nothing (D2): its next poll
+  ::  is answered 401 with the reason, and the daemon exits on it
+  ::
+  ?:  ?&(?=(^ revoked.u.found) ?=(^ (presented-bearer-hash req)))
+    (emit (give-error eyre-id 401 revoked-refusal))
   ?.  (daemon-authorized req u.found)
     (emit (give-error eyre-id 401 'daemon authentication required'))
   =.  daemons  (touch-daemon id.u.found)
   ::  the capacity a daemon reports as it waits (spec: "reports capacity,
   ::  and waits"): a restart with a new config takes effect at its next
-  ::  poll, without a second enrollment
+  ::  poll, without a second enrollment.  its labels ride the same way
+  ::  (D2b): `x-ci-labels`, comma-separated.
   ::
   =.  daemons
     =/  header=(unit @t)  (get-header:http 'x-ci-capacity' header-list.request.req)
@@ -1634,6 +2197,13 @@
     =/  runner=daemon:ci  (~(got by daemons) id.u.found)
     ?:  =(capacity.runner u.reported)  daemons
     (~(put by daemons) id.u.found runner(capacity u.reported))
+  =.  daemons
+    =/  header=(unit @t)  (get-header:http 'x-ci-labels' header-list.request.req)
+    ?~  header  daemons
+    =/  reported=(set @t)  (parse-labels u.header)
+    =/  runner=daemon:ci  (~(got by daemons) id.u.found)
+    ?:  =(labels.runner reported)  daemons
+    (~(put by daemons) id.u.found runner(labels reported))
   =/  scheduled=out  schedule
   =.  state  state.scheduled
   =.  polls  polls.scheduled
@@ -1928,6 +2498,19 @@
       ['pull' ?~(pull.candidate ~ (numb:enjs:format u.pull.candidate))]
       ['verdictReason' ?~(verdict-reason.candidate ~ s+u.verdict-reason.candidate)]
       ['planned' b+?=(^ plan.candidate)]
+      :-  'plan'
+      ?~  plan.candidate  ~
+      :-  %a
+      %+  turn  u.plan.candidate
+      |=  =job:ci
+      %-  pairs:enjs:format
+      :~  ['id' s+id.job]
+          ['workflow' s+workflow.job]
+          ['stage' (numb:enjs:format stage.job)]
+          ['needs' [%a (turn needs.job |=(need=@t s+need))]]
+          ['runsOn' [%a (turn (sort ~(tap in runs-on.job) aor) |=(l=@t s+l))]]
+          ['timeoutMinutes' ?~(timeout.job ~ (numb:enjs:format u.timeout.job))]
+      ==
       ['created' (numb:enjs:format (unix-seconds created.candidate))]
       ['updated' (numb:enjs:format (unix-seconds updated.candidate))]
       :-  'attempts'
@@ -1954,6 +2537,15 @@
     =/  id=(unit @uv)  (slaw %uv u.named)
     ?~  id  ~
     (~(get by candidates) u.id)
+  (emit (give-json eyre-id 200 (candidates-json repo before)))
+::
+::  a repository's candidates newest first, at most fifty, from before
+::  the candidate `before` names when the caller gives one; the GET's
+::  page and the live feed's initial fact are this one JSON
+::
+++  candidates-json
+  |=  [repo=@t before=(unit candidate:ci)]
+  ^-  json
   =/  mine=(list candidate:ci)
     %+  sort
       %+  skim  ~(val by candidates)
@@ -1964,8 +2556,6 @@
       ==
     |=([a=candidate:ci b=candidate:ci] (gth created.a created.b))
   =/  page=(list candidate:ci)  (scag 50 mine)
-  %-  emit
-  %^  give-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['repo' s+repo]
       ['candidates' [%a (turn page candidate-json)]]
@@ -2143,6 +2733,32 @@
       %delete-credential
     ?:  |(?=(~ repo) ?=(~ name))  [%| 'repo and name are required']
     [%& [%delete-credential u.repo u.name]]
+  ::
+      ::  the Runners panel's actions (D2/D2b/D3): expire, revoke, bind,
+      ::  rotate — every one on the allow-list, none dojo-only
+      ::
+      %expire-token
+    ?~  id  [%| 'id must be a daemon id']
+    [%& [%expire-token u.id]]
+  ::
+      %revoke-daemon
+    ?~  id  [%| 'id must be a daemon id']
+    [%& [%revoke-daemon u.id]]
+  ::
+      %set-daemon-repos
+    ?~  id  [%| 'id must be a daemon id']
+    ?.  ?=([%o *] jon)  [%| 'repos must be null or a list of repository names']
+    =/  value=(unit json)  (~(get by p.jon) 'repos')
+    ?~  value  [%| 'repos must be null or a list of repository names']
+    ?~  u.value  [%& [%set-daemon-repos u.id ~]]
+    ?.  ?=([%a *] u.value)  [%| 'repos must be null or a list of repository names']
+    =/  names=(list @t)
+      (murn p.u.value |=(item=json ?.(?=([%s *] item) ~ `p.item)))
+    ?.  =((lent names) (lent p.u.value))  [%| 'repos must be null or a list of repository names']
+    [%& [%set-daemon-repos u.id `(silt names)]]
+  ::
+      %rotate-ci-key
+    [%& [%rotate-ci-key ~]]
   ==
 ::
 ::  the CI key's public half and the ship's certificate over it (D5):
@@ -2168,10 +2784,184 @@
       ['created' (numb:enjs:format (unix-seconds created.u.signing))]
   ==
 ::
+::  a JSON list of strings as a set, for the daemon's labels (D2b); a
+::  missing or malformed field is the empty set
+::
+++  labels-at
+  |=  [key=@t jon=json]
+  ^-  (set @t)
+  ?.  ?=([%o *] jon)  ~
+  =/  value=(unit json)  (~(get by p.jon) key)
+  ?~  value  ~
+  ?.  ?=([%a *] u.value)  ~
+  %-  silt
+  %+  murn  p.u.value
+  |=  item=json
+  ?.  ?=([%s *] item)  ~
+  ?:  =('' p.item)  ~
+  `p.item
+::
+::  `x-ci-labels: linux,x64, big-mem` as a set: split on commas, trimmed
+::
+++  parse-labels
+  |=  header=@t
+  ^-  (set @t)
+  =/  chars=tape  (trip header)
+  =|  acc=(set @t)
+  =|  cur=tape
+  |-
+  ?~  chars
+    =/  word=@t  (crip (trim-spaces cur))
+    ?:(=('' word) acc (~(put in acc) word))
+  ?:  =(',' i.chars)
+    =/  word=@t  (crip (trim-spaces cur))
+    $(chars t.chars, cur ~, acc ?:(=('' word) acc (~(put in acc) word)))
+  $(chars t.chars, cur (snoc cur i.chars))
+::
+++  trim-spaces
+  |=  text=tape
+  ^-  tape
+  =/  blank  |=(c=@tD |(=(' ' c) =('\09' c)))
+  =.  text  (flop (skip-while (flop text) blank))
+  (skip-while text blank)
+::
+++  skip-while
+  |=  [text=tape test=$-(@tD ?)]
+  ^-  tape
+  ?~  text  ~
+  ?:  (test i.text)  $(text t.text)
+  text
+::
+::  the Runners panel's pip (D3): revoked, refused, minted (never
+::  enrolled), healthy (seen within stale-after, the scheduler's window),
+::  else stale.  a full daemon keeps polling (D6 f), so a dead daemon with
+::  a full slot set reads stale like any other.
+::
+++  runner-state
+  |=  =daemon:ci
+  ^-  @t
+  ?^  revoked.daemon  'revoked'
+  ?^  refused.daemon  'refused'
+  ?~  enrolled.daemon  'minted'
+  ?~  last-seen.daemon  'stale'
+  ?:  (lth (sub now.bowl (min now.bowl u.last-seen.daemon)) stale-after)  'healthy'
+  'stale'
+::
+++  runner-json
+  |=  =daemon:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.daemon)]
+      ['capacity' (numb:enjs:format capacity.daemon)]
+      ['sandbox' s+sandbox.daemon]
+      ['labels' [%a (turn (sort ~(tap in labels.daemon) aor) |=(l=@t s+l))]]
+      ['repos' ?~(repos.daemon ~ [%a (turn (sort ~(tap in u.repos.daemon) aor) |=(r=@t s+r))])]
+      ['minted' (numb:enjs:format (unix-seconds minted.daemon))]
+      ['enrolled' ?~(enrolled.daemon ~ (numb:enjs:format (unix-seconds u.enrolled.daemon)))]
+      ['lastSeen' ?~(last-seen.daemon ~ (numb:enjs:format (unix-seconds u.last-seen.daemon)))]
+      ['running' (numb:enjs:format ~(wyt in running.daemon))]
+      ['revoked' ?~(revoked.daemon ~ (numb:enjs:format (unix-seconds u.revoked.daemon)))]
+      ['refused' ?~(refused.daemon ~ s+u.refused.daemon)]
+      ['state' s+(runner-state daemon)]
+  ==
+::
+::  every daemon record, newest minted first, with the ship's clock so a
+::  panel can age the stamps against its own
+::
+++  runners-json
+  ^-  json
+  =/  sorted=(list daemon:ci)
+    (sort ~(val by daemons) |=([a=daemon:ci b=daemon:ci] (gth minted.a minted.b)))
+  %-  pairs:enjs:format
+  :~  ['runners' [%a (turn sorted runner-json)]]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+      ['staleAfter' (numb:enjs:format (div stale-after ~s1))]
+      ['implicitLabels' [%a (turn (sort ~(tap in implicit-labels) aor) |=(l=@t s+l))]]
+  ==
+::
+++  handle-runners
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  (emit (give-json eyre-id 200 runners-json))
+::
+::  the storage reachability probe (D5): the store's endpoint as the ship
+::  knows it and one URL under the CI prefix for the viewer's browser to
+::  fetch.  the URL is unsigned on purpose: an unsigned read draws the
+::  store's 403, and any HTTP answer proves the endpoint reachable from
+::  the browser (and CORS-readable), where a link to 127.0.0.1 or a
+::  LAN-only host draws a NetworkError.  the ship, which has no outbound
+::  HTTP, cannot make this check itself.
+::
+++  handle-storage-probe
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  settings=settings:ci-storage  (read-settings:ci-storage our.bowl now.bowl)
+  ?~  settings
+    (emit (give-json eyre-id 200 (pairs:enjs:format ~[['configured' b+%.n]])))
+  =/  endpoint=@t  endpoint.credentials.u.settings
+  =/  host=@t  (endpoint-host:git-storage endpoint)
+  =/  bucket=@t  current-bucket.configuration.u.settings
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['configured' b+%.y]
+      ['endpoint' s+endpoint]
+      ['host' s+host]
+      ['bucket' s+bucket]
+      ['url' s+(rap 3 ~[(endpoint-scheme:git-storage endpoint) host '/' bucket '/ci/_probe'])]
+  ==
+::
+::  the mint (D1): the ship draws 256 bits of entropy as the token,
+::  stores its hash on a fresh daemon record, and answers the raw token
+::  in this one response — the only time it exists outside the operator's
+::  clipboard — beside the config lines the daemon needs.  the poke union
+::  has no mint action: nothing but this session-authorized route mints.
+::
+++  handle-mint
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  token=@uv  (end [3 32] eny.bowl)
+  =/  token-hash=@  (shas %ci-enroll token)
+  =/  id=daemon-id:ci  (sham [%ci-daemon token-hash])
+  ?:  (~(has by daemons) id)
+    (emit (give-error eyre-id 409 'enroll token already minted; try again'))
+  =.  daemons
+    (~(put by daemons) id [id token-hash ~ now.bowl ~ ~ 1 '' ~ ~ ~ ~ ~])
+  =/  host=@t
+    (fall (get-header:http 'host' header-list.request.req) 'ship.example')
+  =/  ship-url=@t
+    (rap 3 ~[?:(secure.req 'https://' 'http://') host])
+  =/  snippet=@t
+    %+  rap  3
+    :~  'ship_url = "'  ship-url  '"\0a'
+        'enroll_token = "'  (scot %uv token)  '"\0a'
+        'sandbox = "docker-rootless"\0a'
+    ==
+  %-  emit
+  %^  give-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id)]
+      ['token' s+(scot %uv token)]
+      ['shipUrl' s+ship-url]
+      ['configSnippet' s+snippet]
+      ['runner' (runner-json (~(got by daemons) id))]
+  ==
+::
 ::  the daemon could not finish: act exited without a jobResult, the
-::  sandbox failed, or teardown failed (D8).  the attempt closes as an
-::  infrastructure error with the daemon's reason at once instead of at
-::  its deadline; a result already recorded is never overwritten.
+::  sandbox failed, teardown failed, or the assignment did not verify
+::  against its pinned key (D8; CI-DELIVERY-1.1 a/b).  the attempt is
+::  released at once instead of at its deadline: offered again on another
+::  daemon when one exists, else closed as an infrastructure error with
+::  the daemon's reason.  a daemon abandoning over its key is marked
+::  refused and offered no work until it re-enrolls.  a second abandon of
+::  a re-offered attempt is idempotent; a result already recorded is never
+::  overwritten.
 ::
 ++  handle-abandon
   |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
@@ -2182,6 +2972,8 @@
     (emit (give-error eyre-id 404 'no such attempt'))
   ?.  (attempt-authorized req u.found)
     (emit (give-error eyre-id 401 'attempt authentication required'))
+  ?:  =(%reoffered status.u.found)
+    (emit (give-json eyre-id 200 (attempt-json u.found)))
   ?.  =(%running status.u.found)
     (emit (give-error eyre-id 409 'attempt is closed'))
   =/  jon=(unit json)  (body-json req)
@@ -2190,11 +2982,45 @@
   =/  reason=(unit @t)  (string-at 'reason' u.jon)
   ?~  reason
     (emit (give-error eyre-id 422 'reason is required'))
-  =.  state  (close-attempt u.found [%infrastructure-error (rap 3 ~['abandoned: ' u.reason])])
-  =/  closed=out  (after-close candidate.u.found)
-  =.  state  state.closed
-  =.  polls  polls.closed
-  (emit (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
+  =/  given=out  (give-up u.found u.reason)
+  =.  state  state.given
+  =.  polls  polls.given
+  (emit (weld cards.given (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
+::
+::  a daemon gives an attempt up with a reason (CI-DELIVERY-1.1 a/b): the
+::  one path behind the abandon route and a plan posted as a refusal.  a
+::  reason with the refusal prefix marks the daemon refused first; then
+::  the attempt is offered again on another daemon when one exists, else
+::  closed as an infrastructure error with the reason; then the candidate
+::  is settled and the scheduler runs.
+::
+++  refusal-reason
+  |=  reason=@t
+  ^-  ?
+  =/  width=@ud  (met 3 refusal-prefix)
+  ?&  (gte (met 3 reason) width)
+      =(refusal-prefix (end [3 width] reason))
+  ==
+::
+++  give-up
+  |=  [=attempt:ci reason=@t]
+  ^-  out
+  =?  daemons  (refusal-reason reason)
+    =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.attempt)
+    ?~  runner  daemons
+    (~(put by daemons) daemon.attempt u.runner(refused `reason))
+  =/  candidate=(unit candidate:ci)  (~(get by candidates) candidate.attempt)
+  =/  again=?
+    ?~  candidate  %.n
+    =/  exclude=(set daemon-id:ci)
+      %-  ~(put in (excluded-daemons u.candidate kind.attempt workflow.attempt job.attempt))
+      daemon.attempt
+    (other-daemon-exists repo.u.candidate (attempt-runs-on u.candidate attempt) exclude)
+  =.  state
+    ?:  again
+      (reoffer-attempt attempt (rap 3 ~['abandoned: ' reason '; re-offered']))
+    (close-attempt attempt [%infrastructure-error (rap 3 ~['abandoned: ' reason])])
+  (after-close candidate.attempt)
 ::
 ::  the plan (D1): what `act -l` listed on the candidate checkout, with
 ::  the daemon's compiled `needs` and `if` per job.  the ship reads the
@@ -2219,6 +3045,16 @@
   =/  jon=(unit json)  (body-json req)
   ?~  jon
     (emit (give-error eyre-id 400 'valid JSON body required'))
+  ::  a plan the daemon refused over its pinned key is not a plan error
+  ::  (CI-DELIVERY-1.1 b): the daemon gave the attempt up, and the
+  ::  candidate keeps waiting for a plan from a daemon that can verify
+  ::
+  =/  refused=(unit @t)  (string-at 'error' u.jon)
+  ?:  ?&(?=(^ refused) (refusal-reason u.refused))
+    =/  given=out  (give-up u.found u.refused)
+    =.  state  state.given
+    =.  polls  polls.given
+    (emit (weld cards.given (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))
   =/  =candidate:ci  (~(got by candidates) candidate.u.found)
   ?~  candidate.candidate
     (emit (give-error eyre-id 409 'candidate is not materialized'))
@@ -2277,6 +3113,8 @@
           ['name' s+name.job]
           ['stage' (numb:enjs:format stage.job)]
           ['needs' [%a (turn needs.job |=(need=@t s+need))]]
+          ['runs-on' [%a (turn (sort ~(tap in runs-on.job) aor) |=(l=@t s+l))]]
+          ['timeout-minutes' ?~(timeout.job ~ (numb:enjs:format u.timeout.job))]
       ==
   ==
 --

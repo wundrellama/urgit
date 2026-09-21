@@ -22,6 +22,17 @@ import (
 // knows: the daemon's enrollment is gone.
 var ErrUnauthorized = errors.New("ship answered 401: enrollment lost")
 
+// ErrNotOurs is the ship's 401 for an attempt that belongs to another
+// daemon (`attempt authentication required`): this daemon's bearer is
+// fine, the attempt is simply not its own. Reconcile leaves such a
+// sandbox alone (P3 D6 g); nothing reads it as enrollment lost.
+var ErrNotOurs = errors.New("ship answered 401: not this daemon's attempt")
+
+// ErrRevoked is the ship answering 401 because the operator revoked this
+// daemon (P3 D2): the daemon logs it and exits; only a fresh enrollment
+// with a new token brings it back.
+var ErrRevoked = errors.New("ship answered 401: revoked by the ship")
+
 type Client struct {
 	Base   string
 	Bearer string
@@ -29,6 +40,9 @@ type Client struct {
 	// Capacity is reported on every poll (`x-ci-capacity`) so a restart
 	// with a new config reaches the ship without re-enrolling.
 	Capacity int
+	// Labels ride every request the same way (`x-ci-labels`, comma
+	// separated): the daemon's declared labels (CI-P3-SCHED-A).
+	Labels []string
 }
 
 func New(base, bearer string) *Client {
@@ -118,6 +132,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 	if c.Capacity > 0 {
 		req.Header.Set("x-ci-capacity", strconv.Itoa(c.Capacity))
 	}
+	if len(c.Labels) > 0 {
+		req.Header.Set("x-ci-labels", strings.Join(c.Labels, ","))
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return Response{}, err
@@ -139,8 +156,12 @@ type Enrollment struct {
 }
 
 // Enroll consumes the token. The caller forgets the token afterwards.
-func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string) (*Enrollment, error) {
-	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox})
+// The labels are declared here and again on every poll.
+func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string, labels []string) (*Enrollment, error) {
+	if labels == nil {
+		labels = []string{}
+	}
+	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox, "labels": labels})
 	resp, err := c.do(ctx, http.MethodPost, "/daemon/enroll", body)
 	if err != nil {
 		return nil, err
@@ -169,6 +190,9 @@ func (c *Client) Poll(ctx context.Context, daemonID string) (*Assignment, error)
 	case http.StatusNoContent:
 		return nil, nil
 	case http.StatusUnauthorized:
+		if strings.Contains(resp.Error(), "revoked") {
+			return nil, ErrRevoked
+		}
 		return nil, ErrUnauthorized
 	case http.StatusOK:
 		var answer struct {
@@ -295,6 +319,11 @@ func (c *Client) AttemptStatus(ctx context.Context, attempt string) (status stri
 	case http.StatusNotFound:
 		return "", false, nil
 	case http.StatusUnauthorized:
+		// the ship's foreign-attempt answer is not enrollment loss: the
+		// bearer authenticated, the attempt is another daemon's
+		if strings.Contains(resp.Error(), "attempt authentication required") {
+			return "", false, ErrNotOurs
+		}
 		return "", false, ErrUnauthorized
 	case http.StatusOK:
 		var answer struct {

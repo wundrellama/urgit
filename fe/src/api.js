@@ -74,6 +74,11 @@ export const api = {
     method: 'POST', body: JSON.stringify({ ship, repository, title, body }),
   }),
   peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
+  // a writer's approval of an untrusted CI candidate on another ship's
+  // repository (P3 D9), tracked like a forge comment
+  peerCiApprove: (ship, repository, candidate) => request('/peer/ci-approve', {
+    method: 'POST', body: JSON.stringify({ ship, repository, candidate }),
+  }),
   clearPeerActivity: () => request('/peer/activity', { method: 'DELETE' }),
   peerDiscover: (ship) => request('/peer/discover', { method: 'POST', body: JSON.stringify({ ship }) }),
   // one catalog request to every seated member of a group this ship is in; `group` is a flag, ~host/name
@@ -389,6 +394,13 @@ export const ci = {
   policy: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/policy`),
   credentials: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/credentials`),
   key: () => ciRequest('/key'),
+  // the Runners panel (P3 D1/D3): every daemon record with the ship's
+  // clock, and the mint that answers a fresh enrollment token exactly once
+  runners: () => ciRequest('/runners'),
+  mint: () => ciRequest('/runners/mint', { method: 'POST', body: '{}' }),
+  // the storage reachability probe (P3 D5): the store's endpoint and one
+  // unsigned URL under the CI prefix for THIS browser to fetch
+  storageProbe: () => ciRequest('/storage/probe'),
   // the poke as JSON; the ship answers 200 {ok} or the refusal
   action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
   // the log route answers a 302 to a presigned store URL; the browser

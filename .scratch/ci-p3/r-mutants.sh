@@ -1,0 +1,171 @@
+#!/bin/bash
+# usage: r-mutants.sh apply [rows...] | revert | status | tripwire <row>
+# One-line sabotage per P3 negative row, in P2's q-mutants.sh shape:
+# `apply` edits the working tree (each old text must occur exactly once,
+# or nothing is written) and refuses on a dirty file; `revert` is
+# `git checkout --` of the files; `tripwire <row>` prints the substring
+# the sabotaged build must produce in the row's log, and r-negatives.sh
+# red counts a row RED only when it FAILS *and* carries it. Never
+# committed. The rows are grouped so that no row is turned red by another
+# row's mutant (r-negatives.sh runs the groups in turn):
+#
+#   R3   app/urgit-ci.hoon   %expire-token deletes an enrolled daemon's record
+#                            (the 409 is skipped)
+#   R4   app/urgit-ci.hoon   a revoked daemon's poll is not told why: the
+#                            401 is the generic one, the daemon exits as
+#                            "enrollment lost", never "revoked by the ship"
+#   R4b  app/urgit-ci.hoon   %revoke-daemon leaves the daemon's running
+#                            attempts running (no re-offer; they wait ~h1)
+#   R5   app/urgit-ci.hoon   %rotate-ci-key keeps the old key: the enrolled
+#                            daemon's next assignment verifies
+#   R5b  app/urgit-ci.hoon   an abandon over a signature/key reason does not
+#                            mark the daemon refused (CI-DELIVERY-1.1 b): the
+#                            scheduler keeps it eligible
+#   R6a  app/urgit-ci.hoon   on-watch's `?> =(our.bowl src.bowl)` gone: a
+#                            watch from any ship on the CI fact paths is
+#                            accepted and the second galaxy receives a fact
+#                            (the close-out's port of astra's watch mutant)
+#   R15b app/urgit-ci.hoon   the ship's per-line scrub forms dropped from
+#                            credential-values: only the whole value is
+#                            masked, and a raw line of it posted straight to
+#                            the event route persists in the attempt's
+#                            outputs (astra's R15SHIP mutant)
+#   R18  app/urgit-ci.hoon   %repository-deleted drops no candidate: a
+#                            passed candidate outlives its repository, and
+#                            the same oid pushed into a repository re-created
+#                            under the name answers the eligibility peek %.y
+#                            and lands unstaged (the finding R18 made, T8b)
+#   R9   app/urgit-ci.hoon   the same de-listing dropped, under the ghost row:
+#                            the wrong-key daemon is offered work again after
+#                            its refusal (its second refusal ends the row)
+#   R10  app/urgit-ci.hoon   a silent attempt is not re-offered at its
+#                            deadline: it closes as an infrastructure error
+#                            and the candidate is unknown
+#   R11b sandbox/docker.go + ship/client.go   the pre-rider-3 daemon: Orphans
+#                            lists every urgit-ci network whoever owns it, and
+#                            the client reads the ship's foreign-attempt 401 as
+#                            enrollment lost — a restart beside another
+#                            runner's sandbox exits 3 (two edits, one row)
+#   R16  app/urgit.hoon      actor substitution (rider 4): the receiving arm
+#                            of %ci-approve acts for the OWNER whoever sent
+#                            the packet — a request from a ship that cannot
+#                            write the repository is approved, and the twin's
+#                            actor is the owner, not src.bowl (two edits, one
+#                            row; the mutant is %urgit's, so the phase waits
+#                            for %urgit's reload)
+#   R14  app/urgit.hoon      the linked landing's in-progress guard is gone
+#                            (the receive path's own never-true `=(^ …)`): a
+#                            second landing parks over the first's clay-push
+#                            and one or both vanish, passed and unlanded
+#                            with no reason
+#   R17  app/urgit.hoon      the peer push's guard put back to the pre-rider-5
+#                            `=(^ pending-clay)` (never true): a peer push that
+#                            completes while a plain push is parked overwrites
+#                            it — the peer push reports ok and the parked
+#                            push's held response is never sent
+source "$(dirname "$0")/lib.sh"
+cd "$ROOT"
+git rev-parse --is-inside-work-tree >/dev/null || { echo "r-mutants.sh: $PWD is not a git work tree"; exit 1; }
+FILES=(desk/app/urgit-ci.hoon desk/app/urgit.hoon desk/lib/ci-plan.hoon desk/lib/ci-event.hoon runner/internal/daemon/daemon.go runner/internal/relay/relay.go runner/internal/sandbox/docker.go runner/internal/ship/client.go)
+case "${1:-}" in
+  apply)
+    if ! git diff --quiet -- "${FILES[@]}"; then
+      echo "r-mutants.sh: uncommitted changes in ${FILES[*]}; commit them first (revert is git checkout --)" >&2
+      exit 1
+    fi
+    python3 - "${@:2}" <<'PY'
+import sys
+only = set(sys.argv[1:])
+edits = [
+ ("R3", "desk/app/urgit-ci.hoon",
+  "    ?:  ?&(?=(^ enrolled.u.found) ?=(~ revoked.u.found))\n      ~|  'daemon is enrolled; revoke it instead'\n",
+  "    ?:  %.n\n      ~|  'daemon is enrolled; revoke it instead'\n"),
+ ("R4", "desk/app/urgit-ci.hoon",
+  "  ?:  ?&(?=(^ revoked.u.found) ?=(^ (presented-bearer-hash req)))\n    (emit (give-error eyre-id 401 revoked-refusal))\n",
+  "  ?:  %.n\n    (emit (give-error eyre-id 401 revoked-refusal))\n"),
+ ("R4b", "desk/app/urgit-ci.hoon",
+  "      (reoffer-attempt attempt 'daemon revoked; re-offered')\n",
+  "      state\n"),
+ ("R5", "desk/app/urgit-ci.hoon",
+  "      %rotate-ci-key\n    =.  signing  `fresh-signing-key\n",
+  "      %rotate-ci-key\n    =.  signing  signing\n"),
+ ("R5b", "desk/app/urgit-ci.hoon",
+  "  =?  daemons  (refusal-reason reason)\n",
+  "  =?  daemons  %.n\n"),
+ ("R9", "desk/app/urgit-ci.hoon",
+  "  =?  daemons  (refusal-reason reason)\n",
+  "  =?  daemons  %.n\n"),
+ ("R6a", "desk/app/urgit-ci.hoon",
+  "  ?:  ?=([%http-response @ ~] path)  `this\n  ?>  =(our.bowl src.bowl)\n",
+  "  ?:  ?=([%http-response @ ~] path)  `this\n  ?>  %.y\n"),
+ ("R15b", "desk/app/urgit-ci.hoon",
+  "  `(scrub-forms:ci-event value.c)\n",
+  "  `~[value.c]\n"),
+ ("R18", "desk/app/urgit-ci.hoon",
+  "    =/  gone=(set candidate-id:ci)  (repository-candidates repository.act)\n",
+  "    =/  gone=(set candidate-id:ci)  ~\n"),
+ ("R10", "desk/app/urgit-ci.hoon",
+  "  =/  again=?\n    ?~  found  %.n\n    ?:  silent-before  %.n\n",
+  "  =/  again=?\n    ?~  found  %.n\n    ?:  %.y  %.n\n"),
+ ("R11b", "runner/internal/sandbox/docker.go",
+  "\t\tif owner == \"\" || (d.Owner != \"\" && owner == d.Owner) {\n",
+  "\t\tif owner == \"\" || true {\n"),
+ ("R11b", "runner/internal/ship/client.go",
+  "\t\tif strings.Contains(resp.Error(), \"attempt authentication required\") {\n",
+  "\t\tif false {\n"),
+ ("R16", "desk/app/urgit.hoon",
+  "  ?.  ?&(?=(^ found) (repository-writable u.found src.bowl))\n    (peer-forge-reply src.bowl request repository %candidate 0 %.n 'requester cannot write the repository' ~)\n",
+  "  ?.  ?&(?=(^ found) (repository-writable u.found our.bowl))\n    (peer-forge-reply src.bowl request repository %candidate 0 %.n 'requester cannot write the repository' ~)\n"),
+ ("R16", "desk/app/urgit.hoon",
+  "          !>(`action:ci`[%approve-candidate candidate src.bowl])\n",
+  "          !>(`action:ci`[%approve-candidate candidate our.bowl])\n"),
+ ("R17", "desk/app/urgit.hoon",
+  "      ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))\n        (peer-push-finish flight transfer %.n 'another Clay operation is in progress')\n",
+  "      ?:  ?|(=(^ pending-clay) =(^ pending-publish))\n        (peer-push-finish flight transfer %.n 'another Clay operation is in progress')\n"),
+ ("R14", "desk/app/urgit.hoon",
+  "  ?:  ?|(!=(~ pending-clay) !=(~ pending-publish))\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n",
+  "  ?:  %.n\n    (refuse 'linked desk update already in progress; re-run the candidate to land it')\n"),
+]
+texts = {}
+for row, path, old, new in edits:
+    if only and row not in only:
+        continue
+    s = texts.get(path) or open(path).read()
+    n = s.count(old)
+    if n != 1:
+        sys.exit(f"r-mutants.sh: {row}: expected exactly one match in {path}, found {n}; nothing written")
+    texts[path] = s.replace(old, new)
+for path, s in texts.items():
+    open(path, "w").write(s)
+    print(f"mutated {path}")
+PY
+    ;;
+  revert)
+    git checkout -- "${FILES[@]}"
+    git diff --quiet -- "${FILES[@]}" && echo "reverted: ${FILES[*]} clean"
+    ;;
+  status)
+    git diff --stat -- "${FILES[@]}"
+    git diff --quiet -- "${FILES[@]}" && echo "clean (real build)" || echo "MUTATED"
+    ;;
+  tripwire)
+    case "${2:-}" in
+      R3)  echo "expire enrolled -> 409: FAIL (observed: 200" ;;
+      R4)  echo "daemon b logged the revocation on its next poll: FAIL" ;;
+      R4b) echo "the attempt on b is re-offered, not left running: FAIL (observed: %running" ;;
+      R5)  echo "daemon a refused the assignment after the rotation: FAIL (observed: 0" ;;
+      R5b) echo "the ship de-listed a: the panel reads refused: FAIL (observed: healthy" ;;
+      R6a) echo "R6a RED: foreign ship watch accepted" ;;
+      R15b) echo "R15b RED: the ship persisted a raw credential line" ;;
+      R18) echo "R18 RED: a push after the repository's deletion landed unstaged" ;;
+      R9)  echo "R9 RED: the refused daemon was offered work again" ;;
+      R10) echo "the attempt is re-offered after the timeout + 2 min, not closed: FAIL (observed: %infrastructure-error" ;;
+      R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;
+      R16) echo "R16 RED: actor substitution" ;;
+      R14) echo "the other candidate was refused with a reason, not dropped: FAIL (observed: ~" ;;
+      R17) echo "the peer push was refused with the receive path's message: FAIL (observed: true" ;;
+      *) echo "r-mutants.sh: no tripwire for row '${2:-}'" >&2; exit 2 ;;
+    esac
+    ;;
+  *) echo "usage: r-mutants.sh apply|revert|status|tripwire <row>" >&2; exit 2 ;;
+esac

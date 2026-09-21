@@ -8,7 +8,8 @@
 #
 #   H9   app/urgit-ci.hoon  handle-result: the "no jobResult event was relayed"
 #                           409 becomes acceptance (close passed, answer 200)
-#   H10  app/urgit-ci.hoon  on-arvo %deadline wake: closes %job-result %success
+#   H10  app/urgit-ci.hoon  on-arvo %deadline wake: does nothing (P3: the attempt
+#                           is re-offered or closed there; the mutant leaves it running)
 #                           instead of %infrastructure-error
 #   H11  app/urgit-ci.hoon  close-attempt: every job result is %passed
 #   H12  app/urgit-ci.hoon  attempt-authorized: the daemon bearer check is %.y
@@ -36,8 +37,8 @@ edits = [
   "      (emit (give-error eyre-id 409 'no jobResult event was relayed for this attempt'))\n",
   "      =.(state (close-attempt u.found [%job-result u.result]) (emit (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found)))))\n"),
  ("H10", "desk/app/urgit-ci.hoon",
-  "      (close-attempt:hc u.found [%infrastructure-error 'no result arrived before the deadline'])\n",
-  "      (close-attempt:hc u.found [%job-result %success])\n"),
+  "    =/  =out:hc  (expire-attempt:hc u.found)\n",
+  "    =/  =out:hc  (emit:hc ~)\n"),
  ("H11", "desk/app/urgit-ci.hoon",
   "      %job-result            ?:(=(%success result.attempt-result) %passed %failed)\n",
   "      %job-result            %passed\n"),

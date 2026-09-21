@@ -154,12 +154,23 @@ end_row H9
 fi
 
 if has h10; then
-row "H10 [$phase]: deadline passes with no result -> attempt %infrastructure-error, candidate %unknown, push -> ng"
+row "H10 [$phase]: deadline passes with no result -> the attempt is closed: re-offered on another live daemon (P3 CI-DELIVERY-1.1), else %infrastructure-error and the candidate %unknown; push -> ng"
 stage_commit "$phase-h10"; materialize "$CID"; assign "$CID" "$DAEMON" '`~s20'
-echo "-- before the deadline: attempt $(att_status "$AID"), candidate $(cand_status "$CID"); waiting 28 s"
+# P3 (CI-DELIVERY-1.1 c): at its deadline the attempt is offered again
+# once on another live daemon when the ship has one — this battery's
+# hand-driven daemons stay live for stale-after — and closed as an
+# infrastructure error when it has none; either way it is never left
+# running past the deadline (the mutant leaves it running)
+others=$(dojo_value "(lent (skim ~(val by .^((map @uv daemon:ci) %gx /=urgit-ci=/daemons/noun)) |=(d=daemon:ci ?&(!=(id.d $DAEMON) ?=(^ enrolled.d) ?=(^ bearer-hash.d) ?=(~ revoked.d) ?=(~ refused.d) ?=(^ last-seen.d) (lte (sub now (min now (need last-seen.d))) ~m5)))))" | grep -oE '^[0-9]+$' | tail -1)
+echo "-- before the deadline: attempt $(att_status "$AID"), candidate $(cand_status "$CID"); other live daemon records: ${others:-?}; waiting 28 s"
 sleep 28
-check "attempt" '%infrastructure-error' "$(att_status "$AID")"
-check "candidate" '%unknown' "$(cand_status "$CID")"
+if [ "${others:-0}" -gt 0 ]; then
+  check "attempt (another live daemon: re-offered)" '%reoffered' "$(att_status "$AID")"
+  check "candidate (a fresh attempt owed)" '%pending' "$(cand_status "$CID")"
+else
+  check "attempt" '%infrastructure-error' "$(att_status "$AID")"
+  check "candidate" '%unknown' "$(cand_status "$CID")"
+fi
 p=$(push_to "$OID" refs/heads/master); echo "push $OID -> master: $p"
 check "push" rejected "${p%%:*}"
 end_row H10

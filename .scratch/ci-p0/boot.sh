@@ -25,7 +25,10 @@ if tty_alive; then
 fi
 rm -f "$TMP/code$ROLE_SUFFIX.txt" "$JAR"
 [ -z "$ROLE_SUFFIX" ] && rm -f "$TMP/oids.env"
-boot="$URBIT -F $SHIP -B $PILL --http-port $PORT -c $PIER"
+# --loom 34 (the footer's): the serf's default loom (31, 2 GB) SEGV'd on
+# ~sud under the fourth ERPit seed of the P3 rows (2026-09-19 16:13:48,
+# systemd-coredump, `urbit work … --loom 31`); the P2 boot line lacked it
+boot="$URBIT -F $SHIP -B $PILL --loom 34 --http-port $PORT -c $PIER"
 echo "== tmux new-session -d -s $TTY -x 200 -y 50 \"$boot\""
 echo "$boot" > "$TMP/boot-line$ROLE_SUFFIX.txt"
 date -Is > "$TMP/launched-at$ROLE_SUFFIX"

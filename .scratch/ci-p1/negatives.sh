@@ -113,7 +113,6 @@ run_row P12 "$P1/p10-14.sh" p12
 run_row P13-overlap "$P1/p10-14.sh" p13b
 run_row P17 "$P1/p16-20.sh" p17
 run_row P18 "$P1/p16-20.sh" p18
-run_row P19 "$P1/p16-20.sh" p19
 run_row P20 "$P1/p16-20.sh" p20
 run_row P14 "$P1/p10-14.sh" p14
 "$P1/runner.sh" stop a >/dev/null 2>&1

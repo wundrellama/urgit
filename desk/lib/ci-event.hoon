@@ -167,6 +167,35 @@
   ?~  values  text
   $(text (replace-all text i.values), values t.values)
 ::
+::  the forms a released value is scrubbed in (P3 D9): the whole value,
+::  then each of its lines that is at least eight characters — a PEM key
+::  or a JSON credential prints line by line, and act masks none of it
+::  (measured on 0.2.89).  a line shorter than that is not a secret on
+::  its own and would eat ordinary text.
+::
+++  min-scrub  8
+++  scrub-forms
+  |=  value=@t
+  ^-  (list @t)
+  =/  lines=(list @t)  (split-lines value)
+  =/  long=(list @t)
+    %+  skim  lines
+    |=(line=@t (gte (met 3 line) min-scrub))
+  ?:  ?=([* ~] lines)  ~[value]
+  [value long]
+::
+++  split-lines
+  |=  text=@t
+  ^-  (list @t)
+  =/  chars=tape  (trip text)
+  =|  out=(list @t)
+  =|  cur=tape
+  |-
+  ?~  chars  (flop [(crip (flop cur)) out])
+  ?:  ?|(=('\0a' i.chars) =('\0d' i.chars))
+    $(chars t.chars, cur ~, out [(crip (flop cur)) out])
+  $(chars t.chars, cur [i.chars cur])
+::
 ++  scrub
   |=  [=event:ci values=(list @t)]
   ^-  event:ci

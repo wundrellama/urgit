@@ -1,8 +1,10 @@
 #!/bin/bash
-# usage: store.sh start|ready|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>
+# usage: store.sh start|ready|cors|stop|status|configure|head <key>|get <key> <file>|ls [prefix]|anon <key>
 # The object-store fixture (BRIEF-CI-P2 §5, astra §3): RustFS (Apache-2.0,
 # SigV4; the store NativePlanet ships by default) as ONE rootless container
-# on the harness Docker daemon, on the footer's port ($STORE_PORT), data
+# on the harness Docker daemon, on the footer's port ($STORE_PORT, bound
+# on 0.0.0.0 so a second machine can reach it — BRIEF-CI-P3 D5/R7; the
+# ship's %storage endpoint names $STORE_ADVERTISE, see ci-p1/env.sh), data
 # under $STORE_DATA, one PRIVATE bucket ($STORE_BUCKET: no anonymous policy,
 # so an unsigned read answers 403), and an access key minted once per
 # fixture into $TMP/store.env (mode 0600; git-ignored). Every read the rows
@@ -10,6 +12,9 @@
 # (`--aws-sigv4`), never through the container's filesystem.
 #   start      pull the image if missing, run the container, wait for the
 #              S3 port, create the bucket (idempotent), prove it is private
+#   cors       a bucket CORS rule so a browser can read presigned links
+#              (start applies it; measured: RustFS answers no CORS headers
+#              without one, and the log view then fails as if unreachable)
 #   ready      assert the store ANSWERS on its port before any row reads
 #              it (BRIEF-CI-P2-CLOSEOUT T3): an unauthenticated GET of the
 #              root must return an HTTP status (2xx/4xx; a private RustFS
@@ -18,7 +23,8 @@
 #   stop       remove the container (part of shutdown); the data dir stays
 #   status     container state and the bucket's object count
 #   configure  the %storage-action pokes that point the fixture ship at it
-#              (the P0 recipe: endpoint, both keys, bucket, region, service)
+#              (the P0 recipe: endpoint = $STORE_ENDPOINT, both keys, bucket,
+#              region, service)
 #   head/get/ls/anon  signed HEAD, signed GET to a file, signed list of a
 #              prefix (keys one per line), and an UNSIGNED GET (the status)
 source "$(dirname "$0")/env.sh"
@@ -51,7 +57,7 @@ case "${1:-status}" in
       # rootless Docker and cannot write a bind-mounted host directory;
       # container root maps to this user, which owns $STORE_DATA
       $DK run -d --name "$STORE_NAME" --user 0:0 \
-        -p "127.0.0.1:$STORE_PORT:9000" \
+        -p "0.0.0.0:$STORE_PORT:9000" \
         -e "RUSTFS_ACCESS_KEY=$STORE_KEY" -e "RUSTFS_SECRET_KEY=$STORE_SECRET" \
         -e RUSTFS_CONSOLE_ENABLE=false -e RUSTFS_VOLUMES=/data -e RUSTFS_OBS_LOGGER_LEVEL=warn \
         -v "$STORE_DATA:/data" "$STORE_IMAGE" >/dev/null
@@ -63,6 +69,24 @@ case "${1:-status}" in
     anon=$(curl -s -o /dev/null -w '%{http_code}' "$STORE_URL/$STORE_BUCKET/?list-type=2")
     echo "anonymous list of $STORE_BUCKET: $anon (private: must be 403)"
     [ "$anon" = 403 ] || { echo "store.sh: the bucket is not private" >&2; exit 1; }
+    "$0" cors
+    ;;
+  cors)
+    # a browser reads a presigned link cross-origin (the app is served by
+    # the ship, the object by the store), so the bucket must answer CORS
+    # for GET/HEAD from the viewer's origin or the log view fails with
+    # the same NetworkError an unreachable endpoint gives (BRIEF-CI-P3 D5;
+    # measured on RustFS 1.0.0: no CORS headers without a rule). A bucket
+    # CORS rule (PUT ?cors), idempotent; the origin is any, the fixture
+    # being private already.
+    load_keys
+    cat > "$TMP/store-cors.xml" <<'XML'
+<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><ExposeHeader>Content-Length</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule></CORSConfiguration>
+XML
+    code=$(signed PUT "$STORE_URL/$STORE_BUCKET/?cors" -H 'content-type: application/xml' --data-binary "@$TMP/store-cors.xml" -o /dev/null -w '%{http_code}')
+    acao=$(curl -s -D - -o /dev/null -H 'Origin: http://viewer.example' "$STORE_URL/$STORE_BUCKET/ci/_probe" | grep -i '^access-control-allow-origin' | tr -d '\r' | awk '{print $2}')
+    echo "bucket CORS rule: PUT ?cors -> $code; a GET with an Origin answers access-control-allow-origin: ${acao:-<none>}"
+    [ -n "$acao" ] || { echo "store.sh: the bucket answers no CORS headers; a browser cannot read presigned links" >&2; exit 1; }
     ;;
   ready)
     code=000
@@ -87,7 +111,7 @@ case "${1:-status}" in
     load_keys
     poke="$P0/poke.sh"
     for act in \
-      "[%set-endpoint '$STORE_URL']" \
+      "[%set-endpoint '$STORE_ENDPOINT']" \
       "[%set-access-key-id '$STORE_KEY']" \
       "[%set-secret-access-key '$STORE_SECRET']" \
       "[%set-current-bucket '$STORE_BUCKET']" \

@@ -85,7 +85,7 @@
   ==
 +$  browse-view  ?(%stamp %overview %issue %pull %commit %file)
 ::
-+$  forge-kind  ?(%issue %pull)
++$  forge-kind  ?(%issue %pull %candidate)
 ::
 +$  forge-comment
   $:  request=@uv
@@ -142,6 +142,11 @@
       [%forge-comment comment=forge-comment]
       [%forge-create-issue issue=forge-create-issue]
       [%forge-result request=@uv repository=@t kind=forge-kind number=@ud ok=? message=@t result=(unit json)]
+      ::  a writer on another ship approves an untrusted CI candidate of
+      ::  the owner's repository (P3 D9): the owner admits the requester
+      ::  through the same predicate ci-can-write reads, and answers with a
+      ::  %forge-result of kind %candidate (number 0)
+      [%ci-approve request=@uv repository=@t candidate=@uv]
       [%offer offer=offer]
       [%offer-branches offer-branches=offer-branches]
       [%release transfer=@uv]

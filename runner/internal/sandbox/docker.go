@@ -20,6 +20,24 @@ import (
 // enter through Copy.
 type Docker struct {
 	Host string
+	// Owner is the daemon id every sandbox object is labelled with
+	// (`urgit-ci-daemon=<id>`, P3 D6 g): two runners on one rootless
+	// daemon is a supported deployment, and a runner reconciles its own
+	// sandboxes only. Set by the daemon once its identity is known; empty
+	// until then, which labels nothing and reconciles as before.
+	Owner string
+}
+
+// LabelOwner is the label that names a sandbox's daemon.
+const LabelOwner = "urgit-ci-daemon"
+
+// labels are the `--label` arguments every object is created with
+func (d *Docker) labels() []string {
+	out := []string{"--label", "urgit-ci=1"}
+	if d.Owner != "" {
+		out = append(out, "--label", LabelOwner+"="+d.Owner)
+	}
+	return out
 }
 
 func NewDocker(host string) (Sandbox, error) {
@@ -68,20 +86,21 @@ func (d *Docker) Prepare(ctx context.Context, spec Spec) (Handle, error) {
 	h := Handle{ID: spec.Network, Network: spec.Network, Volume: spec.Network + "-work", Container: spec.Network}
 	// a bridge with NAT egress, isolated from other attempts' bridges and
 	// from the host's own services; not --internal (D10 network policy)
-	if _, err := d.docker(ctx, "network", "create", "--driver", "bridge", "--label", "urgit-ci=1", h.Network); err != nil {
+	if _, err := d.docker(ctx, append([]string{"network", "create", "--driver", "bridge"}, append(d.labels(), h.Network)...)...); err != nil {
 		return Handle{}, err
 	}
-	if _, err := d.docker(ctx, "volume", "create", "--label", "urgit-ci=1", h.Volume); err != nil {
+	if _, err := d.docker(ctx, append([]string{"volume", "create"}, append(d.labels(), h.Volume)...)...); err != nil {
 		_ = d.Destroy(ctx, h)
 		return Handle{}, err
 	}
-	args := []string{
+	args := append([]string{
 		"run", "-d", "--name", h.Container, "--network", h.Network,
-		"--label", "urgit-ci=1",
-		"-v", h.Volume + ":/work",
-		"-v", d.socketPath() + ":/var/run/docker.sock",
+	}, d.labels()...)
+	args = append(args,
+		"-v", h.Volume+":/work",
+		"-v", d.socketPath()+":/var/run/docker.sock",
 		"-e", "DOCKER_HOST=unix:///var/run/docker.sock",
-	}
+	)
 	if spec.CPUs > 0 {
 		args = append(args, "--cpus", strconv.Itoa(spec.CPUs))
 	}
@@ -187,17 +206,31 @@ func (d *Docker) Destroy(ctx context.Context, h Handle) error {
 	return first
 }
 
-// Orphans: the ci-* networks this daemon still holds; each name is an
-// attempt id.
+// Orphans: the ci-* networks THIS daemon still holds (its owner label),
+// plus any ci-* network with no owner label at all — a leftover from a
+// daemon older than the label, reaped by whoever finds it so an upgrade
+// never orphans a stuck sandbox. Another daemon's networks are never
+// listed (P3 D6 g): a runner inspects and destroys its own sandboxes
+// only. Each name is an attempt id.
 func (d *Docker) Orphans(ctx context.Context) ([]string, error) {
-	out, err := d.docker(ctx, "network", "ls", "--filter", "label=urgit-ci=1", "--format", "{{.Name}}")
+	out, err := d.docker(ctx, "network", "ls", "--filter", "label=urgit-ci=1", "--format", "{{.Name}} {{.Labels}}")
 	if err != nil {
 		return nil, err
 	}
 	var ids []string
-	for _, name := range strings.Fields(out) {
-		if strings.HasPrefix(name, "ci-") {
-			ids = append(ids, name)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], "ci-") {
+			continue
+		}
+		owner := ""
+		for _, kv := range strings.Split(strings.Join(fields[1:], " "), ",") {
+			if strings.HasPrefix(kv, LabelOwner+"=") {
+				owner = strings.TrimPrefix(kv, LabelOwner+"=")
+			}
+		}
+		if owner == "" || (d.Owner != "" && owner == d.Owner) {
+			ids = append(ids, fields[0])
 		}
 	}
 	return ids, nil

@@ -87,31 +87,43 @@ end_row P18
 fi
 
 if has p19; then
-row "P19: desk-linked repositories cannot be CI-protected; a repo bound after protection is refused at landing"
+row "P19: a desk-linked repository can be CI-protected (P3 D9); its candidate lands through the desk; a repo bound after protection lands the same way"
 # the scratch desk survives across runs; kiln asks before overwriting one
 if [ "$(dojo_value '(~(has in .^((set desk) %cd /(scot %p our)//(scot %da now))) %scratch)' | one '^%\.[yn]$')" = "%.y" ]; then
   echo "-- desk %scratch already exists"
 else
   "$dojo" '|new-desk %scratch' 120 3 | tail -1
 fi
-LINKED=ci-p1-linked
+LINKED=${P19_LINKED:-ci-p1-linked}
 "$api" POST /repositories "{\"name\":\"$LINKED\",\"publicRead\":true}" | cut -c1-30
 L="$TMP/clone-linked"; rm -rf "$L"; mkdir -p "$L"; cd "$L"; git init -q -b master .; git config user.name p19; git config user.email p19@example; git config http.cookieFile "$JAR"
 git remote add origin "$URL/git/$LINKED"; echo seed > README.md; git add -A; git commit -qm seed; git push -q origin master 2>&1 | tail -1
 "$dojo" ":urgit &git-action [%bind-desk '$LINKED' %scratch 'refs/heads/master']" 60 3 | tail -1
 check "linked repo reports linked=%.y" "%.y" "$(dojo_value ".^((unit [tip=@ux linked=?]) %gx /=urgit=/ci-ref/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | tr -d '\n' | grep -oE '%\.[yn]' | tail -1)"
-out=$(dojo_value ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]")
-check_contains "CI protection refused for the linked repo" "CI protection is not available for desk-linked repositories in this release" "$out"
-check "linked repo not protected" '%.n' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
-echo "-- bind the CI-protected plain repo AFTER protection, then push"
-"$dojo" ":urgit &git-action [%bind-desk '$REPO' %scratch 'refs/heads/master']" 60 3 | tail -1
-sync_clone; set_workflows fixture-pass.yml
-push_commit "nineteen: a candidate on a repo bound after protection"
-check "candidate passes" '%passed' "$(wait_cand "$CID" '%passed' 300)"
-sleep 4
-check "landing refused with the same reason" "'CI protection is not available for desk-linked repositories in this release'" "$(cand_reason "$CID")"
-check "master unchanged" "$(git -C "$CLONE" rev-parse HEAD~1)" "$(repo_master)"
-"$dojo" ":urgit &git-action [%unbind-desk '$REPO']" 60 3 | tail -1
+"$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]" 60 3 | tail -1 >/dev/null
+check "CI protection accepted for the linked repo (P3 D9: it lands through the desk)" '%.y' "$(dojo_value ".^(? %gx /=urgit-ci=/ci-protected/(scot %t '$LINKED')/(scot %t 'refs/heads/master')/noun)" | one '^%\.[yn]$')"
+# the repository is made desk-shaped by a plain push while unprotected (a
+# linked repository must be: sys.kelvin, the marks, the workflow — R14 of
+# the P3 table has the derivation; a README.md-only repository is refused
+# by Clay); that push lands directly through the receive tail's clay path.
+# then, protected again, a push is staged, run, and landed through the desk
+"$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.n]" 60 3 | tail -1 >/dev/null
+mkdir -p "$L/.github/workflows" "$L/mar"; cp "$ROOT/desk/tests/ci/fixture-pass.yml" "$L/.github/workflows/"
+for m in txt yml mime hoon kelvin noun; do cp "$ROOT/desk/mar/$m.hoon" "$L/mar/"; done; cp "$ROOT/desk/sys.kelvin" "$L/sys.kelvin"
+( cd "$L" && git rm -q README.md && echo seed > notes.txt && git add -A && git commit -qm "nineteen: desk-shaped" && git push -q origin master 2>&1 | tail -1 )
+SEED_OID=$(git -C "$L" rev-parse HEAD)
+check "the desk-shaped seed landed directly (unprotected, through the desk)" "$SEED_OID" "$(for _ in $(seq 1 20); do [ "$(REPO=$LINKED repo_master)" = "$SEED_OID" ] && break; sleep 2; done; REPO=$LINKED repo_master)"
+"$dojo" ":urgit-ci &ci-action [%set-ci-protected '$LINKED' 'refs/heads/master' %.y]" 60 3 | tail -1 >/dev/null
+( cd "$L" && printf 'nineteen %s\n' "$(date -Is)" >> notes.txt && git add -A && git commit -qm "nineteen: a candidate on the linked repo" )
+L_OID=$(git -C "$L" rev-parse HEAD)
+L_PUSH=$(git -C "$L" push origin master 2>&1 | tail -3); L_CID=$(printf '%s' "$L_PUSH" | grep -o 'staged as ci candidate 0v[0-9a-v.]*' | sed 's/.*candidate //')
+check "the push to the linked repo was staged" "yes" "$([ -n "$L_CID" ] && echo yes || echo no)"
+check "candidate passes" '%passed' "$(wait_cand "$L_CID" '%passed|%failed|%unknown' 300)"
+for _ in $(seq 1 30); do [ "$(cand_reason "$L_CID")" = "'landed'" ] && break; sleep 2; done
+check "landed through the desk (P3 D9): verdict-reason" "'landed'" "$(cand_reason "$L_CID")"
+check "master = the candidate" "$L_OID" "$(REPO=$LINKED repo_master)"
+check "the desk holds the candidate's file" "1" "$(dojo_value "(of-wain:format .^(wain %cx /(scot %p our)/scratch/(scot %da now)/notes/txt))" | grep -c 'nineteen ')"
+"$dojo" ":urgit &git-action [%unbind-desk '$LINKED']" 60 3 | tail -1
 end_row P19
 fi
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, parseEnvs, renderLog } from './ci.js'
+import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, renderLog } from './ci.js'
 
 const jobA = { attempt: '0v1.a', kind: 'job', job: 'a', status: 'passed', started: 100, finished: 130, log: { key: 'k', size: 1, sha256: 'x' } }
 const jobB = { attempt: '0v2.b', kind: 'job', job: 'b', status: 'running', started: 130, finished: null, log: null }
@@ -17,14 +17,25 @@ test('a candidate row carries the ref, short head, actor, status, age and one pi
   assert.deepEqual(attemptPips([plan]), [])
 })
 
-test('attempt rows name the plan step, show the log link only when the ship recorded a log, and compute durations', () => {
-  const rows = attemptRows([jobB, jobA, plan])
+test('attempt rows name the plan step, show the log link only when the ship recorded a log, compute durations, and carry runs-on from the plan', () => {
+  const rows = attemptRows([jobB, jobA, plan], [{ id: 'a', workflow: 'w.yml', runsOn: ['self-hosted', 'big-mem'] }])
   assert.deepEqual(rows.map((r) => r.job), ['b', 'a', 'plan'])
   assert.deepEqual(rows.map((r) => r.hasLog), [false, true, false])
   assert.equal(rows[1].elapsed, '30s')
   assert.equal(rows[0].elapsed, '')
+  assert.deepEqual(attemptRows([{ ...jobA, workflow: 'w.yml' }], [{ id: 'a', workflow: 'w.yml', runsOn: ['self-hosted', 'big-mem'] }])[0].runsOn, ['self-hosted', 'big-mem'])
+  assert.deepEqual(rows[2].runsOn, [])
   assert.equal(duration(10, 3710), '1h 1m')
   assert.equal(duration(10, 5), '')
+})
+
+test('the first-run message shows only for a CI-required repository with no enrolled, unrevoked runner; the approve hint names the policy', () => {
+  assert.equal(noRunnerMessage([], []), '')
+  assert.match(noRunnerMessage(['refs/heads/master'], []), /No runner is enrolled/)
+  assert.match(noRunnerMessage(['refs/heads/master'], [{ enrolled: 1, revoked: 5 }]), /No runner is enrolled/)
+  assert.equal(noRunnerMessage(['refs/heads/master'], [{ enrolled: 1, revoked: null }]), '')
+  assert.match(approveHint('restricted'), /^Policy: run restricted checks/)
+  assert.match(approveHint('approval'), /^Policy: wait for approval/)
 })
 
 test('the log renders act jsonl as [job] step: msg lines grouped by group/endgroup, and keeps non-event lines as text', () => {
@@ -67,7 +78,7 @@ test('the credential form refuses a missing name, a bad name, a short value and 
   assert.match(credentialFormError({ name: '', value: 'hunter2hunter2', scope: 'job', envs: '' }), /name/)
   assert.match(credentialFormError({ name: 'my token', value: 'hunter2hunter2', scope: 'job', envs: '' }), /letters/)
   assert.match(credentialFormError({ name: 'TOKEN', value: 'short', scope: 'job', envs: '' }), /8 characters/)
-  assert.match(credentialFormError({ name: 'TOKEN', value: 'line one\nline two', scope: 'job', envs: '' }), /single line/)
+  assert.equal(credentialFormError({ name: 'TOKEN', value: 'line one\nline two', scope: 'job', envs: '' }), '')
   assert.match(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: ' ' }), /environment/)
   assert.equal(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: 'staging, production' }), '')
   assert.deepEqual(parseEnvs('staging, production\nqa'), ['staging', 'production', 'qa'])

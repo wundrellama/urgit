@@ -9,12 +9,10 @@ source "$TMP/oids.env"
 api="$HERE/api.sh"
 dojo="$HERE/dojo.sh"
 echo "== mint"
-# the generator's ~& prints `[%ci-enroll-token 0v…]` before the echoed
-# command, pretty-printed over three lines when the pane is narrow: read
-# 30 lines and take the last token after a `ci-enroll-token` line
-"$dojo" ':urgit-ci|mint-enroll-token' 60 30 | tee "$TMP/h6-mint.txt" | tail -4
-TOKEN=$(awk '/ci-enroll-token/ { f = 1 } f && match($0, /0v[0-9a-v.]+/) { t = substr($0, RSTART, RLENGTH); f = 0 } END { printf "%s", t }' "$TMP/h6-mint.txt")
-[ -n "$TOKEN" ] || { echo "h6.sh: no token in the dojo's output" >&2; exit 1; }
+# P3 D1: the ship mints the token through the session-authorized
+# POST ci/runners/mint (ci-p1/mint.sh); the dojo generator is gone
+TOKEN=$("$ROOT/.scratch/ci-p1/mint.sh") || { echo "h6.sh: mint failed" >&2; exit 1; }
+cut -c1-120 "$TMP/mint-last.json" | tee "$TMP/h6-mint.txt"; echo
 echo "TOKEN=$TOKEN"
 echo "== enroll (no session, token only)"
 ENROLL=$("$api" POST /ci/daemon/enroll "{\"token\":\"$TOKEN\"}" -)

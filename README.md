@@ -104,3 +104,8 @@ After updating and reviving the desk, run the relevant Hoon protocol vectors fro
 +urgit!git-pack-vector
 +urgit!git-clay-vector
 ```
+
+## CI
+
+The Go tests, the frontend tests and every Hoon vector generator run as three jobs of [`.github/workflows/urgit.yml`](.github/workflows/urgit.yml) on every push; the Hoon job boots a fresh fake ship inside the job with the composite actions under [`.github/actions`](.github/actions).
+It runs on urgit-ci itself — the repository's own CI, on the ship that hosts it — as well as on any runner that takes a GitHub Actions workflow.
