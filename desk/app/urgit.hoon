@@ -3950,7 +3950,18 @@
     `this(repositories (~(put by repositories) name.act repo))
   ::
       %delete
-    `this(repositories (~(del by repositories) name.act))
+    ::  %urgit-ci keeps its own records under the name — candidates,
+    ::  attempts, the protection, credentials, daemon bindings — and a
+    ::  passed candidate of a deleted repository would let the same oid
+    ::  land unstaged in one re-created under the name (R18); told, it
+    ::  drops them
+    ::
+    :_  this(repositories (~(del by repositories) name.act))
+    :~  :*  %pass  /ci/deleted/(scot %t name.act)
+            %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+            !>(`action:ci`[%repository-deleted name.act])
+        ==
+    ==
   ::
       %put-object
     =/  found=(unit repository:git)  (~(get by repositories) repository.act)

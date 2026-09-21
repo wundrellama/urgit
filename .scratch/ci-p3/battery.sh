@@ -13,6 +13,9 @@ set +e
 # scrub with the daemon bypassed, T2) ride group A: their mutants are
 # %urgit-ci's and touch no other row's path, and they run after R5 has
 # re-enrolled daemon a
+# R18 (the dogfood row, the close-out's T8: this tree pushed to the ship's
+# own urgit repository, three jobs) is a step after R17; its RED is inside
+# the row (a broken vector fixture pushed first), not a mutant group
 GROUP_A="R4 R5 R3 R6a R15b"
 GROUP_B="R4b R5b"
 # R11b's mutant is the pre-rider-3 daemon, which exits 3 at any start
@@ -25,7 +28,11 @@ GROUP_D="R11b"
 # R17's (the peer push's guard back to the never-true form, rider 5) are
 # %urgit's; a group of their own, and the phase waits for %urgit's reload
 GROUP_E="R16 R14 R17"
-steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r2-r6 r2" "r2-r6 r6" "r2-r6 r6a" "r9-r11 r11a" "r9-r11 r11b" "r7-r8 r7" "r7-r8 r8" "r9-r11 r9" "r9-r11 r10" "r9-r11 r11" "r14-r16 r14" "r14-r16 r15" "r14-r16 r15b" "r14-r16 r16" r17 r12 "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B" "r-negatives red $GROUP_C" "r-negatives red $GROUP_D" "r-negatives green $GROUP_C $GROUP_D" "r-negatives red $GROUP_E" "r-negatives green $GROUP_E" foreground)
+# R18's mutant (%repository-deleted drops no candidate) is %urgit-ci's and
+# its row is two CI rounds of the three-job workflow plus the deletion
+# case, so it is a group of its own, last
+GROUP_F="R18"
+steps=(p3-setup "r1-r5 r1" "r1-r5 r3" "r1-r5 r4" "r1-r5 r5" "r2-r6 r2" "r2-r6 r6" "r2-r6 r6a" "r9-r11 r11a" "r9-r11 r11b" "r7-r8 r7" "r7-r8 r8" "r9-r11 r9" "r9-r11 r10" "r9-r11 r11" "r14-r16 r14" "r14-r16 r15" "r14-r16 r15b" "r14-r16 r16" r17 r18 r12 "r-negatives red $GROUP_A" "r-negatives green $GROUP_A" "r-negatives red $GROUP_B" "r-negatives green $GROUP_B" "r-negatives red $GROUP_C" "r-negatives red $GROUP_D" "r-negatives green $GROUP_C $GROUP_D" "r-negatives red $GROUP_E" "r-negatives green $GROUP_E" "r-negatives red $GROUP_F" "r-negatives green $GROUP_F" foreground)
 skipping="${START_AT:-}"
 for step in "${steps[@]}"; do
   if [ -n "$skipping" ]; then [ "$step" = "$skipping" ] && skipping="" || continue; fi

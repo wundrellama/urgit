@@ -30,6 +30,11 @@
 #                            masked, and a raw line of it posted straight to
 #                            the event route persists in the attempt's
 #                            outputs (astra's R15SHIP mutant)
+#   R18  app/urgit-ci.hoon   %repository-deleted drops no candidate: a
+#                            passed candidate outlives its repository, and
+#                            the same oid pushed into a repository re-created
+#                            under the name answers the eligibility peek %.y
+#                            and lands unstaged (the finding R18 made, T8b)
 #   R9   app/urgit-ci.hoon   the same de-listing dropped, under the ghost row:
 #                            the wrong-key daemon is offered work again after
 #                            its refusal (its second refusal ends the row)
@@ -96,6 +101,9 @@ edits = [
  ("R15b", "desk/app/urgit-ci.hoon",
   "  `(scrub-forms:ci-event value.c)\n",
   "  `~[value.c]\n"),
+ ("R18", "desk/app/urgit-ci.hoon",
+  "    =/  gone=(set candidate-id:ci)  (repository-candidates repository.act)\n",
+  "    =/  gone=(set candidate-id:ci)  ~\n"),
  ("R10", "desk/app/urgit-ci.hoon",
   "  =/  again=?\n    ?~  found  %.n\n    ?:  silent-before  %.n\n",
   "  =/  again=?\n    ?~  found  %.n\n    ?:  %.y  %.n\n"),
@@ -149,6 +157,7 @@ PY
       R5b) echo "the ship de-listed a: the panel reads refused: FAIL (observed: healthy" ;;
       R6a) echo "R6a RED: foreign ship watch accepted" ;;
       R15b) echo "R15b RED: the ship persisted a raw credential line" ;;
+      R18) echo "R18 RED: a push after the repository's deletion landed unstaged" ;;
       R9)  echo "R9 RED: the refused daemon was offered work again" ;;
       R10) echo "the attempt is re-offered after the timeout + 2 min, not closed: FAIL (observed: %infrastructure-error" ;;
       R11b) echo "R11b RED: the restarted daemon read the other daemon's attempt as enrollment lost" ;;

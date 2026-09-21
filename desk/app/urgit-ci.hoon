@@ -984,7 +984,62 @@
     =.  candidates
       (~(put by candidates) candidate.act u.found(verdict-reason `reason.act, updated now.bowl))
     (emit ~)
+  ::
+      ::  %urgit deleted the repository: every record kept under the
+      ::  name goes with it — its candidates, their attempts and
+      ::  assignments, its CI protection, its policy, its credentials, and
+      ::  the name in every daemon's binding — so a repository re-created
+      ::  under the name has no CI history.  R18 found the gap: a passed
+      ::  candidate of the deleted repository answered the eligibility
+      ::  peek %.y and the same oid landed unstaged in the new one.  a
+      ::  daemon bound only to the deleted repository is left bound to
+      ::  nothing, not returned to the pool: the operator drew that fence
+      ::  and widens it in the panel.
+      ::
+      %repository-deleted
+    =/  gone=(set candidate-id:ci)  (repository-candidates repository.act)
+    =/  gone-attempts=(set attempt-id:ci)
+      %-  silt
+      %+  murn  ~(tap by attempts)
+      |=([id=attempt-id:ci a=attempt:ci] ?:((~(has in gone) candidate.a) `id ~))
+    =.  candidates
+      %-  malt
+      %+  skip  ~(tap by candidates)
+      |=([id=candidate-id:ci *] (~(has in gone) id))
+    =.  attempts
+      %-  malt
+      %+  skip  ~(tap by attempts)
+      |=([id=attempt-id:ci *] (~(has in gone-attempts) id))
+    =.  assignments
+      %-  malt
+      %+  skip  ~(tap by assignments)
+      |=([* a=assignment:ci] (~(has in gone) candidate.a))
+    =.  ci-protected
+      %-  silt
+      %+  skip  ~(tap in ci-protected)
+      |=([repo=@t ref=@t] =(repository.act repo))
+    =.  policies  (~(del by policies) repository.act)
+    =.  credentials
+      %-  malt
+      %+  skip  ~(tap by credentials)
+      |=([[repo=@t name=@t] *] =(repository.act repo))
+    =.  daemons
+      %-  ~(run by daemons)
+      |=  d=daemon:ci
+      =.  running.d  (~(dif in running.d) gone-attempts)
+      ?~  repos.d  d
+      d(repos `(~(del in u.repos.d) repository.act))
+    (emit ~)
   ==
+::
+::  the candidates a repository has, by name (every status)
+::
+++  repository-candidates
+  |=  repo=@t
+  ^-  (set candidate-id:ci)
+  %-  silt
+  %+  murn  ~(tap by candidates)
+  |=([id=candidate-id:ci c=candidate:ci] ?:(=(repo repo.c) `id ~))
 ::
 ::  a new attempt and its assignment, undelivered, and the deadline timer
 ::  the caller emits.  the daemon's running set grows here and shrinks in

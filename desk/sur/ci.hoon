@@ -254,7 +254,9 @@
   ==
 ::
 ::  pokes on the %ci-action mark.  %urgit sends %stage-candidate,
-::  %candidate-ready, %candidate-conflict, %landed and %land-refused;
+::  %candidate-ready, %candidate-conflict, %landed, %land-refused and
+::  %repository-deleted (its own state under the name goes with the
+::  repository, so a repository re-created under it has no CI history);
 ::  %urgit-ci sends %materialize-candidate and %land-candidate; the
 ::  operator sends the rest, in the dojo or as JSON through the
 ::  session-authorized POST ci/action.  %assign names a kind and, for a
@@ -302,5 +304,6 @@
       ==
       [%landed candidate=candidate-id]
       [%land-refused candidate=candidate-id reason=@t]
+      [%repository-deleted repository=@t]
   ==
 --
