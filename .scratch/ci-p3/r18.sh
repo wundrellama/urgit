@@ -70,7 +70,7 @@ PUSH=$(git push origin "$X:refs/heads/master" 2>&1 | tail -3); CID2=$(printf '%s
 echo "-- the same oid $X pushed into the re-created repository: $(printf '%s' "$PUSH" | tail -1 | cut -c1-120)"
 check "the push of the SAME oid was STAGED as a fresh candidate, not landed" "yes" "$([ -n "$CID2" ] && echo yes || echo no)"
 [ -z "$CID2" ] && echo "R18 RED: a push after the repository's deletion landed unstaged — the deleted repository's passed candidate answered the eligibility peek"
-check "the candidate is a fresh record, created after the deletion (its id is the same sham of repo, ref, head and base)" '%.y' "$(dojo_value "(gth created:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CID2/noun)) $T_DEL)" | one '^%\\.[yn]$')"
+check "the candidate is a fresh record, created after the deletion (its id is the same sham of repo, ref, head and base)" '%.y' "$(dojo_value "(gth created:(need .^((unit candidate:ci) %gx /=urgit-ci=/candidate/$CID2/noun)) $T_DEL)" | one '^%\.[yn]$')"
 check "master unmoved at the push (= the seed)" "$SEED_D" "$(REPO=$D repo_master)"
 check "the fresh candidate passes" '%passed' "$(wait_cand "$CID2" '%passed|%failed|%unknown' 300)"
 check "and lands: master = $X" "$X" "$(for _ in $(seq 1 30); do [ "$(REPO=$D repo_master)" = "$X" ] && break; sleep 2; done; REPO=$D repo_master)"
