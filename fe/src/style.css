@@ -724,7 +724,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-first-run { border: 1px solid var(--border, #e2e2e2); border-radius: 6px; margin-bottom: 0.75rem; }
 .ci-guide { width: min(900px, 100%); }
 .ci-guide .modal-body { max-height: 75vh; overflow: auto; }
-.ci-runs-on { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ci-runs-on { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
 .ci-storage { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.3rem; }
 .ci-storage code { font-size: 0.8rem; }
 .ci-toggle-warning { color: #b8860b; }
