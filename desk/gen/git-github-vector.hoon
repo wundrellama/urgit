@@ -6,7 +6,7 @@
 |=  *
 :-  %noun
 =/  blob=object:git  [%blob (text:git-codec 'github push\0a')]
-=/  oid=oid:git  (object-oid:git-codec kind.blob data.blob)
+=/  =oid:git  (object-oid:git-codec kind.blob data.blob)
 =/  ref=@t  'refs/heads/main'
 =/  request=octs  (receive-request:git-github ~ oid ref ~[blob])
 =/  parsed=(unit receive-request:git)  (parse-receive-request:git-protocol request)

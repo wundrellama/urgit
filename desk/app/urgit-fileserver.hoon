@@ -17,7 +17,7 @@
 ::
 ::  +web-root: url under which your files will be served
 ::
-++  web-root   ^-  (list @t)  web-root:config
+++  web-root  ^-  (list @t)  web-root:config
 ::
 ::  optional config parameters, with default:
 ::
@@ -106,50 +106,50 @@
   %-  zing
   ^-  (list (list card))
   :~  ::  if the file root changed, set the new root up for tombstoning.
-      ::
-      ?:  =(foot.old file-root)  ~
-      [(set-norm [our q.byk]:bowl file-root |)]~
     ::
-      ::  always await next change on our file root
-      ::
-      :-  (read-next [our q.byk now]:bowl file-root)
-      ::  always trigger clay tombstoning, for both old and new file roots.
-      ::
-      :-  [%pass /clay/tomb %arvo %c %tomb %pick ~]
-      ::  always clear old cache entries.
-      ::
-      (turn ~(tap in cash.old) (curr store ~))
+    ?:  =(foot.old file-root)  ~
+    [(set-norm [our q.byk]:bowl file-root |)]~
+  ::
+    ::  always await next change on our file root
     ::
-      ::  Clear known shell routes even when Eyre's cache survived without a
-      ::  matching entry in our persisted cache index.
-      ::
-      :~  (store '/apps/urgit' ~)
-          (store '/apps/urgit/' ~)
-          (store '/urgit' ~)
-          (store '/urgit/' ~)
+    :-  (read-next [our q.byk now]:bowl file-root)
+    ::  always trigger clay tombstoning, for both old and new file roots.
+    ::
+    :-  [%pass /clay/tomb %arvo %c %tomb %pick ~]
+    ::  always clear old cache entries.
+    ::
+    (turn ~(tap in cash.old) (curr store ~))
+  ::
+    ::  Clear known shell routes even when Eyre's cache survived without a
+    ::  matching entry in our persisted cache index.
+    ::
+    :~  (store '/apps/urgit' ~)
+        (store '/apps/urgit/' ~)
+        (store '/urgit' ~)
+        (store '/urgit/' ~)
+    ==
+  ::
+    ::  if the file root changed, remove tombstoning from the old root.
+    ::
+    ?:  =(foot.old file-root)  ~
+    [(set-norm [our q.byk]:bowl foot.old &)]~
+  ::
+    ::  Always rebind the web root on every on-load, like the api agent
+    ::  does for /apps/urgit/api. Survives vere restarts and agent
+    ::  revives even when web-root is unchanged.
+    ::
+    ^-  (list card)
+    =/  root-cards=(list card)
+      ?:  =(woot.old web-root)
+      ::  same root: unconditional rebind
+        [[%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl] ~]
+      ::  web-root changed: disconnect the old, bind the new
+      ::NOTE  re-bind first to avoid duct shenanigans.
+      :~  [%pass /eyre/connect %arvo %e %connect [~ woot.old] dap.bowl]
+          [%pass /eyre/connect %arvo %e %disconnect [~ woot.old]]
+          [%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl]
       ==
-    ::
-      ::  if the file root changed, remove tombstoning from the old root.
-      ::
-      ?:  =(foot.old file-root)  ~
-      [(set-norm [our q.byk]:bowl foot.old &)]~
-    ::
-      ::  Always rebind the web root on every on-load, like the api agent
-      ::  does for /apps/urgit/api. Survives vere restarts and agent
-      ::  revives even when web-root is unchanged.
-      ::
-      ^-  (list card)
-      =/  root-cards=(list card)
-        ?:  =(woot.old web-root)
-        ::  same root: unconditional rebind
-          [[%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl] ~]
-        ::  web-root changed: disconnect the old, bind the new
-        ::NOTE  re-bind first to avoid duct shenanigans.
-        :~  [%pass /eyre/connect %arvo %e %connect [~ woot.old] dap.bowl]
-            [%pass /eyre/connect %arvo %e %disconnect [~ woot.old]]
-            [%pass /eyre/connect %arvo %e %connect [~ web-root] dap.bowl]
-        ==
-      (snoc root-cards [%pass /eyre/connect %arvo %e %connect [~ /urgit] dap.bowl])
+    (snoc root-cards [%pass /eyre/connect %arvo %e %connect [~ /urgit] dap.bowl])
   ==
 ::
 ++  on-poke
@@ -158,107 +158,124 @@
   ~|  mark=mark
   ?>  ?=(%handle-http-request mark)
   =+  !<([rid=@ta inbound-request:eyre] vase)
-  =;  [sav=? pay=simple-payload:http]
-    =/  serve=(list card)
-      =/  =path  /http-response/[rid]
-      :~  [%give %fact ~[path] [%http-response-header !>(response-header.pay)]]
-          [%give %fact ~[path] [%http-response-data !>(data.pay)]]
-          [%give %kick ~[path] ~]
-      ==
-    ?.  sav  [serve this]
-    :_  this(cash (~(put in cash) url.request))
-    %+  snoc  serve
-    (store url.request ~ auth=| %payload pay)
-  ::  allow PWA files without auth (browser fetches these without cookies)
+  |^
+    =;  [sav=? pay=simple-payload:http]
+      =/  serve=(list card)
+        =/  =path  /http-response/[rid]
+        :~  [%give %fact ~[path] [%http-response-header !>(response-header.pay)]]
+            [%give %fact ~[path] [%http-response-data !>(data.pay)]]
+            [%give %kick ~[path] ~]
+        ==
+      ?.  sav  [serve this]
+      :_  this(cash (~(put in cash) url.request))
+      %+  snoc  serve
+      (store url.request ~ auth=| %payload pay)
+    resolve-request
   ::
-  =/  pwa-paths=(set @t)
-    %-  ~(gas in *(set @t))
-    :~  '/apps/urgit/manifest.json'
-        '/apps/urgit/sw.js'
-        '/apps/urgit/git.svg'
-        '/apps/urgit/shared.html'
-        '/apps/urgit/app.js'
-        '/apps/urgit/app.css'
-    ==
-  ?.  ?|  authenticated
-          (~(has in pwa-paths) url.request)
-          (starts-with '/apps/urgit/public/' url.request)
-          =('/urgit' url.request)
-          =('/urgit/' url.request)
+  ++  resolve-request
+    ^-  [sav=? pay=simple-payload:http]
+    ::  allow PWA files without auth (browser fetches these without cookies)
+    ::
+    =/  pwa-paths=(set @t)
+      %-  ~(gas in *(set @t))
+      :~  '/apps/urgit/manifest.json'
+          '/apps/urgit/sw.js'
+          '/apps/urgit/git.svg'
+          '/apps/urgit/shared.html'
+          '/apps/urgit/app.js'
+          '/apps/urgit/app.css'
       ==
-    [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
-  ?.  ?=(%'GET' method.request)
-    [| [405 ~] `(as-octs:mimes:html 'read-only resource')]
-  =+  ^-  [[ext=(unit @ta) site=(list @t)] args=(list [key=@t value=@t])]
-    =-  (fall - [[~ ~] ~])
-    (rush url.request ;~(plug apat:de-purl:html yque:de-purl:html))
-  ::  Repository names may contain periods.  Public repository routes are
-  ::  SPA shells, not static assets with the repository suffix as an
-  ::  extension.
-  ::
-  =.  ext
-    ?:  (starts-with '/apps/urgit/public/' url.request)
+    ?.  ?|  authenticated
+            (~(has in pwa-paths) url.request)
+            (starts-with '/apps/urgit/public/' url.request)
+            =('/urgit' url.request)
+            =('/urgit/' url.request)
+        ==
+      [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
+    ?.  ?=(%'GET' method.request)
+      [| [405 ~] `(as-octs:mimes:html 'read-only resource')]
+    =+  ^-  [[ext=(unit @ta) site=(list @t)] args=(list [key=@t value=@t])]
+        =-  (fall - [[~ ~] ~])
+        (rush url.request ;~(plug apat:de-purl:html yque:de-purl:html))
+    ::  Repository names may contain periods.  Public repository routes are
+    ::  SPA shells, not static assets with the repository suffix as an
+    ::  extension.
+    ::
+    =.  ext
+      ?:  (starts-with '/apps/urgit/public/' url.request)
+        ~
+      ext
+    =/  request-root=(unit path)
+      ?:  =(woot (scag (lent woot) site))  `woot
+      ?:  =(/urgit (scag 1 site))  `/urgit
       ~
-    ext
-  =/  request-root=(unit path)
-    ?:  =(woot (scag (lent woot) site))  `woot
-    ?:  =(/urgit (scag 1 site))  `/urgit
-    ~
-  ?~  request-root
-    [| [500 ~] `(as-octs:mimes:html 'bad route')]
-  ::  Cache versioned asset paths, but always read extensionless SPA shells
-  ::  fresh.  The shell carries the current asset digest, so an Eyre cache
-  ::  entry that survives invalidation can pin browsers to an old bundle.
-  ::
-  :-  ?=(^ ext)
-  ?~  ext
-    ::  serve index.html for extensionless requests (SPA fallback)
-    =/  idx=path
-      :*  (scot %p our.bowl)
-          q.byk.bowl
-          (scot %da now.bowl)
-          (weld foot /index/html)
-      ==
-    ?.  .^(? %cu idx)
-      ~&  [dap.bowl %not-found-extless]
-      [[404 ~] `(as-octs:mimes:html 'not found')]
-    =+  .^(file=^vase %cr idx)
-    =+  ~|  [%no-mime-conversion %html]
-        .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /html/mime)
-    =+  !<(=mime (tube file))
-    :_  `q.mime
-    [200 ['content-type' 'text/html'] ['cache-control' 'no-cache'] ~]
-  =/  =path
-    :*  (scot %p our.bowl)
-        q.byk.bowl
-        (scot %da now.bowl)
-        (weld foot (snoc (slag (lent u.request-root) site) u.ext))
-    ==
-  ?.  .^(? %cu path)
-    ~&  [dap.bowl %not-found path=path]
-    [[404 ~] `(as-octs:mimes:html 'not found')]
-  =+  .^(file=^vase %cr path)
-  ::TODO  this sucks. can we really not do better than crash during request handling?
-  ::      we could hard-code conversions for different file types here, but that sucks too...
-  =+  ~|  [%no-mime-conversion from=u.ext]
-      .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /[u.ext]/mime)
-  =+  !<(=mime (tube file))
-  =/  content-type=@t  (rsh 3^1 (spat p.mime))
-  =/  cache-val=@t
-    ?+  u.ext  'max-age=3600'
-      %css  'max-age=3600'
-      %js   ?:  =('sw' (rear (slag (lent u.request-root) site)))
-              'no-cache'
-            'max-age=3600'
-      %svg  'max-age=86400'
-      %png  'max-age=86400'
-      %jpg  'max-age=86400'
-      %ico  'max-age=86400'
-      %html  'no-cache'
-      %json  'no-cache'
-    ==
-  :_  `q.mime
-  [200 ['content-type' content-type] ['cache-control' cache-val] ~]
+    ?~  request-root
+      [| [500 ~] `(as-octs:mimes:html 'bad route')]
+    ::  Cache versioned asset paths, but always read extensionless SPA shells
+    ::  fresh.  The shell carries the current asset digest, so an Eyre cache
+    ::  entry that survives invalidation can pin browsers to an old bundle.
+    ::
+    :-  ?=(^ ext)
+    |^
+      ?~  ext  serve-shell
+      serve-asset
+    ::
+    ++  serve-shell
+      ^-  simple-payload:http
+      ::  serve index.html for extensionless requests (SPA fallback)
+      =/  idx=path
+        :*  (scot %p our.bowl)
+            q.byk.bowl
+            (scot %da now.bowl)
+            (weld foot /index/html)
+        ==
+      ?.  .^(? %cu idx)
+        ~&  [dap.bowl %not-found-extless]
+        [[404 ~] `(as-octs:mimes:html 'not found')]
+      =+  .^(file=^vase %cr idx)
+      =+  ~|  [%no-mime-conversion %html]
+          .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /html/mime)
+      =+  !<(=mime (tube file))
+      :_  `q.mime
+      [200 ['content-type' 'text/html'] ['cache-control' 'no-cache'] ~]
+    ::
+    ++  serve-asset
+      ^-  simple-payload:http
+      ?>  ?=(^ ext)
+      =/  =path
+        :*  (scot %p our.bowl)
+            q.byk.bowl
+            (scot %da now.bowl)
+            (weld foot (snoc (slag (lent u.request-root) site) u.ext))
+        ==
+      ?.  .^(? %cu path)
+        ~&  [dap.bowl %not-found path=path]
+        [[404 ~] `(as-octs:mimes:html 'not found')]
+      =+  .^(file=^vase %cr path)
+      ::TODO  this sucks. can we really not do better than crash during request handling?
+      ::      we could hard-code conversions for different file types here, but that sucks too...
+      =+  ~|  [%no-mime-conversion from=u.ext]
+          .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /[u.ext]/mime)
+      =+  !<(=mime (tube file))
+      =/  content-type=@t  (rsh 3^1 (spat p.mime))
+      =/  cache-val=@t
+        ?+  u.ext  'max-age=3600'
+          %css  'max-age=3600'
+            %js
+          ?:  =('sw' (rear (slag (lent u.request-root) site)))
+            'no-cache'
+          'max-age=3600'
+          %svg  'max-age=86400'
+          %png  'max-age=86400'
+          %jpg  'max-age=86400'
+          %ico  'max-age=86400'
+          %html  'no-cache'
+          %json  'no-cache'
+        ==
+      :_  `q.mime
+      [200 ['content-type' content-type] ['cache-control' cache-val] ~]
+    --
+  --
 ::
 ++  on-watch
   |=  =path
@@ -298,7 +315,7 @@
 ::
 ++  on-leave  |=(* [~ this])
 ++  on-agent  |=(* [~ this])
-++  on-peek   |=(* ~)
+++  on-peek  |=(* ~)
 ::
 ++  on-fail
   |=  [=term =tang]

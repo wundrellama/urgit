@@ -7,7 +7,7 @@
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
-    def   ~(. (default-agent this %|) bowl)
+    def  ~(. (default-agent this %|) bowl)
 ::
 ++  on-init  `this
 ++  on-save  !>(~)
@@ -24,10 +24,10 @@
   :~  [%pass /apply %arvo %c [%info desk-name.apply delta.apply]]
   ==
 ::
-++  on-peek   on-peek:def
+++  on-peek  on-peek:def
 ++  on-watch  on-watch:def
 ++  on-leave  on-leave:def
 ++  on-agent  on-agent:def
-++  on-arvo   on-arvo:def
-++  on-fail   on-fail:def
+++  on-arvo  on-arvo:def
+++  on-fail  on-fail:def
 --

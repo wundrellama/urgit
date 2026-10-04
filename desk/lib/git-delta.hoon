@@ -48,10 +48,10 @@
   =/  offset-mask=@ud  (cut 0 [0 4] opcode)
   =/  size-mask=@ud  (cut 0 [4 3] opcode)
   =/  offset-width=@ud
-    ?:  =(offset-mask 0)   0
-    ?:  =(offset-mask 1)   1
-    ?:  =(offset-mask 3)   2
-    ?:  =(offset-mask 7)   3
+    ?:  =(offset-mask 0)  0
+    ?:  =(offset-mask 1)  1
+    ?:  =(offset-mask 3)  2
+    ?:  =(offset-mask 7)  3
     ?:  =(offset-mask 15)  4
     5
   =/  size-width=@ud

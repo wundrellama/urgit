@@ -9,10 +9,26 @@
   (initial-commit:git-tree ~ /readme/txt (text:git-codec 'one\0a') ~zod ~2026.1.1 'one')
 ?>  ?=(^ first)
 =/  second=(unit [commit=oid:git objects=(map oid:git object:git)])
-  (edit-commit:git-tree objects.u.first commit.u.first /readme/txt (text:git-codec 'two\0a') ~zod ~2026.1.2 'two')
+  %:  edit-commit:git-tree
+    objects.u.first
+    commit.u.first
+    /readme/txt
+    (text:git-codec 'two\0a')
+    ~zod
+    ~2026.1.2
+    'two'
+  ==
 ?>  ?=(^ second)
 =/  third=(unit [commit=oid:git objects=(map oid:git object:git)])
-  (edit-commit:git-tree objects.u.second commit.u.second /readme/txt (text:git-codec 'three\0a') ~zod ~2026.1.3 'three')
+  %:  edit-commit:git-tree
+    objects.u.second
+    commit.u.second
+    /readme/txt
+    (text:git-codec 'three\0a')
+    ~zod
+    ~2026.1.3
+    'three'
+  ==
 ?>  ?=(^ third)
 =/  limited=(unit shallow-result:git-graph)
   (reachable-depth:git-graph objects.u.third (silt ~[commit.u.third]) 2)
@@ -21,8 +37,10 @@
   %-  join-all:git-codec
   :~  (en-pkt:git-codec [%data (text:git-codec 'command=fetch\0a')])
       (en-pkt:git-codec [%delim ~])
-      (en-pkt:git-codec [%data (text:git-codec (rap 3 ~['want ' (oid-text:git-codec commit.u.third) ' shallow\0a']))])
-      (en-pkt:git-codec [%data (text:git-codec (rap 3 ~['shallow ' (oid-text:git-codec commit.u.second) '\0a']))])
+      %-  en-pkt:git-codec
+      [%data (text:git-codec (rap 3 ~['want ' (oid-text:git-codec commit.u.third) ' shallow\0a']))]
+      %-  en-pkt:git-codec
+      [%data (text:git-codec (rap 3 ~['shallow ' (oid-text:git-codec commit.u.second) '\0a']))]
       (en-pkt:git-codec [%data (text:git-codec 'deepen 2\0a')])
       (en-pkt:git-codec [%data (text:git-codec 'deepen-relative\0a')])
       (en-pkt:git-codec [%data (text:git-codec 'filter blob:limit=12\0a')])

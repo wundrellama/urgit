@@ -15,7 +15,7 @@
     |=  =weft
     (rap 3 '[%' (scot %tas lal.weft) ' ' (scot %ud num.weft) ']\0a' ~)
   ::
-  ++  txt   (to-wain:format hoon)
+  ++  txt  (to-wain:format hoon)
   --
 ++  grab
   |%

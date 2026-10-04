@@ -17,10 +17,10 @@
   |=  kind=object-kind:git
   ^-  @ud
   ?-  kind
-      %commit  1
-      %tree    2
-      %blob    3
-      %tag     4
+    %commit  1
+    %tree  2
+    %blob  3
+    %tag  4
   ==
 ::
 ++  object-header

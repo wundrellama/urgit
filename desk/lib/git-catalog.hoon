@@ -47,11 +47,11 @@
   |=  =status
   ^-  @t
   ?-  status
-    %answered     'answered'
-    %no-urgit     'no-urgit'
+    %answered  'answered'
+    %no-urgit  'no-urgit'
     %unreachable  'unreachable'
-    %pending      'pending'
-    %waiting      'waiting'
+    %pending  'pending'
+    %waiting  'waiting'
   ==
 ::  what a fan-out does for one member: reuse the discovery already asking
 ::  it on this group's behalf, hold if a request to it is still unacked
@@ -154,7 +154,7 @@
   |=  packet=packet:git-peer
   ^-  (unit catalog:git-peer)
   ?+  -.packet  ~
-    %catalog      `[request.catalog.packet (turn repositories.catalog.packet from-legacy)]
+    %catalog  `[request.catalog.packet (turn repositories.catalog.packet from-legacy)]
     %catalog-via  `catalog.packet
   ==
 --

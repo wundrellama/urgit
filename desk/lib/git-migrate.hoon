@@ -1,6 +1,7 @@
 ::  Pure persisted-repository migrations.
 ::
 /-  git
+/+  *git-format
 |%
 ++  repository-1-to-2
   |=  repo=repository-1:git
@@ -82,4 +83,111 @@
       notification-events.repo
       ~
   ==
+::
+++  settle-webhook-repository
+  |=  repo=repository:git
+  ^-  repository:git
+  =/  deliveries=(list webhook-delivery:git)
+    %+  turn  webhook-deliveries.repo
+    |=  delivery=webhook-delivery:git
+    ?:  =(%pending status.delivery)
+      delivery(status %failure, status-code 0, message 'delivery interrupted by agent restart')
+    delivery
+  %=  repo
+    webhook-deliveries  deliveries
+    upstream-updates  (dedupe-upstream-updates upstream-updates.repo)
+  ==
+::
+++  migrate-repository-0
+  |=  repo=repository-0:git
+  ^-  repository-1:git
+  :*  owner.repo
+      public-read.repo
+      description.repo
+      head.repo
+      refs.repo
+      protected-refs.repo
+      objects.repo
+      writers.repo
+      write-token-hash.repo
+      lfs-objects.repo
+      lfs-uploads.repo
+      lfs-locks.repo
+      binding.repo
+      peer-origin.repo
+      github-origin.repo
+      github-issues.repo
+      github-pulls.repo
+      native-pulls.repo
+      native-issues.repo
+      releases.repo
+      webhooks.repo
+      incoming-hook.repo
+      webhook-deliveries.repo
+      upstream-updates.repo
+      default-notification-events
+  ==
+::
+++  migrate-state-0
+  |=  stored=state-0:git
+  ^-  state-1:git
+  =/  remaining=(list [@t repository-0:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository-1:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      (~(put by migrated) -.i.remaining (migrate-repository-0 +.i.remaining))
+    $(remaining t.remaining)
+  [%1 migrated peers.stored github-token.stored]
+::
+++  migrate-state-1
+  |=  stored=state-1:git
+  ^-  state-2:git
+  =/  remaining=(list [@t repository-1:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository-3:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      %+  ~(put by migrated)  -.i.remaining
+      (repository-1-to-2 +.i.remaining)
+    $(remaining t.remaining)
+  [%2 migrated peers.stored github-token.stored]
+::
+::  a stored %2 predates the persistent fork queue; it starts empty
+::
+++  migrate-state-2
+  |=  stored=state-2:git
+  ^-  state-3:git
+  [%3 repositories.stored peers.stored github-token.stored ~]
+::
+::  a stored %3 predates group policies; every repository starts without one
+::
+++  migrate-state-3
+  |=  stored=state-3:git
+  ^-  state-4:git
+  =/  remaining=(list [@t repository-3:git])  ~(tap by repositories.stored)
+  =/  migrated=(map @t repository:git)  ~
+  =.  migrated
+    |-
+    ?~  remaining  migrated
+    =.  migrated
+      %+  ~(put by migrated)  -.i.remaining
+      (repository-3-to-4 +.i.remaining)
+    $(remaining t.remaining)
+  [%4 migrated peers.stored github-token.stored peer-prepare-queue.stored]
+::
+++  settle-webhook-state
+  |=  stored=state-4:git
+  ^-  state-4:git
+  =/  remaining=(list [@t repository:git])  ~(tap by repositories.stored)
+  =/  settled=(map @t repository:git)  ~
+  |-
+  ?~  remaining  stored(repositories settled)
+  %=  $
+    remaining  t.remaining
+    settled  (~(put by settled) -.i.remaining (settle-webhook-repository +.i.remaining))
+  ==
+::
 --

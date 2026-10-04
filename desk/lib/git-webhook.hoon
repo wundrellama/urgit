@@ -42,7 +42,7 @@
   =/  ref=(unit @t)  (string-at 'ref' jon)
   =/  before=(unit @t)  (string-at 'before' jon)
   =/  after=(unit @t)  (string-at 'after' jon)
-  ?.  ?&(?=(^ ref) ?=(^ before) ?=(^ after))  ~
+  ?.  &(?=(^ ref) ?=(^ before) ?=(^ after))  ~
   =/  source=@t
     =/  repository=(unit json)  (json-at 'repository' jon)
     ?~  repository  'github'
