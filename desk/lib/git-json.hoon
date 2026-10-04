@@ -7,7 +7,81 @@
 ++  repository-json-up-to
   |=  [name=@t repo=repository:git history-limit=@ud]
   ^-  json
-  =/  refs-json=(list json)
+  |^
+    =/  writers-json=(list json)
+      (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
+    =/  readers-json=(list json)
+      (turn ~(tap in readers.repo) |=(reader=@p s+(scot %p reader)))
+    =/  protected-json=(list json)
+      (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
+    =/  notification-events-json=(list json)
+      (turn ~(tap in notification-events.repo) |=(event=notification-event:git s+event))
+    =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
+    =/  head-files=(unit (map path flat-entry:git-tree))
+      ?~  head-oid  ~
+      (flatten-commit-index:git-tree objects.repo u.head-oid)
+    =/  file-count=@ud  ?~(head-files 0 ~(wyt by u.head-files))
+    =/  history=[count=@ud exact=?]
+      (first-parent-count-up-to repo head.repo history-limit)
+    =/  releases-json=(list json)
+      %+  turn  ~(tap by releases.repo)
+      |=  entry=[@t release:git]
+      (release-json +.entry %.n)
+    %-  pairs:enjs:format
+    :~  ['name' s+name]
+        ['owner' s+(scot %p owner.repo)]
+        ['description' s+description.repo]
+        ['publicRead' b+public-read.repo]
+        ['head' s+head.repo]
+        ['refs' [%a refs-json]]
+        ['protectedRefs' [%a protected-json]]
+        ['objectCount' n+(decimal ~(wyt by objects.repo))]
+        ['fileCount' n+(decimal file-count)]
+        ['commitCount' n+(decimal count.history)]
+        ['commitCountExact' b+exact.history]
+        ['branchCount' n+(decimal (ref-count-prefix refs.repo 'refs/heads/'))]
+        ['tagCount' n+(decimal (ref-count-prefix refs.repo 'refs/tags/'))]
+        ['lfsObjectCount' n+(decimal ~(wyt by lfs-objects.repo))]
+        ['lfsLockCount' n+(decimal ~(wyt by lfs-locks.repo))]
+        ['writeTokenSet' b+?=(^ write-token-hash.repo)]
+        ['writers' [%a writers-json]]
+        ['readers' [%a readers-json]]
+        ['groupPolicy' (group-policy-json group-policy.repo)]
+        ['pullRequests' [%a pulls-json]]
+        :*  'nativeIssues'
+            [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]
+        ==
+        ['releases' [%a releases-json]]
+        :*  'webhooks'
+            [%a (turn ~(tap by webhooks.repo) |=(entry=[@ud webhook:git] (webhook-json +.entry)))]
+        ==
+        ['incomingHookConfigured' b+?=(^ incoming-hook.repo)]
+        ['webhookDeliveries' [%a (turn (scag 100 webhook-deliveries.repo) webhook-delivery-json)]]
+        :*  'upstreamUpdates'
+            [%a (turn (dedupe-upstream-updates upstream-updates.repo) upstream-update-json)]
+        ==
+        ['notificationEvents' [%a notification-events-json]]
+        ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
+        ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
+        ['binding' (binding-json binding.repo)]
+        ['peerOrigin' peer-origin-json]
+        ['githubOrigin' github-origin-json]
+    ==
+  ++  peer-origin-json
+    ^-  json
+    ?~  peer-origin.repo  ~
+    %-  pairs:enjs:format
+    :~  ['ship' s+(scot %p ship.u.peer-origin.repo)]
+        ['repository' s+repository.u.peer-origin.repo]
+    ==
+  ++  github-origin-json
+    ^-  json
+    ?~  github-origin.repo  ~
+    %-  pairs:enjs:format
+    :~  ['owner' s+owner.u.github-origin.repo]
+        ['repository' s+repository.u.github-origin.repo]
+    ==
+  ++  refs-json
     %+  turn  ~(tap by refs.repo)
     |=  [ref=@t oid=oid:git]
     =/  peeled=(unit oid:git)  (peeled-tag:git-protocol objects.repo oid)
@@ -21,22 +95,7 @@
         ['targetOid' s+(oid-text:git-codec target)]
         ['clayRevision' n+(decimal ?~(mapped 0 clay-revision.u.mapped))]
     ==
-  =/  writers-json=(list json)
-    (turn ~(tap in writers.repo) |=(writer=@p s+(scot %p writer)))
-  =/  readers-json=(list json)
-    (turn ~(tap in readers.repo) |=(reader=@p s+(scot %p reader)))
-  =/  protected-json=(list json)
-    (turn ~(tap in protected-refs.repo) |=(ref=@t s+ref))
-  =/  notification-events-json=(list json)
-    (turn ~(tap in notification-events.repo) |=(event=notification-event:git s+event))
-  =/  head-oid=(unit oid:git)  (~(get by refs.repo) head.repo)
-  =/  head-files=(unit (map path flat-entry:git-tree))
-    ?~  head-oid  ~
-    (flatten-commit-index:git-tree objects.repo u.head-oid)
-  =/  file-count=@ud  ?~(head-files 0 ~(wyt by u.head-files))
-  =/  history=[count=@ud exact=?]
-    (first-parent-count-up-to repo head.repo history-limit)
-  =/  pulls-json=(list json)
+  ++  pulls-json
     %+  turn  native-pulls.repo
     |=  pull=native-pull:git
     %-  pairs:enjs:format
@@ -51,7 +110,7 @@
         ['base' s+(oid-text:git-codec base.pull)]
         ['commentCount' n+(decimal (lent comments.pull))]
     ==
-  =/  github-item-json
+  ++  github-item-json
     |=  item=forge-item:git
     ^-  json
     %-  pairs:enjs:format
@@ -62,44 +121,7 @@
         ['author' s+author.item]
         ['draft' b+draft.item]
     ==
-  =/  releases-json=(list json)
-    %+  turn  ~(tap by releases.repo)
-    |=  entry=[@t release:git]
-    (release-json +.entry %.n)
-  %-  pairs:enjs:format
-  :~  ['name' s+name]
-      ['owner' s+(scot %p owner.repo)]
-      ['description' s+description.repo]
-      ['publicRead' b+public-read.repo]
-      ['head' s+head.repo]
-      ['refs' [%a refs-json]]
-      ['protectedRefs' [%a protected-json]]
-      ['objectCount' n+(decimal ~(wyt by objects.repo))]
-      ['fileCount' n+(decimal file-count)]
-      ['commitCount' n+(decimal count.history)]
-      ['commitCountExact' b+exact.history]
-      ['branchCount' n+(decimal (ref-count-prefix refs.repo 'refs/heads/'))]
-      ['tagCount' n+(decimal (ref-count-prefix refs.repo 'refs/tags/'))]
-      ['lfsObjectCount' n+(decimal ~(wyt by lfs-objects.repo))]
-      ['lfsLockCount' n+(decimal ~(wyt by lfs-locks.repo))]
-      ['writeTokenSet' b+?=(^ write-token-hash.repo)]
-      ['writers' [%a writers-json]]
-      ['readers' [%a readers-json]]
-      ['groupPolicy' (group-policy-json group-policy.repo)]
-      ['pullRequests' [%a pulls-json]]
-      ['nativeIssues' [%a (turn native-issues.repo |=(issue=native-issue:git (native-issue-json issue %.n)))]]
-      ['releases' [%a releases-json]]
-      ['webhooks' [%a (turn ~(tap by webhooks.repo) |=(entry=[@ud webhook:git] (webhook-json +.entry)))]]
-      ['incomingHookConfigured' b+?=(^ incoming-hook.repo)]
-      ['webhookDeliveries' [%a (turn (scag 100 webhook-deliveries.repo) webhook-delivery-json)]]
-      ['upstreamUpdates' [%a (turn (dedupe-upstream-updates upstream-updates.repo) upstream-update-json)]]
-      ['notificationEvents' [%a notification-events-json]]
-      ['githubIssues' [%a (turn github-issues.repo github-item-json)]]
-      ['githubPulls' [%a (turn github-pulls.repo github-item-json)]]
-      ['binding' (binding-json binding.repo)]
-      ['peerOrigin' ?~(peer-origin.repo ~ (pairs:enjs:format ~[['ship' s+(scot %p ship.u.peer-origin.repo)] ['repository' s+repository.u.peer-origin.repo]]))]
-      ['githubOrigin' ?~(github-origin.repo ~ (pairs:enjs:format ~[['owner' s+owner.u.github-origin.repo] ['repository' s+repository.u.github-origin.repo]]))]
-  ==
+  --
 ::
 ++  repository-json
   |=  [name=@t repo=repository:git]
@@ -180,7 +202,10 @@
     =/  last-commit=json
       ?~  last-summary  ~
       u.last-summary
-    `(pairs:enjs:format ~[['path' s+(spat file-path)] ['size' n+(decimal p.data.u.blob)] ['lastCommit' last-commit]])
+    :-  ~
+    %:  pairs:enjs:format
+      ~[['path' s+(spat file-path)] ['size' n+(decimal p.data.u.blob)] ['lastCommit' last-commit]]
+    ==
   %-  pairs:enjs:format
   :~  ['repository' s+name]
       ['head' s+ref]
@@ -280,11 +305,19 @@
   |-
   ?:  |(?=(~ current) (gte count 100))
     %-  pairs:enjs:format
-    ~[['repository' s+name] ['head' s+ref] ['path' s+(spat file-path)] ['commits' [%a (flop entries)]]]
+    :~  ['repository' s+name]
+        ['head' s+ref]
+        ['path' s+(spat file-path)]
+        ['commits' [%a (flop entries)]]
+    ==
   =/  found=(unit object:git)  (~(get by objects.repo) u.current)
   ?.  &(?=(^ found) =(%commit kind.u.found))
     %-  pairs:enjs:format
-    ~[['repository' s+name] ['head' s+ref] ['path' s+(spat file-path)] ['commits' [%a (flop entries)]]]
+    :~  ['repository' s+name]
+        ['head' s+ref]
+        ['path' s+(spat file-path)]
+        ['commits' [%a (flop entries)]]
+    ==
   =/  parent=(unit oid:git)  (commit-parent data.u.found)
   =/  here=(unit octs)  (file-at-commit repo u.current file-path)
   =/  before=(unit octs)
@@ -479,7 +512,12 @@
   ?.  (~(has in used) old-index)
     $(remaining t.remaining, old-index +(old-index))
   =.  remap  (~(put by remap) old-index (lent selected))
-  $(remaining t.remaining, old-index +(old-index), selected (weld selected ~[i.remaining]), remap remap)
+  %=  $
+    remaining  t.remaining
+    old-index  +(old-index)
+    selected  (weld selected ~[i.remaining])
+    remap  remap
+  ==
 ::
 ++  blame-lines-json
   |=  [slots=(list slot:git-blame) remap=(map @ud @ud)]
@@ -554,7 +592,13 @@
     (step:git-blame slots u.parent-data scanned)
   =/  next-sources=(list json)
     (weld sources ~[(commit-summary-json u.parent data.u.parent-object)])
-  $(slots next-slots, sources next-sources, cursor u.parent, cursor-data data.u.parent-object, scanned +(scanned))
+  %=  $
+    slots  next-slots
+    sources  next-sources
+    cursor  u.parent
+    cursor-data  data.u.parent-object
+    scanned  +(scanned)
+  ==
 ::
 ++  repository-diff-json
   |=  [name=@t repo=repository:git base=oid:git head=oid:git]

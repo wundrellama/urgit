@@ -298,4 +298,9 @@
   ^-  (list card:agent:gall)
   %+  give-simple-payload:app:server  eyre-id
   [[status headers] body]
+::
+++  give-text
+  |=  [eyre-id=@ta status=@ud message=@t]
+  ^-  (list card:agent:gall)
+  (give-http eyre-id status ~[['content-type' 'text/plain']] `(text:git-codec message))
 --

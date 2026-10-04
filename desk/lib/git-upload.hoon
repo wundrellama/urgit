@@ -74,35 +74,45 @@
         ==
       ?~(depth.request status shallow-status)
     [%& negotiation]
-  =/  objects=(list object:git)
-    %+  turn  ~(tap in filtered-transfer)
-    |=(oid=oid:git (need (~(get by objects.repo) oid)))
-  =/  pack=octs  (encode-pack:git-pack objects)
-  =/  final-shallow=octs
-    ?:  ?&  ?=(^ depth.request)
-            |(unshallow-all deepen-relative.request ?=(~ shallow.request))
-        ==
-      shallow-status
-    [0 0]
-  =/  response=octs
-    ?:  use-v2
-      =/  shallow-section=octs
-        ?:  =(0 p.final-shallow)  [0 0]
+  |^
+    pack-response
+  ++  pack-response
+    =/  objects=(list object:git)
+      %+  turn  ~(tap in filtered-transfer)
+      |=(oid=oid:git (need (~(get by objects.repo) oid)))
+    =/  pack=octs  (encode-pack:git-pack objects)
+    =/  final-shallow=octs
+      ?:  ?&  ?=(^ depth.request)
+              |(unshallow-all deepen-relative.request ?=(~ shallow.request))
+          ==
+        shallow-status
+      [0 0]
+    =/  response=octs
+      ?:  use-v2
+        =/  shallow-section=octs
+          ?:  =(0 p.final-shallow)  [0 0]
+          %-  join-all:git-codec
+          :~  (en-pkt:git-codec [%data (text:git-codec 'shallow-info\0a')])
+              shallow-lines
+              (en-pkt:git-codec [%delim ~])
+          ==
         %-  join-all:git-codec
-        :~  (en-pkt:git-codec [%data (text:git-codec 'shallow-info\0a')])
-            shallow-lines
-            (en-pkt:git-codec [%delim ~])
+        :~  shallow-section
+            (en-pkt:git-codec [%data (text:git-codec 'packfile\0a')])
+            (v2-sideband-pack:git-protocol pack)
+            (en-pkt:git-codec [%flush ~])
         ==
-      %-  join-all:git-codec
-      :~  shallow-section
-          (en-pkt:git-codec [%data (text:git-codec 'packfile\0a')])
-          (v2-sideband-pack:git-protocol pack)
-          (en-pkt:git-codec [%flush ~])
-      ==
-    (join-all:git-codec ~[final-shallow status pack])
-  [%& response]
+      (join-all:git-codec ~[final-shallow status pack])
+    [%& response]
+  --
 ++  shallow-closure
-  |=  [repo=repository:git request=upload-request:git wanted-full=(set oid:git) effective-shallow=(set oid:git) unshallow-all=?]
+  |=
+    $:  repo=repository:git
+        request=upload-request:git
+        wanted-full=(set oid:git)
+        effective-shallow=(set oid:git)
+        unshallow-all=?
+    ==
   ^-  (unit shallow-result:git-graph)
   ?~  depth.request  ~
   ?:  unshallow-all
@@ -142,7 +152,12 @@
   ::  omitted blob.  Direct wants must survive traversal filtering.
   (~(uni in traversed) (~(int in wants.request) transfer))
 ++  shallow-packets
-  |=  [request=upload-request:git depth-result=(unit shallow-result:git-graph) effective-shallow=(set oid:git) unshallow-all=?]
+  |=
+    $:  request=upload-request:git
+        depth-result=(unit shallow-result:git-graph)
+        effective-shallow=(set oid:git)
+        unshallow-all=?
+    ==
   ^-  (list octs)
   ?~  depth.request  ~
   ?~  depth-result  ~

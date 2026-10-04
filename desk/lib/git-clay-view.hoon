@@ -360,13 +360,51 @@
   =/  previous-files=(map path lobe:clay)
     ?~(previous-yaki *(map path lobe:clay) q.u.previous-yaki)
   =/  current-files=(map path lobe:clay)  q.u.current-yaki
-  =/  changed-files=(list [path lobe:clay])
-    %+  skim  ~(tap by current-files)
-    |=  entry=[file-path=path lobe=lobe:clay]
-    =/  old-lobe=(unit lobe:clay)  (~(get by previous-files) file-path.entry)
-    !=(old-lobe `lobe.entry)
-  =/  rich-changed=(list json)
-    %+  murn  (scag 12 changed-files)
+  |^
+    =/  changed-files=(list [path lobe:clay])
+      %+  skim  ~(tap by current-files)
+      |=  entry=[file-path=path lobe=lobe:clay]
+      =/  old-lobe=(unit lobe:clay)  (~(get by previous-files) file-path.entry)
+      !=(old-lobe `lobe.entry)
+    =/  rich-changed=(list json)
+      (murn (scag 12 changed-files) render-rich-changed)
+    =/  remaining-changed=(list json)
+      %+  turn  (scag 488 (slag 12 changed-files))
+      |=  entry=[file-path=path lobe=lobe:clay]
+      =/  old-lobe=(unit lobe:clay)  (~(get by previous-files) file-path.entry)
+      =/  status=@t  ?~(old-lobe 'added' 'modified')
+      (clay-change-placeholder-json file-path.entry status)
+    =/  deleted-files=(list [path lobe:clay])
+      %+  skim  ~(tap by previous-files)
+      |=  entry=[file-path=path lobe=lobe:clay]
+      =(%.n (~(has by current-files) file-path.entry))
+    =/  rich-deleted=(list json)
+      (murn (scag 12 deleted-files) render-rich-deleted)
+    =/  remaining-deleted=(list json)
+      %+  turn  (scag 488 (slag 12 deleted-files))
+      |=  entry=[file-path=path lobe=lobe:clay]
+      (clay-change-placeholder-json file-path.entry 'deleted')
+    =/  changes=(list json)
+      :(weld rich-changed remaining-changed rich-deleted remaining-deleted)
+    =/  total-changes=@ud  (add (lent changed-files) (lent deleted-files))
+    =/  summary=json
+      (clay-revision-summary-json who desk-name u.revision u.binding.repo)
+    =/  result=json
+      %-  pairs:enjs:format
+      :~  ['repository' s+name]
+          ['historyKind' s+'clay']
+          ['commit' summary]
+          ['tree' s+(scot %uv tako.u.revision)]
+          ['message' s+(rap 3 ~['Clay revision ' (decimal number)])]
+          ['revision' n+(decimal number)]
+          ['tako' s+(scot %uv tako.u.revision)]
+          ['timestampCase' s+(scot %da timestamp.u.revision)]
+          ['changedCount' n+(decimal total-changes)]
+          ['changesTruncated' b+(gth total-changes 1.000)]
+          ['changes' [%a changes]]
+      ==
+    `result
+  ++  render-rich-changed
     |=  entry=[file-path=path lobe=lobe:clay]
     =/  old-lobe=(unit lobe:clay)  (~(get by previous-files) file-path.entry)
     =/  current=(unit octs)
@@ -376,47 +414,13 @@
       ?~  old-lobe  ~
       (clay-file-octs who desk-name u.previous-number u.old-lobe now)
     `(clay-change-json file-path.entry previous current)
-  =/  remaining-changed=(list json)
-    %+  turn  (scag 488 (slag 12 changed-files))
-    |=  entry=[file-path=path lobe=lobe:clay]
-    =/  old-lobe=(unit lobe:clay)  (~(get by previous-files) file-path.entry)
-    =/  status=@t  ?~(old-lobe 'added' 'modified')
-    (clay-change-placeholder-json file-path.entry status)
-  =/  deleted-files=(list [path lobe:clay])
-    %+  skim  ~(tap by previous-files)
-    |=  entry=[file-path=path lobe=lobe:clay]
-    =(%.n (~(has by current-files) file-path.entry))
-  =/  rich-deleted=(list json)
-    %+  murn  (scag 12 deleted-files)
+  ++  render-rich-deleted
     |=  entry=[file-path=path lobe=lobe:clay]
     =/  previous=(unit octs)
       ?~  previous-number  ~
       (clay-file-octs who desk-name u.previous-number lobe.entry now)
     `(clay-change-json file-path.entry previous ~)
-  =/  remaining-deleted=(list json)
-    %+  turn  (scag 488 (slag 12 deleted-files))
-    |=  entry=[file-path=path lobe=lobe:clay]
-    (clay-change-placeholder-json file-path.entry 'deleted')
-  =/  changes=(list json)
-    :(weld rich-changed remaining-changed rich-deleted remaining-deleted)
-  =/  total-changes=@ud  (add (lent changed-files) (lent deleted-files))
-  =/  summary=json
-    (clay-revision-summary-json who desk-name u.revision u.binding.repo)
-  =/  result=json
-    %-  pairs:enjs:format
-    :~  ['repository' s+name]
-        ['historyKind' s+'clay']
-        ['commit' summary]
-        ['tree' s+(scot %uv tako.u.revision)]
-        ['message' s+(rap 3 ~['Clay revision ' (decimal number)])]
-        ['revision' n+(decimal number)]
-        ['tako' s+(scot %uv tako.u.revision)]
-        ['timestampCase' s+(scot %da timestamp.u.revision)]
-        ['changedCount' n+(decimal total-changes)]
-        ['changesTruncated' b+(gth total-changes 1.000)]
-        ['changes' [%a changes]]
-    ==
-  `result
+  --
 ::
 ++  repository-history-detail-json
   |=  [name=@t repo=repository:git identifier=@t who=@p now=@da]

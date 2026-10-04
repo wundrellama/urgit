@@ -270,14 +270,45 @@
         ['ok' b+status.result]
         ['message' s+message.result]
         ['repository' s+repository.result]
-        ['stage' s+?~(flight 'complete' ?:(=('' head.u.flight) ?:(accepted.u.flight 'prepare' 'request') ?:(=(%archive mode.u.flight) 'archive' 'fine')))]
+        :*  'stage'
+            :-  %s
+            ?~
+              flight
+              'complete'
+            ?:
+              =('' head.u.flight)
+              ?:(accepted.u.flight 'prepare' 'request')
+            ?:(=(%archive mode.u.flight) 'archive' 'fine')
+        ==
         ['received' n+(decimal ?~(flight 0 received.u.flight))]
         ['expected' n+(decimal ?~(flight 0 expected.u.flight))]
         ['expectedBytes' n+(decimal ?~(flight 0 expected-bytes.u.flight))]
         ['pages' n+(decimal ?~(flight 0 pages.u.flight))]
         ['completedPages' n+(decimal ?~(flight 0 ~(wyt in completed.u.flight)))]
-        ['fineFragmentsReceived' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum)))))]
-        ['fineFragmentsTotal' n+(decimal ?~(flight 0 (roll ~(val by fine-progress.u.flight) |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum)))))]
+        :*  'fineFragmentsReceived'
+            :-  %n
+            %:  decimal
+              ?~
+                flight
+                0
+              %:  roll
+                ~(val by fine-progress.u.flight)
+                |=([[fag=@ud tot=@ud] sum=@ud] (add fag sum))
+              ==
+            ==
+        ==
+        :*  'fineFragmentsTotal'
+            :-  %n
+            %:  decimal
+              ?~
+                flight
+                0
+              %:  roll
+                ~(val by fine-progress.u.flight)
+                |=([[fag=@ud tot=@ud] sum=@ud] (add tot sum))
+              ==
+            ==
+        ==
     ==
   (pairs:enjs:format ~[['transfers' [%a entries]]])
 ::
@@ -411,4 +442,9 @@
       assembly-count  ?~(prior +(assembly-count.next) assembly-count.next)
     ==
   $(remaining t.remaining, next continued, seen next-seen)
+::
+++  peer-card
+  |=  [target=ship wire=wire packet=packet:git-peer]
+  ^-  card:agent:gall
+  [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
 --

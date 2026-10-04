@@ -388,7 +388,10 @@
     ?:  ok.result
       (rap 3 ~['ok ' ref.result '\0a'])
     (rap 3 ~['ng ' ref.result ' ' message.result '\0a'])
-  $(remaining t.remaining, packets (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])]))
+  %=  $
+    remaining  t.remaining
+    packets  (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])])
+  ==
 ::
 ++  line-payload
   |=  [oid=@t ref=@t caps=(unit @t)]

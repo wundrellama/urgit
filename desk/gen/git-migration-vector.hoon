@@ -59,7 +59,15 @@
   (my ~[['v2' ['v2' 'Migration release' 'notes' ~zod when]]])
 =/  webhooks=(map @ud webhook:git)
   %-  my
-  ~[[1 [1 'https://example.test/hook' 'secret' (silt ~[`webhook-event:git`%push `webhook-event:git`%issue]) %.y]]]
+  :~  :*  1
+          :*  1
+              'https://example.test/hook'
+              'secret'
+              (silt ~[`webhook-event:git`%push `webhook-event:git`%issue])
+              %.y
+          ==
+      ==
+  ==
 =/  incoming-hook=(unit incoming-hook:git)
   `['incoming-secret' %.y]
 =/  webhook-deliveries=(list webhook-delivery:git)

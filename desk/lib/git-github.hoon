@@ -176,7 +176,12 @@
   |=  [token=(unit @t) content-type=(unit @t)]
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
-    :~  ['accept' ?~(content-type 'application/x-git-upload-pack-advertisement' 'application/x-git-upload-pack-result')]
+    :~  :*  'accept'
+            ?~
+              content-type
+              'application/x-git-upload-pack-advertisement'
+            'application/x-git-upload-pack-result'
+        ==
         ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
@@ -190,7 +195,12 @@
   |=  [token=(unit @t) content-type=(unit @t)]
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
-    :~  ['accept' ?~(content-type 'application/x-git-receive-pack-advertisement' 'application/x-git-receive-pack-result')]
+    :~  :*  'accept'
+            ?~
+              content-type
+              'application/x-git-receive-pack-advertisement'
+            'application/x-git-receive-pack-result'
+        ==
         ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
@@ -302,7 +312,11 @@
         :~  'want '  (oid-text:git-codec i.remaining)
             ?:(first ' no-progress ofs-delta include-tag\0a' '\0a')
         ==
-      $(remaining t.remaining, out [(en-pkt:git-codec [%data (text:git-codec line)]) out], first %.n)
+      %=  $
+        remaining  t.remaining
+        out  [(en-pkt:git-codec [%data (text:git-codec line)]) out]
+        first  %.n
+      ==
     =.  packets  (build ids ~ %.y)
     %-  join-all:git-codec
     %+  weld

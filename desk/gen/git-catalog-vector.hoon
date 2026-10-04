@@ -48,7 +48,8 @@
 =/  from-old=packet:git-peer  [%catalog request ~[legacy-entry]]
 ?>  =([~ request ~[plain]] (unpack:git-catalog (receive from-old)))
 ?>  =(plain (from-legacy:git-catalog legacy-entry))
-?>  =(legacy-entry (legacy:git-catalog shared(name 'tools', head 'refs/heads/main', refs 3, objects 41, writable %.n)))
+?>  =+  normalized=shared(name 'tools', head 'refs/heads/main', refs 3, objects 41, writable %.n)
+    =(legacy-entry (legacy:git-catalog normalized))
 ::  an empty answer stays on the older shape
 ::
 =/  empty=packet:git-peer  (pack:git-catalog request ~)
@@ -111,7 +112,8 @@
 ::
 ?>  =([%ask ~] (plan:git-catalog (settled:git-catalog riding first) ~ member (add sent-at ~m5)))
 ?>  =(~ (settled:git-catalog riding first))
-?>  =([%hold sent-at] (plan:git-catalog (settled:git-catalog riding second) ~ member (add sent-at ~m5)))
+?>  =+  unknown-ack=(settled:git-catalog riding second)
+    =([%hold sent-at] (plan:git-catalog unknown-ack ~ member (add sent-at ~m5)))
 ::  a nack clears it and marks the discovery no-urgit
 ::
 =/  refused-by-gall=discovery:git-catalog  (nacked:git-catalog asked)
@@ -128,7 +130,11 @@
 =/  done=discovery:git-catalog  (answered:git-catalog asked ~[plain shared])
 ?>  &(!active.done ok.done =(%answered status.done) =(~[plain shared] repositories.done))
 =/  errored=discovery:git-catalog  (refused:git-catalog asked 'no such repository')
-?>  &(!active.errored !ok.errored =(%answered status.errored) =('no such repository' message.errored))
+?>  ?&  !active.errored
+        !ok.errored
+        =(%answered status.errored)
+        =('no such repository' message.errored)
+    ==
 ::  the status words the UI reads
 ::
 ?>  =('answered' (status-text:git-catalog %answered))

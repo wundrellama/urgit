@@ -141,7 +141,15 @@
       [%browse-error request=@uv message=@t]
       [%forge-comment comment=forge-comment]
       [%forge-create-issue issue=forge-create-issue]
-      [%forge-result request=@uv repository=@t kind=forge-kind number=@ud ok=? message=@t result=(unit json)]
+      $:  %forge-result
+          request=@uv
+          repository=@t
+          kind=forge-kind
+          number=@ud
+          ok=?
+          message=@t
+          result=(unit json)
+      ==
       [%offer offer=offer]
       [%offer-branches offer-branches=offer-branches]
       [%release transfer=@uv]
