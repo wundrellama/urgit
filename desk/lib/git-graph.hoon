@@ -53,17 +53,17 @@
   =/  oid-offset=@ud  +(u.nul)
   ?:  (gth (add oid-offset 20) p.data)  ~
   =/  raw=octs  (slice:git-codec data oid-offset 20)
-  =/  oid=oid:git  (rev 3 20 q.raw)
+  =/  =oid:git  (rev 3 20 q.raw)
   $(offset (add oid-offset 20), refs [oid refs])
 ::
 ++  dependencies
   |=  obj=object:git
   ^-  (unit (list oid:git))
   ?-  kind.obj
-      %blob    `~
-      %tree    (tree-dependencies data.obj)
-      %commit  (text-object-dependencies data.obj %.n)
-      %tag     (text-object-dependencies data.obj %.y)
+    %blob  `~
+    %tree  (tree-dependencies data.obj)
+    %commit  (text-object-dependencies data.obj %.n)
+    %tag  (text-object-dependencies data.obj %.y)
   ==
 ::
 ++  reachable
@@ -73,7 +73,7 @@
   =/  seen=(set oid:git)  ~
   |-
   ?~  pending  `seen
-  =/  oid=oid:git  i.pending
+  =/  =oid:git  i.pending
   ?:  (~(has in seen) oid)
     $(pending t.pending)
   =/  found=(unit object:git)  (~(get by objects) oid)
@@ -82,7 +82,7 @@
   ?~  deps  ~
   %=  $
     pending  (weld u.deps t.pending)
-    seen     (~(put in seen) oid)
+    seen  (~(put in seen) oid)
   ==
 ::
 ++  reachable-stopping
@@ -92,7 +92,7 @@
   =/  seen=(set oid:git)  ~
   |-
   ?~  pending  `seen
-  =/  oid=oid:git  i.pending
+  =/  =oid:git  i.pending
   ?:  (~(has in seen) oid)
     $(pending t.pending)
   =/  found=(unit object:git)  (~(get by objects) oid)
@@ -108,7 +108,7 @@
   ?~  deps  ~
   %=  $
     pending  (weld u.deps t.pending)
-    seen     (~(put in seen) oid)
+    seen  (~(put in seen) oid)
   ==
 ::
 ++  commit-parts
@@ -151,7 +151,7 @@
   ?~  pending  `[reachable boundaries]
   =/  item=[oid=oid:git remaining=@ud]  i.pending
   =/  previous=(unit @ud)  (~(get by expanded) oid.item)
-  ?:  ?&(?=(^ previous) (gte u.previous remaining.item))
+  ?:  &(?=(^ previous) (gte u.previous remaining.item))
     $(pending t.pending)
   =/  found=(unit object:git)  (~(get by objects) oid.item)
   ?~  found  ~

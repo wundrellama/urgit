@@ -48,7 +48,7 @@
   !.
   |_  =bowl:gall
   +*  this  .
-      ag    ~(. agent bowl)
+      ag  ~(. agent bowl)
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -66,7 +66,7 @@
     =;  =tang
       ((%*(. slog pri 1) tang) [~ this])
     ?-  -.dbug
-      %bowl   [(sell !>(bowl))]~
+      %bowl  [(sell !>(bowl))]~
     ::
         %state
       =?  grab.dbug  =('' grab.dbug)  '-'
@@ -100,8 +100,9 @@
       ?-  -.about.dbug
         %ship  =(ship ship.about.dbug)
         %path  (path-contains path.about.dbug path)
-        %wire  %+  lien  duct
-               |=(=wire (path-contains wire.about.dbug wire))
+          %wire
+        %+  lien  duct
+        |=(=wire (path-contains wire.about.dbug wire))
         %term  !!
       ==
     ::
@@ -133,8 +134,8 @@
     ?.  ?=([@ %dbug *] path)
       (on-peek:ag path)
     ?+  path  [~ ~]
-      [%u %dbug ~]                 ``noun+!>(&)
-      [%x %dbug %state ~]          ``noun+!>(on-save:ag)
+      [%u %dbug ~]  ``noun+!>(&)
+      [%x %dbug %state ~]  ``noun+!>(on-save:ag)
       [%x %dbug %subscriptions ~]  ``noun+!>([wex sup]:bowl)
     ==
   ::
@@ -143,7 +144,7 @@
     =^  cards  agent  on-init:ag
     [cards this]
   ::
-  ++  on-save   on-save:ag
+  ++  on-save  on-save:ag
   ::
   ++  on-load
     |=  old-state=vase

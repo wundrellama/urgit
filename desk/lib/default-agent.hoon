@@ -36,7 +36,7 @@
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card:agent:gall _agent)
-  ?-    -.sign
+  ?-  -.sign
       %poke-ack
     ?~  p.sign
       `agent
@@ -49,8 +49,8 @@
     =/  =tank  leaf+"subscribe failed from {<dap.bowl>} on wire {<wire>}"
     %-  (slog tank u.p.sign)
     `agent
-  ::
-      %kick  `agent
+::
+    %kick  `agent
       %fact
     ~|  "unexpected subscription update to {<dap.bowl>} on wire {<wire>}"
     ~|  "with mark {<p.cage.sign>}"

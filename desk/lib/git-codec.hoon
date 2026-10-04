@@ -91,9 +91,9 @@
   |=  =packet
   ^-  octs
   ?-  -.packet
-      %flush         (text '0000')
-      %delim         (text '0001')
-      %response-end  (text '0002')
+    %flush  (text '0000')
+    %delim  (text '0001')
+    %response-end  (text '0002')
       %data
     ?>  (lte p.payload.packet 65.516)
     =/  total=@ud  (add 4 p.payload.packet)
@@ -134,10 +134,10 @@
   |=  kind=object-kind:git
   ^-  @t
   ?-  kind
-      %blob    'blob'
-      %tree    'tree'
-      %commit  'commit'
-      %tag     'tag'
+    %blob  'blob'
+    %tree  'tree'
+    %commit  'commit'
+    %tag  'tag'
   ==
 ::
 ++  canonical-object

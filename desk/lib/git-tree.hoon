@@ -8,7 +8,7 @@
 ++  blob-mode
   |=  mode=@t
   ^-  ?
-  ?|(=('100644' mode) =('100755' mode) =('120000' mode))
+  |(=('100644' mode) =('100755' mode) =('120000' mode))
 ::
 ++  safe-segment
   |=  value=@t
@@ -78,7 +78,7 @@
   ^-  (unit (map path flat-entry))
   ?:  (~(has in visiting) tree-oid)  ~
   =/  found=(unit object:git)  (~(get by objects) tree-oid)
-  ?.  ?&(?=(^ found) =(%tree kind.u.found))  ~
+  ?.  &(?=(^ found) =(%tree kind.u.found))  ~
   =/  parsed=(unit (list tree-entry:git-clay))
     (parse-tree:git-clay data.u.found)
   ?~  parsed  ~
@@ -97,7 +97,7 @@
   ?.  (blob-mode mode.entry)  $(remaining t.remaining)
   ?:  (~(has by files) u.file-path)  ~
   =/  blob=(unit object:git)  (~(get by objects) oid.entry)
-  ?.  ?&(?=(^ blob) =(%blob kind.u.blob))  ~
+  ?.  &(?=(^ blob) =(%blob kind.u.blob))  ~
   $(remaining t.remaining, files (~(put by files) u.file-path [mode.entry oid.entry]))
 ::
 ++  flatten-commit-index
@@ -129,14 +129,14 @@
     =(current u.parent)
   ?:  unchanged  changed
   =/  current-object=(unit object:git)  (~(get by objects) current)
-  ?.  ?&(?=(^ current-object) =(%tree kind.u.current-object))  changed
+  ?.  &(?=(^ current-object) =(%tree kind.u.current-object))  changed
   =/  current-list=(unit (list tree-entry:git-clay))
     (parse-tree:git-clay data.u.current-object)
   ?~  current-list  changed
   =/  parent-entries=(map @t tree-entry:git-clay)
     ?~  parent  ~
     =/  parent-object=(unit object:git)  (~(get by objects) u.parent)
-    ?.  ?&(?=(^ parent-object) =(%tree kind.u.parent-object))  ~
+    ?.  &(?=(^ parent-object) =(%tree kind.u.parent-object))  ~
     =/  parent-list=(unit (list tree-entry:git-clay))
       (parse-tree:git-clay data.u.parent-object)
     ?~  parent-list  ~
@@ -153,7 +153,7 @@
   ?~  file-path  $(remaining t.remaining)
   =/  old=(unit tree-entry:git-clay)  (~(get by parent-entries) name.entry)
   ?:  =('40000' mode.entry)
-    ?.  ?&(?=(^ old) =('40000' mode.u.old))
+    ?.  &(?=(^ old) =('40000' mode.u.old))
       =/  indexed=(unit (map path flat-entry))
         (walk-tree-index objects oid.entry u.file-path ~ visiting)
       ?~  indexed  $(remaining t.remaining)
@@ -225,7 +225,7 @@
   ^-  (unit [oid=oid:git objects=(map oid:git object:git)])
   ?~  segments  ~
   =/  found=(unit object:git)  (~(get by objects) tree-oid)
-  ?.  ?&(?=(^ found) =(%tree kind.u.found))  ~
+  ?.  &(?=(^ found) =(%tree kind.u.found))  ~
   =/  parsed=(unit (list tree-entry:git-clay))
     (parse-tree:git-clay data.u.found)
   ?~  parsed  ~
@@ -264,7 +264,7 @@
   ?.  (blob-mode file-mode)  ~
   ?~  segments  ~
   =/  found=(unit object:git)  (~(get by objects) tree-oid)
-  ?.  ?&(?=(^ found) =(%tree kind.u.found))  ~
+  ?.  &(?=(^ found) =(%tree kind.u.found))  ~
   =/  parsed=(unit (list tree-entry:git-clay))
     (parse-tree:git-clay data.u.found)
   ?~  parsed  ~
@@ -299,7 +299,7 @@
   ^-  (unit [empty=? oid=oid:git objects=(map oid:git object:git)])
   ?~  segments  ~
   =/  found=(unit object:git)  (~(get by objects) tree-oid)
-  ?.  ?&(?=(^ found) =(%tree kind.u.found))  ~
+  ?.  &(?=(^ found) =(%tree kind.u.found))  ~
   =/  parsed=(unit (list tree-entry:git-clay))
     (parse-tree:git-clay data.u.found)
   ?~  parsed  ~
@@ -347,7 +347,7 @@
   ?:  ?=(~ t.segments)
     ?.  (blob-mode mode.target)  ~
     =/  old=(unit object:git)  (~(get by objects) oid.target)
-    ?.  ?&(?=(^ old) =(%blob kind.u.old))  ~
+    ?.  &(?=(^ old) =(%blob kind.u.old))  ~
     =/  blob-oid=oid:git  (object-oid:git-codec %blob replacement)
     =/  with-blob=(map oid:git object:git)
       (~(put by objects) blob-oid [%blob replacement])
@@ -536,7 +536,7 @@
   =/  base-files=(unit (map path flat-entry))  (flatten-commit-index objects base)
   =/  our-files=(unit (map path flat-entry))  (flatten-commit-index objects ours)
   =/  their-files=(unit (map path flat-entry))  (flatten-commit-index objects theirs)
-  ?.  ?&(?=(^ base-files) ?=(^ our-files) ?=(^ their-files))  ~
+  ?.  &(?=(^ base-files) ?=(^ our-files) ?=(^ their-files))  ~
   =/  root=(unit oid:git)  (commit-tree:git-clay objects ours)
   ?~  root  ~
   =/  paths=(set path)  ~
@@ -569,7 +569,7 @@
       ?~  deleted  ~
       $(remaining t.remaining, root `oid.u.deleted, objects objects.u.deleted)
     =/  blob=(unit object:git)  (~(get by objects) oid.u.their-entry)
-    ?.  ?&(?=(^ blob) =(%blob kind.u.blob))  ~
+    ?.  &(?=(^ blob) =(%blob kind.u.blob))  ~
     =/  written=(unit [oid=oid:git objects=(map oid:git object:git)])
       (upsert-tree-mode objects u.root file-path data.u.blob mode.u.their-entry)
     ?~  written  ~

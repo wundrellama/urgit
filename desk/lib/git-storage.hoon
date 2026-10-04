@@ -50,7 +50,7 @@
   ?:  =(index 32)  (crip out)
   =/  byte=@ud  (cut 3 [index 1] value)
   =/  high=@tD  (cut 3 [(div byte 16) 1] alphabet)
-  =/  low=@tD   (cut 3 [(mod byte 16) 1] alphabet)
+  =/  low=@tD  (cut 3 [(mod byte 16) 1] alphabet)
   $(index +(index), out (snoc (snoc out high) low))
 ::
 ++  two-digits

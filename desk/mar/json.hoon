@@ -4,7 +4,7 @@
 ++  grow
   |%
   ++  mime  [/application/json (as-octs:mimes -:txt)]
-  ++  txt   [(en:json jon)]~
+  ++  txt  [(en:json jon)]~
   --
 ++  grab
   |%

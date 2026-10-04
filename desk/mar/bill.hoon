@@ -12,7 +12,8 @@
       ^-  wall
       ?~  taz  ["~"]~
       :-  (weld ":~  " i.taz)
-      %-  snoc  :_  "=="
+      %-  snoc
+      :_  "=="
       (turn t.taz |=(t=tape (weld "    " t)))
     ::
     ++  spit-duz
@@ -20,7 +21,7 @@
       ^-  wall
       (turn duz |=(=dude:gall ['%' (trip dude)]))
     --
-  ++  txt   (to-wain:format hoon)
+  ++  txt  (to-wain:format hoon)
   --
 ++  grab
   |%

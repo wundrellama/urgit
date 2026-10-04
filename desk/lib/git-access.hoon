@@ -9,8 +9,8 @@
   |=  cap=capability:git
   ^-  @ud
   ?-  cap
-    %none   0
-    %read   1
+    %none  0
+    %read  1
     %write  2
   ==
 ::
@@ -52,7 +52,7 @@
   ?~  remaining  best
   %=  $
     remaining  t.remaining
-    best       (capability-max best (~(gut by roles.u.policy) i.remaining %none))
+    best  (capability-max best (~(gut by roles.u.policy) i.remaining %none))
   ==
 ::
 ++  can-read

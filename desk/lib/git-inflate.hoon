@@ -198,7 +198,7 @@
 ++  copy-distance
   |=  [data=octs distance=@ud count=@ud]
   ^-  (unit octs)
-  ?:  ?|(=(distance 0) (gth distance p.data))  ~
+  ?:  |(=(distance 0) (gth distance p.data))  ~
   =/  remaining=@ud  count
   =/  out=octs  data
   |-

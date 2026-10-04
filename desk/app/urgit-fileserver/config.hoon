@@ -1,12 +1,12 @@
 |%
 ++  web-root  ^-  (list @t)
-  /apps/urgit
+              /apps/urgit
 ++  file-root  ^-  path
-  /web
+               /web
 ++  index  ^-  $@(~ [~ path])
-  `/index/html
+           `/index/html
 ++  extension  ^-  ?(%need %path %fall)
-  %fall
+               %fall
 ++  auth  ^-  $@(? [? (list [path ?])])
-  &
+          &
 --
