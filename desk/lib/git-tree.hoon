@@ -539,19 +539,8 @@
   ?.  &(?=(^ base-files) ?=(^ our-files) ?=(^ their-files))  ~
   =/  root=(unit oid:git)  (commit-tree:git-clay objects ours)
   ?~  root  ~
-  =/  paths=(set path)  ~
-  =.  paths
-    %+  roll  ~(tap by u.base-files)
-    |=  [entry=[file-path=path value=flat-entry] accumulator=(set path)]
-    (~(put in accumulator) file-path.entry)
-  =.  paths
-    %+  roll  ~(tap by u.our-files)
-    |=  [entry=[file-path=path value=flat-entry] accumulator=(set path)]
-    (~(put in accumulator) file-path.entry)
-  =.  paths
-    %+  roll  ~(tap by u.their-files)
-    |=  [entry=[file-path=path value=flat-entry] accumulator=(set path)]
-    (~(put in accumulator) file-path.entry)
+  =/  paths=(set path)
+    (~(uni in ~(key by u.base-files)) (~(uni in ~(key by u.our-files)) ~(key by u.their-files)))
   =/  remaining=(list path)  ~(tap in paths)
   =/  merged=(unit [oid=oid:git objects=(map oid:git object:git)])
     |-

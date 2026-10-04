@@ -4,6 +4,8 @@
 /+  server, git-codec, git-graph, git-storage, *git-format, *git-http
 |%
 +$  lfs-spec  [oid=@t size=@ud]
++$  lfs-settings
+  [credentials=credentials:git-storage configuration=configuration:git-storage]
 ::
 ++  valid-lfs-oid
   |=  oid=@t
@@ -153,4 +155,106 @@
   %-  pairs:enjs:format
   ~[['href' s+href] ['expires_in' n+'600']]
 ::
+::
+++  lfs-batch-object
+  |=  $:  working=repository:git
+          spec=lfs-spec
+          operation=@t
+          settings=lfs-settings
+          who=@p
+          now=@da
+          req=inbound-request:eyre
+          repo-name=@t
+      ==
+  ^-  [json repository:git]
+  =/  existing=(unit lfs-object:git)  (~(get by lfs-objects.working) oid.spec)
+  |^
+    ?:  =(operation 'download')  download
+    upload
+  ++  download
+    ?~  existing
+      =/  item=json
+        %-  pairs:enjs:format
+        :~  ['oid' s+oid.spec]
+            ['size' n+(decimal size.spec)]
+            :*  'error'
+                (pairs:enjs:format ~[['code' n+'404'] ['message' s+'object does not exist']])
+            ==
+        ==
+      [item working]
+    ?:  !=(size.spec size.u.existing)
+      =/  item=json
+        %-  pairs:enjs:format
+        :~  ['oid' s+oid.spec]
+            ['size' n+(decimal size.spec)]
+            :*  'error'
+                %:  pairs:enjs:format
+                  ~[['code' n+'422'] ['message' s+'object size does not match']]
+                ==
+            ==
+        ==
+      [item working]
+    =/  signed=signed-request:git-storage
+      %:  sign:git-storage
+        'GET'
+        'application/octet-stream'
+        [0 0]
+        credentials.settings
+        configuration.settings
+        object-key.u.existing
+        now
+      ==
+    =/  actions=json
+      (pairs:enjs:format ~[['download' (action-json signed)]])
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['oid' s+oid.spec]
+          ['size' n+(decimal size.spec)]
+          ['authenticated' b+%.y]
+          ['actions' actions]
+      ==
+    [item working]
+  ++  upload
+    ?:  ?=(^ existing)
+      ?:  =(size.spec size.u.existing)
+        =/  item=json
+          %-  pairs:enjs:format
+          ~[['oid' s+oid.spec] ['size' n+(decimal size.spec)] ['authenticated' b+%.y]]
+        [item working]
+      =/  item=json
+        %-  pairs:enjs:format
+        :~  ['oid' s+oid.spec]
+            ['size' n+(decimal size.spec)]
+            :*  'error'
+                (pairs:enjs:format ~[['code' n+'422'] ['message' s+'object size does not match']])
+            ==
+        ==
+      [item working]
+    =/  key=@t  (object-key who repo-name oid.spec)
+    =/  signed=signed-request:git-storage
+      %:  sign-hash:git-storage
+        'PUT'
+        'application/octet-stream'
+        oid.spec
+        credentials.settings
+        configuration.settings
+        key
+        now
+      ==
+    =/  upload=lfs-upload:git  [size.spec key (add now ~m15)]
+    =.  working  working(lfs-uploads (~(put by lfs-uploads.working) oid.spec upload))
+    =/  actions=json
+      %-  pairs:enjs:format
+      :~  ['upload' (action-json signed)]
+          ['verify' (verify-action-json req repo-name oid.spec)]
+      ==
+    =/  item=json
+      %-  pairs:enjs:format
+      :~  ['oid' s+oid.spec]
+          ['size' n+(decimal size.spec)]
+          ['authenticated' b+%.y]
+          ['actions' actions]
+      ==
+    [item working]
+  --
 --

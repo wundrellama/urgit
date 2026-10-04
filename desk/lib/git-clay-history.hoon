@@ -42,7 +42,11 @@
   ?:  |(=(0 number) (gte count limit))
     `[latest (flop entries)]
   =/  entry=(unit revision)  (revision-meta who desk-name number u.domo)
-  $(number (dec number), entries ?~(entry entries [u.entry entries]), count ?~(entry count +(count)))
+  %=  $
+    number  (dec number)
+    entries  ?~(entry entries [u.entry entries])
+    count  ?~(entry count +(count))
+  ==
 ::
 ++  revision-yaki
   |=  [who=@p desk-name=desk number=@ud tako=tako:clay]
