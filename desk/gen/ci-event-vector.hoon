@@ -1,6 +1,7 @@
 ::  act --json envelope vectors: the 68 lines of the 001a spike log
 ::  (suite/structural, act 0.2.89) as literal cords, plus the set-output
 ::  line act emits for a $GITHUB_OUTPUT write, plus the refusals.
+::  The checkout line's host path is replaced by /work/erpit.
 ::
 /-  ci
 /+  ci-event
@@ -16,7 +17,7 @@
       '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=","step":"Set up job","stepid":["--setup-job"],"time":"2026-09-11T19:33:21-05:00"}'
       '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  ✅  Success - Set up job","step":"Set up job","stepResult":"success","stepid":["--setup-job"],"time":"2026-09-11T19:33:21-05:00"}'
       '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"⭐ Run Main actions/checkout@v4","stage":"Main","step":"actions/checkout@v4","stepID":["0"],"time":"2026-09-11T19:33:21-05:00"}'
-      '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  🐳  docker cp src=/var/home/michael/workspace/urbit/erpit/. dst=/var/home/michael/workspace/urbit/erpit","stage":"Main","step":"actions/checkout@v4","stepID":["0"],"time":"2026-09-11T19:33:21-05:00"}'
+      '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  🐳  docker cp src=/work/erpit/. dst=/work/erpit","stage":"Main","step":"actions/checkout@v4","stepID":["0"],"time":"2026-09-11T19:33:21-05:00"}'
       '{"dryrun":false,"executionTime":187301412,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  ✅  Success - Main actions/checkout@v4 [187.301412ms]","stage":"Main","step":"actions/checkout@v4","stepID":["0"],"stepResult":"success","time":"2026-09-11T19:33:21-05:00"}'
       '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"⭐ Run Main run the structural pins","stage":"Main","step":"run the structural pins","stepID":["1"],"time":"2026-09-11T19:33:21-05:00"}'
       '{"dryrun":false,"job":"suite/structural","jobID":"structural","level":"info","matrix":{},"msg":"  🐳  docker exec cmd=[bash -e /var/run/act/workflow/1] user= workdir=","stage":"Main","step":"run the structural pins","stepID":["1"],"time":"2026-09-11T19:33:21-05:00"}'
