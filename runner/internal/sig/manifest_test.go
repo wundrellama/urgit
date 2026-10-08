@@ -79,7 +79,7 @@ func TestManifestSignatureRoundTripAndMutations(t *testing.T) {
 		"sandbox":       func(m *ManifestMessage) { m.Manifest.Sandbox = "container" },
 		"mode":          func(m *ManifestMessage) { m.Manifest.Mode = "trial" },
 		"network":       func(m *ManifestMessage) { m.Manifest.Network = "integration" },
-		"network-scope": func(m *ManifestMessage) { m.Manifest.NetworkScope = "tcp:192.168.1.229:8472" },
+		"network-scope": func(m *ManifestMessage) { m.Manifest.NetworkScope = "tcp:198.51.100.20:8472" },
 	}
 	for name, mutate := range mutations {
 		m := referenceManifest

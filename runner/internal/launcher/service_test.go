@@ -412,14 +412,14 @@ func TestRestartRecoversReservationsAndReaps(t *testing.T) {
 
 func TestNetworkPolicyIsIntersectedWithTheCeiling(t *testing.T) {
 	h := newFakeHost()
-	s := newService(t, h, Config{Ceiling: []string{"tcp:192.168.1.229:8472", "tcp:192.168.1.229:8474"}})
+	s := newService(t, h, Config{Ceiling: []string{"tcp:198.51.100.20:8472", "tcp:198.51.100.20:8474"}})
 	deadline := time.Now().Add(time.Hour).Unix()
 	// a destination outside the launcher's ceiling is refused, never trimmed silently
-	_, err := s.Reserve(ownerA, ReserveRequest{Attempt: "0v1", Image: "img", CPUs: 1, MemoryMiB: 512, DiskMiB: 1024, DeadlineUnix: deadline, Network: "integration", Destinations: []string{"tcp:192.168.1.229:8472", "tcp:10.0.0.5:22"}})
+	_, err := s.Reserve(ownerA, ReserveRequest{Attempt: "0v1", Image: "img", CPUs: 1, MemoryMiB: 512, DiskMiB: 1024, DeadlineUnix: deadline, Network: "integration", Destinations: []string{"tcp:198.51.100.20:8472", "tcp:10.0.0.5:22"}})
 	if err == nil || !strings.Contains(err.Error(), "10.0.0.5:22") {
 		t.Fatalf("destination outside the ceiling accepted: %v", err)
 	}
-	r, err := s.Reserve(ownerA, ReserveRequest{Attempt: "0v2", Image: "img", CPUs: 1, MemoryMiB: 512, DiskMiB: 1024, DeadlineUnix: deadline, Network: "integration", Destinations: []string{"tcp:192.168.1.229:8472"}})
+	r, err := s.Reserve(ownerA, ReserveRequest{Attempt: "0v2", Image: "img", CPUs: 1, MemoryMiB: 512, DiskMiB: 1024, DeadlineUnix: deadline, Network: "integration", Destinations: []string{"tcp:198.51.100.20:8472"}})
 	if err != nil {
 		t.Fatal(err)
 	}

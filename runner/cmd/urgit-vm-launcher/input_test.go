@@ -18,7 +18,7 @@ import (
 	"urgit/runner/internal/launcher"
 )
 
-var d1Allow = []string{"tcp:192.168.1.229:8472", "udp:203.0.113.9:53"}
+var d1Allow = []string{"tcp:198.51.100.20:8472", "udp:203.0.113.9:53"}
 
 func modelHost(t *testing.T, m *nftModel) (*realHost, *recorder) {
 	rec := &recorder{reply: networkModelHost(m, "")}
@@ -54,14 +54,14 @@ func TestCreateNetworkContainsTheInputPath(t *testing.T) {
 	if _, err := h.CreateNetwork(launcher.IDFor("t", "0v1"), 1, d1Allow); err != nil {
 		t.Fatalf("create: %v\n%s", err, m.listing())
 	}
-	if _, err := h.CreateNetwork(launcher.IDFor("t", "0v2"), 2, []string{"tcp:192.168.1.229:9000"}); err != nil {
+	if _, err := h.CreateNetwork(launcher.IDFor("t", "0v2"), 2, []string{"tcp:198.51.100.20:9000"}); err != nil {
 		t.Fatalf("create of a second VM: %v\n%s", err, m.listing())
 	}
 	listing := m.listing()
 	if p := inputContainment(listing, 1, d1Allow); p != nil {
 		t.Fatalf("THE FIRST VM'S INPUT PATH IS NOT CONTAINED: %q\n%s", p, listing)
 	}
-	if p := inputContainment(listing, 2, []string{"tcp:192.168.1.229:9000"}); p != nil {
+	if p := inputContainment(listing, 2, []string{"tcp:198.51.100.20:9000"}); p != nil {
 		t.Fatalf("THE SECOND VM'S INPUT PATH IS NOT CONTAINED: %q\n%s", p, listing)
 	}
 	input := chainOf(t, listing, "input")
@@ -73,7 +73,7 @@ func TestCreateNetworkContainsTheInputPath(t *testing.T) {
 		t.Fatalf("the input chain: %q, want %q", got, want)
 	}
 	in1 := fieldsOf(chainOf(t, listing, "in-1"))
-	wantIn := [][]string{{"ip", "daddr", "192.168.1.229", "tcp", "dport", "8472", "accept"}, {"ip", "daddr", "203.0.113.9", "udp", "dport", "53", "accept"}, {"drop"}}
+	wantIn := [][]string{{"ip", "daddr", "198.51.100.20", "tcp", "dport", "8472", "accept"}, {"ip", "daddr", "203.0.113.9", "udp", "dport", "53", "accept"}, {"drop"}}
 	if !slices.EqualFunc(in1, wantIn, slices.Equal[[]string]) {
 		t.Fatalf("in-1: %q, want %q", in1, wantIn)
 	}
@@ -95,7 +95,7 @@ func TestCreateNetworkRefusesAnInputRuleMissing(t *testing.T) {
 		"the veth's jump":          "nft insert rule inet urgit-test input iifname vh1 jump in-1",
 		"the veth range's drop":    "nft add rule inet urgit-test input ip saddr " + vethRange + " drop",
 		"the VM chain's drop":      "nft add rule inet urgit-test in-1 drop",
-		"an exception":             "nft add rule inet urgit-test in-1 ip daddr 192.168.1.229 tcp dport 8472 accept",
+		"an exception":             "nft add rule inet urgit-test in-1 ip daddr 198.51.100.20 tcp dport 8472 accept",
 		"the input chain":          "nft add chain inet urgit-test input { type filter hook input priority 0; policy accept; }",
 		"the VM's own input chain": "nft create chain inet urgit-test in-1",
 	}
@@ -176,9 +176,9 @@ func TestRecoveryRefusesTheInputChainMissing(t *testing.T) {
 // than its entry — a network, no port, an extra accept — fails the create's
 // verification and the recovery check.
 func TestNoInputExceptionBroaderThanItsEntry(t *testing.T) {
-	broad := []string{"tcp:192.168.1.0/24:8472", "tcp:192.168.1.229:1-65535", "tcp:192.168.1.229:0", "tcp:192.168.1.229:08472",
-		"tcp:host.example:8472", "tcp:[::1]:8472", "tcp:[::ffff:192.168.1.229]:8472", "icmp:192.168.1.229:1", "tcp:192.168.1.229",
-		"tcp:192.168.1.229:8472,8473", "tcp:192.168.1.229:+8472", "tcp:192.168.1.229:65536"}
+	broad := []string{"tcp:198.51.100.0/24:8472", "tcp:198.51.100.20:1-65535", "tcp:198.51.100.20:0", "tcp:198.51.100.20:08472",
+		"tcp:host.example:8472", "tcp:[::1]:8472", "tcp:[::ffff:198.51.100.20]:8472", "icmp:198.51.100.20:1", "tcp:198.51.100.20",
+		"tcp:198.51.100.20:8472,8473", "tcp:198.51.100.20:+8472", "tcp:198.51.100.20:65536"}
 	for _, d := range broad {
 		if _, err := exactDestination(d); err == nil {
 			t.Fatalf("A DESTINATION BROADER THAN ONE ENTRY WAS ACCEPTED: %s", d)
@@ -208,14 +208,14 @@ func TestNoInputExceptionBroaderThanItsEntry(t *testing.T) {
 	}
 	rewrites := map[string]func(string) string{
 		"a network for the address": func(s string) string {
-			return strings.Replace(s, "daddr 192.168.1.229 tcp", "daddr 192.168.1.0/24 tcp", 1)
+			return strings.Replace(s, "daddr 198.51.100.20 tcp", "daddr 198.51.100.0/24 tcp", 1)
 		},
 		"no port": func(s string) string { return strings.Replace(s, " tcp dport 8472 accept", " accept", 1) },
 	}
 	for name, rw := range rewrites {
 		m := newNFTModel("urgit-test")
 		m.rewrite = func(s string) string {
-			if strings.HasPrefix(s, "ip daddr 192.168.1.229 tcp dport 8472 accept") && !strings.Contains(s, "jump") {
+			if strings.HasPrefix(s, "ip daddr 198.51.100.20 tcp dport 8472 accept") && !strings.Contains(s, "jump") {
 				return rw(s)
 			}
 			return s
@@ -232,7 +232,7 @@ func TestNoInputExceptionBroaderThanItsEntry(t *testing.T) {
 	if _, err := h.CreateNetwork(id, 1, d1Allow); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, _, err := m.apply("nft insert rule inet urgit-test in-1 ip daddr 192.168.1.229 accept"); err != nil {
+	if _, _, err := m.apply("nft insert rule inet urgit-test in-1 ip daddr 198.51.100.20 accept"); err != nil {
 		t.Fatal(err)
 	}
 	fakeProcess(t, h, 4242, id)
@@ -255,7 +255,7 @@ func TestRemoveNetworkRemovesItsInputContainment(t *testing.T) {
 	if _, err := h.CreateNetwork(mine, 1, d1Allow); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := h.CreateNetwork(other, 2, []string{"tcp:192.168.1.229:9000"}); err != nil {
+	if _, err := h.CreateNetwork(other, 2, []string{"tcp:198.51.100.20:9000"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := h.RemoveNetwork(mine, 1); err != nil {
@@ -272,7 +272,7 @@ func TestRemoveNetworkRemovesItsInputContainment(t *testing.T) {
 			}
 		}
 	}
-	if p := inputContainment(listing, 2, []string{"tcp:192.168.1.229:9000"}); p != nil {
+	if p := inputContainment(listing, 2, []string{"tcp:198.51.100.20:9000"}); p != nil {
 		t.Fatalf("ANOTHER VM'S CONTAINMENT WAS TOUCHED: %q\n%s", p, listing)
 	}
 	jumpGone, chainGone := -1, -1

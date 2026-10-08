@@ -17,7 +17,7 @@ import (
 
 func serve(t *testing.T, h Host, allowed map[uint32]bool) (string, *Service) {
 	t.Helper()
-	s := newService(t, h, Config{Ceiling: []string{"tcp:192.168.1.229:8472"}})
+	s := newService(t, h, Config{Ceiling: []string{"tcp:198.51.100.20:8472"}})
 	// a unix socket path is 108 bytes at most: the harness's TMPDIR plus
 	// a long test name overflows it, so the socket is made relative to a
 	// temporary working directory

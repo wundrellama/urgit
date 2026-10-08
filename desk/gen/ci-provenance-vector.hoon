@@ -88,7 +88,7 @@
       ['sandbox' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(sandbox 'container'))]
       ['mode' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(mode 'trial'))]
       ['network' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(network 'integration'))]
-      ['network-scope' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(scope 'tcp:192.168.1.229:8472'))]
+      ['network-scope' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(scope 'tcp:198.51.100.20:8472'))]
   ==
 =/  refused=(list @t)
   %+  murn  mutations

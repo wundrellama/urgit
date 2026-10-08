@@ -111,18 +111,18 @@ func TestDockerRootlessIsExplicitAndRefusesMicrovmKeys(t *testing.T) {
 func TestNetworkProfilesAreValidated(t *testing.T) {
 	img := imageDir(t)
 	base := "launcher_socket = \"/run/x/l.sock\"\nimage_path = \"" + img + "\"\nact_image = \"x\"\nbudget_cpus = 8\nbudget_memory_mib = 18432\n"
-	c, err := Load(write(t, base+"[[network_profiles]]\nname = \"integration\"\ndestinations = [\"tcp:192.168.1.229:8472\", \"udp:192.168.1.229:53\"]\n"))
+	c, err := Load(write(t, base+"[[network_profiles]]\nname = \"integration\"\ndestinations = [\"tcp:198.51.100.20:8472\", \"udp:198.51.100.20:53\"]\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(c.NetworkProfiles) != 1 || c.NetworkProfiles[0].Name != "integration" || len(c.NetworkProfiles[0].Destinations) != 2 {
 		t.Fatalf("profiles: %+v", c.NetworkProfiles)
 	}
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"\"\ndestinations = [\"tcp:192.168.1.229:8472\"]\n"), "network profile name is required")
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"locked\"\ndestinations = [\"tcp:192.168.1.229:8472\"]\n"), "locked is reserved")
+	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"\"\ndestinations = [\"tcp:198.51.100.20:8472\"]\n"), "network profile name is required")
+	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"locked\"\ndestinations = [\"tcp:198.51.100.20:8472\"]\n"), "locked is reserved")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:store.example:8472\"]\n"), "IP literal")
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"192.168.1.229:8472\"]\n"), "proto:addr:port")
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:192.168.1.229:70000\"]\n"), "port")
+	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"198.51.100.20:8472\"]\n"), "proto:addr:port")
+	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:198.51.100.20:70000\"]\n"), "port")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = []\n"), "at least one destination")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:1.2.3.4:1\"]\n[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:1.2.3.4:2\"]\n"), "duplicate network profile")
 }

@@ -721,7 +721,7 @@ func TestVerifyAssignment(t *testing.T) {
 // receives it, and a locked manifest that names destinations, or a
 // profile this runner does not declare, is refused the same way
 func TestHonourableRefusesWhatThisRunnerCannotDo(t *testing.T) {
-	d := &Daemon{cfg: &config.Config{Sandbox: "docker-rootless", NetworkProfiles: []config.NetworkProfile{{Name: "integration", Destinations: []string{"tcp:192.168.1.229:8472"}}}}, box: &fakeBox{}, log: log.New(io.Discard, "", 0)}
+	d := &Daemon{cfg: &config.Config{Sandbox: "docker-rootless", NetworkProfiles: []config.NetworkProfile{{Name: "integration", Destinations: []string{"tcp:198.51.100.20:8472"}}}}, box: &fakeBox{}, log: log.New(io.Discard, "", 0)}
 	vm := *jobAssignment
 	m := jobManifest
 	m.Sandbox = "vm"
@@ -742,21 +742,21 @@ func TestHonourableRefusesWhatThisRunnerCannotDo(t *testing.T) {
 	}
 	wider := *jobAssignment
 	mw := jobManifest
-	mw.Network, mw.NetworkScope = "integration", "tcp:192.168.1.229:8472,tcp:10.0.0.1:443"
+	mw.Network, mw.NetworkScope = "integration", "tcp:198.51.100.20:8472,tcp:10.0.0.1:443"
 	wider.Manifest = &mw
 	if err := d.honourable(&wider); err == nil || !strings.Contains(err.Error(), "outside this runner's ceiling") {
 		t.Fatalf("scope beyond the ceiling: %v", err)
 	}
 	inside := *jobAssignment
 	mi := jobManifest
-	mi.Network, mi.NetworkScope = "integration", "tcp:192.168.1.229:8472"
+	mi.Network, mi.NetworkScope = "integration", "tcp:198.51.100.20:8472"
 	inside.Manifest = &mi
 	if err := d.honourable(&inside); err != nil {
 		t.Fatalf("scope inside the ceiling refused: %v", err)
 	}
 	lockedWithScope := *jobAssignment
 	ml := jobManifest
-	ml.NetworkScope = "tcp:192.168.1.229:8472"
+	ml.NetworkScope = "tcp:198.51.100.20:8472"
 	lockedWithScope.Manifest = &ml
 	if err := d.honourable(&lockedWithScope); err == nil {
 		t.Fatal("a locked manifest naming destinations must be refused")

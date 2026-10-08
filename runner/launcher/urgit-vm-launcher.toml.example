@@ -34,7 +34,7 @@ cgroup_parent = "jobs"
 
 # network profiles (rider 03): the ceiling of destinations any profile may
 # reach; a reservation naming anything else is refused. proto:ip:port only.
-ceiling = ["tcp:192.168.1.229:8472"]
+ceiling = ["tcp:198.51.100.20:8472"]
 cidr_pool = "10.113.0.0/16"          # veth /30s; guests get 172.16.<n>.0/30 behind their TAP
 egress_interface = "enp191s0"        # empty: the default route's interface
 nft_table = "urgit-ci-p4-opus"       # the launcher's own inet table; nothing else is touched
