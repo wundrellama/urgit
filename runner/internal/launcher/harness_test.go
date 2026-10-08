@@ -681,8 +681,11 @@ func reopen(t *testing.T, s *Service, h Host) *Service {
 	return open(t, cfg, h, nil)
 }
 
-var owner1 = Owner{UID: 1000, Daemon: "0vd1"}
-var owner2 = Owner{UID: 1000, Daemon: "0vd2"}
+// The server names a connection's owner by the peer's uid, so the fixture
+// owners carry this process's own uid: a test that reserves directly and
+// lists over the wire then finds the same owner on any CI account.
+var owner1 = Owner{UID: uint32(os.Getuid()), Daemon: "0vd1"}
+var owner2 = Owner{UID: uint32(os.Getuid()), Daemon: "0vd2"}
 
 func lockedReq(attempt string, cpus, mem int) ReserveRequest {
 	return ReserveRequest{Attempt: attempt, Image: "img", CPUs: cpus, MemoryMiB: mem, DiskMiB: 10, DeadlineUnix: time.Now().Add(time.Hour).Unix(), Network: "locked"}
