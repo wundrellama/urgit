@@ -60,14 +60,17 @@ labels = []
 
 # network profiles this daemon offers (rider 03). Locked (no network) is
 # every job's default and needs no entry. A profile names the widest set
-# of destinations this runner is willing to reach (proto:ip:port); a job
-# gets it only when the ship's policy names the same profile for that job,
-# and only the intersection of the policy's destinations, this list and
-# the launcher's ceiling. In docker-rootless mode a profile grants NAT
-# egress as a whole; destinations are narrowed only by the VM launcher.
+# of destinations this runner is willing to reach (proto:host:port, where
+# host is an IP literal or a lower-case DNS name); a job gets it only when
+# the ship's policy names the same profile for that job, and only the
+# intersection of the policy's destinations, this list and the launcher's
+# ceiling. The VM launcher resolves a named host when the job's VM starts
+# and allows only the public IPv4 addresses it gets. In docker-rootless
+# mode a profile grants NAT egress as a whole; destinations are narrowed
+# only by the VM launcher.
 # [[network_profiles]]
 # name = "egress"
-# destinations = ["tcp:140.82.112.3:443"]
+# destinations = ["tcp:140.82.112.3:443", "tcp:archive.ubuntu.com:80"]
 
 # resolver: this daemon also performs explicit imports (the dependency
 # walk that mirrors actions into the ship and downloads into its store).

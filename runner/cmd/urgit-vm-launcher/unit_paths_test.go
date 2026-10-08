@@ -103,3 +103,44 @@ func TestUnitWritablePathsExistOrAreOptional(t *testing.T) {
 		}
 	}
 }
+
+// optionalPathProblems is every optional (`-`) ReadWritePaths entry that no
+// privileged ExecStartPre (`+/usr/bin/mkdir -p <path>`) creates. systemd
+// skips an optional entry that is absent when it sets up the sandbox, so
+// under ProtectSystem=strict the path stays read-only and the service
+// cannot create it itself (N1, measured with user units under /var/tmp).
+func optionalPathProblems(entries, pre []string) []string {
+	var p []string
+	for _, e := range entries {
+		path, optional := strings.CutPrefix(e, "-")
+		if optional && !slices.Contains(pre, "+/usr/bin/mkdir -p "+path) {
+			p = append(p, path+": optional, but no privileged ExecStartPre creates it, so it stays read-only while absent")
+		}
+	}
+	return p
+}
+
+// N1: every optional writable path, /run/netns among them, is created by a
+// privileged ExecStartPre before the sandbox is set up, so `ip netns add`
+// can create the namespaces under it. The rule refuses the unit as Stage A
+// shipped it (the optional entry alone).
+func TestUnitCreatesItsOptionalWritablePaths(t *testing.T) {
+	keys := serviceValues(t, filepath.Join("..", "..", "launcher", "urgit-vm-launcher.service"))
+	var entries []string
+	for _, v := range keys["ReadWritePaths"] {
+		entries = append(entries, strings.Fields(v)...)
+	}
+	if p := optionalPathProblems(entries, keys["ExecStartPre"]); p != nil {
+		t.Fatalf("AN OPTIONAL WRITABLE PATH STAYS READ-ONLY WHILE ABSENT: %q", p)
+	}
+	if !slices.Contains(keys["ExecStartPre"], "+/usr/bin/mkdir -p /run/netns") {
+		t.Fatalf("no privileged ExecStartPre creates /run/netns: %q", keys["ExecStartPre"])
+	}
+	stageA := []string{"/var/lib/urgit-ci-p4-opus", "/run/urgit-ci-p4-opus", "/sys/fs/cgroup", "-/run/netns"}
+	if optionalPathProblems(stageA, nil) == nil {
+		t.Fatal("the rule accepts Stage A's unit, whose -/run/netns stays read-only while absent")
+	}
+	if optionalPathProblems(stageA, []string{"/usr/bin/mkdir -p /run/netns"}) == nil {
+		t.Fatal("the rule accepts an unprivileged ExecStartPre, which runs inside the read-only sandbox")
+	}
+}

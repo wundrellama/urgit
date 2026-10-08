@@ -93,7 +93,42 @@
 ::  case expecting %.n is an intentionally false assertion: the
 ::  predicate must REFUSE it
 ::
-=/  cases=(list [name=@t expect=? got=?])
+::  the DNS name length bounds (CI-P4-NET-1, named destinations): a
+::  63- and a 64-character label, a 253- and a 255-character name
+=/  label-63=@t  (rap 3 ~['tcp:' (fil 3 63 'a') '.com:443'])
+=/  label-64=@t  (rap 3 ~['tcp:' (fil 3 64 'a') '.com:443'])
+=/  name-253=@t  (rap 3 (snoc (reap 125 'a.') 'com'))
+=/  name-255=@t  (rap 3 (snoc (reap 126 'a.') 'com'))
+::  destination syntax (rider 03; named destinations, CI-P4-NET-1)
+=/  dest-ok  destination-valid:ci-provenance
+=/  destination-cases=(list [name=@t expect=? got=?])
+  :~  ['a tcp destination with an IPv4 literal' %.y (dest-ok 'tcp:140.82.112.3:443')]
+      ['a udp destination' %.y (dest-ok 'udp:1.1.1.1:53')]
+      ['a bracketed IPv6 literal' %.y (dest-ok 'tcp:[2606:50c0:8000::153]:443')]
+      ::  named destinations (CI-P4-NET-1, 2026-10-08): the grammar
+      ::  runner/internal/netname checks too
+      ['a DNS name is a destination' %.y (dest-ok 'tcp:github.com:443')]
+      ['a deeper DNS name' %.y (dest-ok 'tcp:raw.githubusercontent.com:443')]
+      ['a name with digits and a hyphen' %.y (dest-ok 'udp:ns-1.x1.example:53')]
+      ['a single label is not a name' %.n (dest-ok 'tcp:localhost:80')]
+      ['upper case is not a name' %.n (dest-ok 'tcp:GitHub.com:443')]
+      ['a wildcard is not a name' %.n (dest-ok 'tcp:*.github.com:443')]
+      ['a trailing dot is not a name' %.n (dest-ok 'tcp:github.com.:443')]
+      ['an empty label is not a name' %.n (dest-ok 'tcp:git..hub.com:443')]
+      ['a label starting with a hyphen is not a name' %.n (dest-ok 'tcp:-git.com:443')]
+      ['a label ending with a hyphen is not a name' %.n (dest-ok 'tcp:git-.com:443')]
+      ['an underscore is not a name' %.n (dest-ok 'tcp:git_hub.com:443')]
+      ['a numeric last label is not a name' %.n (dest-ok 'tcp:host.123:443')]
+      ['a 64-character label is not a name' %.n (dest-ok label-64)]
+      ['a 63-character label is a name' %.y (dest-ok label-63)]
+      ['a name of 255 characters is not a name' %.n (dns-name-valid:ci-provenance name-255)]
+      ['a name of 253 characters is a name' %.y (dns-name-valid:ci-provenance name-253)]
+      ['a port of zero' %.n (dest-ok 'tcp:140.82.112.3:0')]
+      ['a port past 65535' %.n (dest-ok 'tcp:140.82.112.3:65536')]
+      ['an octet past 255' %.n (dest-ok 'tcp:300.82.112.3:443')]
+      ['a bare address' %.n (dest-ok '140.82.112.3:443')]
+  ==
+=/  other-cases=(list [name=@t expect=? got=?])
   :~  ::  authority (rider 02)
       ['owner holds every role implicitly' %.y (auth %ci-policy ~ owner)]
       ['owner holds a scoped role too' %.y (auth %override `'refs/heads/master' owner)]
@@ -136,14 +171,6 @@
       ['the named job gets its profile' %.y =('egress' profile:(network-for:ci-provenance policies 'suite.yml' 'integration'))]
       ['the same job of another workflow is locked' %.y =('locked' profile:(network-for:ci-provenance policies 'fixtures.yml' 'integration'))]
       ['no policies: locked' %.y =('locked' profile:(network-for:ci-provenance ~ 'suite.yml' 'integration'))]
-      ['a tcp destination with an IPv4 literal' %.y (destination-valid:ci-provenance 'tcp:140.82.112.3:443')]
-      ['a udp destination' %.y (destination-valid:ci-provenance 'udp:1.1.1.1:53')]
-      ['a bracketed IPv6 literal' %.y (destination-valid:ci-provenance 'tcp:[2606:50c0:8000::153]:443')]
-      ['a hostname is not a destination' %.n (destination-valid:ci-provenance 'tcp:github.com:443')]
-      ['a port of zero' %.n (destination-valid:ci-provenance 'tcp:140.82.112.3:0')]
-      ['a port past 65535' %.n (destination-valid:ci-provenance 'tcp:140.82.112.3:65536')]
-      ['an octet past 255' %.n (destination-valid:ci-provenance 'tcp:300.82.112.3:443')]
-      ['a bare address' %.n (destination-valid:ci-provenance '140.82.112.3:443')]
       ::  harness paths (D5)
       ['.github/ is a harness path' %.y (harness-path-valid:ci-provenance '.github/')]
       ['bin/ is a harness path' %.y (harness-path-valid:ci-provenance 'bin/')]
@@ -173,6 +200,7 @@
       ['the same nodes in another repository are another lock' %.n =((lock-digest:ci-provenance 'erpit' oid ~[js]) (lock-digest:ci-provenance 'urgit' oid ~[js]))]
       ['the same nodes at another revision are another lock' %.n =((lock-digest:ci-provenance 'erpit' oid ~[js]) (lock-digest:ci-provenance 'erpit' tip ~[js]))]
   ==
+=/  cases=(list [name=@t expect=? got=?])  (weld other-cases destination-cases)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

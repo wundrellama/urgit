@@ -60,7 +60,11 @@ func render(args []string) string {
 	out := slices.Clone(args)
 	for i := 0; i+1 < len(out); i++ {
 		if out[i] == "iifname" || out[i] == "oifname" {
-			out[i+1] = strconv.Quote(out[i+1])
+			j := i + 1
+			if out[j] == "!=" && j+1 < len(out) { // nft lists `oifname != "vh*"`
+				j++
+			}
+			out[j] = strconv.Quote(out[j])
 		}
 	}
 	return strings.Join(out, " ")

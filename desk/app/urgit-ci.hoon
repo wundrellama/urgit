@@ -1969,7 +1969,7 @@
     ?:  =('locked' profile.act)  ~|('locked is the default; clear the policy instead' !!)
     ?~  destinations.act  ~|('a network policy names at least one destination' !!)
     ?.  (levy `(list @t)`destinations.act destination-valid:ci-provenance)
-      ~|('destinations are tcp:<ip>:<port> or udp:<ip>:<port> with an IP literal' !!)
+      ~|('destinations are tcp|udp:<IP literal or DNS name>:<port>' !!)
     =/  current=(list network-policy:ci)  (~(gut by network-policies) repo.act ~)
     =/  rest=(list network-policy:ci)
       (skip current |=(n=network-policy:ci &(=(workflow.n workflow.act) =(job.n job.act))))

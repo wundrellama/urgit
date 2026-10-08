@@ -99,8 +99,8 @@ func TestCreateNetworkRefusesPreexistingObjects(t *testing.T) {
 
 // With nothing of the attempt's present, the per-VM chain is created —
 // `nft create chain`, which fails if it exists, never `add` — no
-// "File exists" is taken for success, and the egress interface is read
-// without a shell.
+// "File exists" is taken for success, and no host command runs through a
+// shell.
 func TestCreateNetworkCreatesItsOwnChain(t *testing.T) {
 	rec := &recorder{reply: networkHost("")}
 	h := testHost(t, rec)

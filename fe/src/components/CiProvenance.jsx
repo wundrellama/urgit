@@ -156,7 +156,7 @@ export function CiPolicySection({ repo, policy, onChanged }) {
       </div>
       <div className="ci-policy-block">
         <strong>Network policies</strong>
-        <small className="quiet">Locked is the default. A policy lets one job of one workflow use a runner profile toward these destinations (tcp:&lt;ip&gt;:&lt;port&gt;); labels select runners and never grant. The effective access is bounded by this policy, the runner's declared profile and the launcher's ceiling.</small>
+        <small className="quiet">Locked is the default. A policy lets one job of one workflow use a runner profile toward these destinations (tcp:&lt;ip or DNS name&gt;:&lt;port&gt;, for example tcp:archive.ubuntu.com:80); labels select runners and never grant. The effective access is bounded by this policy, the runner's declared profile and the launcher's ceiling. A DNS name is allowed by the addresses it resolves to when the job starts. Other sites on those addresses, such as sites on a shared CDN, are reachable on that port too.</small>
         {networkPolicies.map((n, i) => <div key={i}><code>{n.workflow}/{n.job}</code> → {n.profile} [{(n.destinations || []).join(', ')}]{n.environment ? ` (${n.environment})` : ''} <button className="text-button danger-text" disabled={busy !== ''} onClick={() => act('clear-net', provenanceActions.clearNetworkPolicy(repoName, n.workflow, n.job))}>Clear</button></div>)}
         <div className="three-fields">
           <label><span>Workflow file</span><input value={net.workflow} onChange={(e) => setNet({ ...net, workflow: e.target.value })} placeholder="ci.yml" /></label>

@@ -259,8 +259,11 @@
     [profile.i.policies destinations.i.policies]
   $(policies t.policies)
 ::
-::  a destination is `tcp:<ip>:<port>` or `udp:<ip>:<port>` with an IP
-::  literal: no names, so no resolver can widen it (rider 03)
+::  a destination is `tcp:<host>:<port>` or `udp:<host>:<port>`, where the
+::  host is an IP literal or a DNS name (CI-P4-NET-1, named destinations,
+::  2026-10-08).  The ship never resolves a name: the VM launcher resolves
+::  and pins it on the host for one reservation (rider 03 enforcement
+::  stays outside the guest)
 ::
 ++  destination-valid
   |=  d=@t
@@ -278,9 +281,11 @@
   =/  n=(unit @ud)  (rush (crip port) dem:ag)
   ?~  n  %.n
   ?.  &((gth u.n 0) (lte u.n 65.535))  %.n
-  ::  an IPv4 literal: four dotted decimal octets; an IPv6 literal in
-  ::  brackets is accepted as written
+  ::  an IPv6 literal in brackets is accepted as written; a DNS name in
+  ::  the grammar below; otherwise an IPv4 literal of four dotted decimal
+  ::  octets
   ?:  =("[" (scag 1 `tape`host))  %.y
+  ?:  (dns-name-valid (crip host))  %.y
   =/  parts=(list tape)  (split-on `tape`host '.')
   ?.  =(4 (lent parts))  %.n
   %+  levy  parts
@@ -288,6 +293,39 @@
   ?~  p  %.n
   =/  v=(unit @ud)  (rush (crip p) dem:ag)
   ?&(?=(^ v) (lte u.v 255))
+::
+::  a DNS name in a destination: the grammar runner/internal/netname
+::  spells too, so the ship, the runner and the launcher agree on what
+::  one entry names.  Lower case only (a policy is compared as text),
+::  1-253 characters, two or more labels of 1-63 characters from a-z,
+::  0-9 and -, no label starting or ending with -, no wildcard, no
+::  trailing dot, and a last label that starts with a letter, so no IPv4
+::  literal, valid or not, is ever read as a name
+::
+++  dns-name-valid
+  |=  name=@t
+  ^-  ?
+  =/  chars=tape  (trip name)
+  ?.  &((gte (lent chars) 1) (lte (lent chars) 253))  %.n
+  =/  labels=(list tape)  (split-on chars '.')
+  ?.  (gte (lent labels) 2)  %.n
+  ?.  (levy labels dns-label-valid)  %.n
+  =/  last=tape  (rear labels)
+  ?~  last  %.n
+  &((gte i.last 'a') (lte i.last 'z'))
+::
+++  dns-label-valid
+  |=  label=tape
+  ^-  ?
+  ?~  label  %.n
+  ?.  (lte (lent label) 63)  %.n
+  ?:  |(=('-' i.label) =('-' (rear `tape`label)))  %.n
+  %+  levy  `tape`label
+  |=  c=@tD
+  ?|  &((gte c 'a') (lte c 'z'))
+      &((gte c '0') (lte c '9'))
+      =('-' c)
+  ==
 ::
 ++  split-on
   |=  [text=tape sep=@tD]

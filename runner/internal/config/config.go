@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"urgit/runner/internal/netname"
 )
 
 // Rider 04's product defaults.
@@ -36,7 +38,9 @@ const (
 
 // NetworkProfile is a runner-declared profile (rider 03): a name the
 // ship may authorize for a job and the runner's ceiling of destinations
-// for it, each `proto:ip:port` with an IP literal (no names: no DNS).
+// for it, each `proto:host:port` where host is an IP literal or a DNS name
+// (CI-P4-NET-1, named destinations). The runner never resolves a name: the
+// VM launcher resolves and pins it on the host for one reservation.
 type NetworkProfile struct {
 	Name         string   `toml:"name"`
 	Destinations []string `toml:"destinations"`
@@ -258,19 +262,22 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-// ValidateDestination checks one `proto:ip:port` entry: tcp or udp, an
-// IP literal (never a name, so no resolver is ever consulted), a port.
+// ValidateDestination checks one `proto:host:port` entry: tcp or udp, a
+// host that is an IP literal or a DNS name in netname's grammar (the ship
+// and the launcher use the same one), a port. Nothing is resolved here.
 func ValidateDestination(d string) error {
 	parts := strings.SplitN(d, ":", 2)
 	if len(parts) != 2 || (parts[0] != "tcp" && parts[0] != "udp") {
-		return fmt.Errorf("destination %q must be proto:addr:port with proto tcp or udp", d)
+		return fmt.Errorf("destination %q must be proto:host:port with proto tcp or udp", d)
 	}
 	host, port, err := net.SplitHostPort(parts[1])
 	if err != nil {
-		return fmt.Errorf("destination %q must be proto:addr:port", d)
+		return fmt.Errorf("destination %q must be proto:host:port", d)
 	}
-	if net.ParseIP(host) == nil {
-		return fmt.Errorf("destination %q must name an IP literal, not a host name (locked runs have no DNS and a name would widen the scope)", d)
+	// SplitHostPort strips brackets; they belong to an IPv6 literal only,
+	// so a name has one spelling and the ceiling's exact match sees it
+	if net.ParseIP(host) == nil && (!netname.Valid(host) || strings.HasPrefix(parts[1], "[")) {
+		return fmt.Errorf("destination %q must name an IP literal or a lower-case DNS name of two or more labels (no wildcard, no trailing dot)", d)
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {

@@ -29,6 +29,7 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -45,6 +46,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"urgit/runner/internal/launcher"
+	"urgit/runner/internal/pindns"
 )
 
 const version = "p4-opus-1"
@@ -109,6 +111,13 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.CIDRPool == "" {
 		c.CIDRPool = "10.113.0.0/16"
+	}
+	// N2: the masquerade follows the namespace address on whichever
+	// interface the routing table picks, so an interface named here would
+	// no longer be honoured. A setting that does nothing is refused rather
+	// than silently ignored.
+	if c.EgressInterface != "" {
+		problems = append(problems, "egress_interface is retired: the masquerade follows the route the kernel picks (N2); remove it")
 	}
 	if len(problems) > 0 {
 		return nil, errors.New(strings.Join(problems, "; "))
@@ -416,6 +425,13 @@ type realHost struct {
 	// ctx bounds every operation of this view of the host (Bound); nil
 	// is no bound
 	ctx context.Context
+	// named destinations (names.go): the host resolver a granted name is
+	// pinned with, the responder starter, and the running responders,
+	// shared by every bounded view. Tests put models here.
+	lookupIP func(ctx context.Context, name string) ([]netip.Addr, error)
+	startDNS func(nsPath, listen string, table pindns.Table) (io.Closer, error)
+	dns      *dnsRegistry
+	ownAddrs func() ([]netip.Addr, error) // nil: the host's interfaces
 }
 
 // Bound is the core's seam (launcher.Bounder): a view of the host whose
@@ -563,7 +579,8 @@ func (h *realHost) bounded(what string, op func() error) error {
 
 func newHost(cfg *Config, logger *log.Logger) (*realHost, error) {
 	h := &realHost{cfg: cfg, log: logger, images: map[string]launcher.Image{}, command: runCommand, pid: os.Getpid(),
-		cgroups: osCgroups{root: "/sys/fs/cgroup", proc: "/proc"}, netnsDir: "/run/netns", procDir: "/proc"}
+		cgroups: osCgroups{root: "/sys/fs/cgroup", proc: "/proc"}, netnsDir: "/run/netns", procDir: "/proc",
+		lookupIP: hostLookup, startDNS: startPinnedDNS, dns: newDNSRegistry()}
 	u, err := user.Lookup(cfg.VMUser)
 	if err != nil {
 		return nil, fmt.Errorf("vm_user %s: %w", cfg.VMUser, err)
@@ -695,11 +712,14 @@ func (h *realHost) check() error {
 		}
 	}
 	for _, d := range h.cfg.Ceiling {
-		// D1: a ceiling entry is one exact destination — it becomes a
-		// forward accept and, for a host address, the input chain's only
-		// exception — never a network, a port range or a name
+		// D1: a ceiling entry is one exact destination — a literal becomes
+		// a forward accept and, for a host address, the input chain's only
+		// exception; a DNS name is pinned per reservation to public
+		// addresses (names.go) — never a network, a port range or a list
 		if _, err := exactDestination(d); err != nil {
-			problems = append(problems, "ceiling entry "+d+": "+err.Error())
+			if _, _, _, named := namedDestination(d); !named {
+				problems = append(problems, "ceiling entry "+d+": "+err.Error())
+			}
 		}
 	}
 	if len(problems) > 0 {
@@ -1086,16 +1106,36 @@ func (h *realHost) CreateNetwork(id string, index int, allow []string) (launcher
 	refuse := func(format string, a ...any) (launcher.NetInfo, error) {
 		return info, fmt.Errorf("%w: %s", launcher.ErrNoEffect, fmt.Sprintf(format, a...))
 	}
-	var accepts [][]string
+	// D1: each destination is one exact entry — no network, port range or
+	// list — so neither its forward accept nor its input exception is
+	// broader than the entry. A literal gets both; a named destination
+	// (names.go) is pinned now, on the host, to the public IPv4 addresses
+	// it resolves to: each gets a forward accept at the entry's proto and
+	// port, and no input exception. Every name is pinned before anything
+	// is created, so a name that cannot be pinned refuses without effect.
+	var accepts, forward [][]string
+	table := pindns.Table{}
 	for _, d := range allow {
-		// D1: each destination one exact entry — no network, port range or
-		// name — so neither its forward accept nor its input exception is
-		// broader than the entry
-		dst, err := exactDestination(d)
-		if err != nil {
-			return refuse("destination %s: %v", d, err)
+		if dst, err := exactDestination(d); err == nil {
+			accepts = append(accepts, dst)
+			forward = append(forward, dst)
+			continue
 		}
-		accepts = append(accepts, dst)
+		proto, name, port, ok := namedDestination(d)
+		if !ok {
+			return refuse("destination %s: neither one IPv4 literal nor one DNS name, with tcp or udp and one port", d)
+		}
+		addrs, ok := table[name]
+		if !ok {
+			pinned, err := h.pin(name)
+			if err != nil {
+				return refuse("destination %s: %v", d, err)
+			}
+			addrs, table[name] = pinned, pinned
+		}
+		for _, a := range addrs {
+			forward = append(forward, []string{a.String(), proto, port})
+		}
 	}
 	if found, err := h.netnsExists(id); err != nil || found {
 		return refuse("network namespace %s: present %v (%v); not this reservation's", id, found, err)
@@ -1106,16 +1146,6 @@ func (h *realHost) CreateNetwork(id string, index int, allow []string) (launcher
 	st, err := h.tableObjects(index)
 	if err != nil || st.chain || st.inChain || len(st.rules) > 0 {
 		return refuse("table %s holds VM index %d's objects already (chain vm-%d: %v, chain in-%d: %v, rules %q, %v); not this reservation's", h.cfg.NFTTable, index, index, st.chain, index, st.inChain, st.rules, err)
-	}
-	egress := h.cfg.EgressInterface
-	if egress == "" {
-		out, err := h.run("ip", "-4", "route", "show", "default")
-		if err != nil {
-			return refuse("the default route: %v", err)
-		}
-		if egress = defaultDevice(out); egress == "" {
-			return refuse("no default route names an interface: %q", strings.TrimSpace(out))
-		}
 	}
 	steps := [][]string{
 		{"ip", "netns", "add", id},
@@ -1159,12 +1189,17 @@ func (h *realHost) CreateNetwork(id string, index int, allow []string) (launcher
 		{"add", "rule", "inet", t, chain, "meta", "nfproto", "ipv6", "drop"},
 		{"add", "rule", "inet", t, chain, "ct", "state", "invalid", "drop"},
 	}
-	for _, a := range accepts {
+	for _, a := range dedupe(forward) {
 		rules = append(rules, []string{"add", "rule", "inet", t, chain, "ip", "daddr", a[0], a[1], "dport", a[2], "accept"})
 	}
+	// N2: the masquerade follows the namespace address, not an interface
+	// name. The kernel's routing table picks the outgoing interface, and on a
+	// host with two default routes, or a NIC that unplugs, a rule bound to one
+	// name would not match, so the namespace address would leave unmasked.
+	// Only traffic toward the launcher's own veths is not masqueraded.
 	rules = append(rules,
 		[]string{"add", "rule", "inet", t, chain, "drop"},
-		[]string{"add", "rule", "inet", t, "post", "ip", "saddr", vns, "oifname", egress, "masquerade"},
+		[]string{"add", "rule", "inet", t, "post", "ip", "saddr", vns, "oifname", "!=", "vh*", "masquerade"},
 	)
 	// D1, the input hook: traffic from a VM's veth to any of the host's own
 	// addresses takes the input hook, never forward. The launcher's input
@@ -1204,7 +1239,34 @@ func (h *realHost) CreateNetwork(id string, index int, allow []string) (launcher
 		return info, fmt.Errorf("the input containment of %s is not in place: %s", vh, strings.Join(p, "; "))
 	}
 	info = launcher.NetInfo{TAP: "tap0", GuestIP: guestIP + "/30", Gateway: tapIP, Index: index}
+	// a VM granted a name gets its responder, in its own namespace, on its
+	// gateway: the only resolver the guest is told of. A VM granted only
+	// literals gets none, and keeps an empty resolver.
+	if len(table) > 0 {
+		if h.startDNS == nil || h.dns == nil {
+			return info, errors.New("named destinations need the name responder, which is not configured")
+		}
+		listen := net.JoinHostPort(tapIP, "53")
+		srv, err := h.startDNS(filepath.Join(h.netnsDir, id), listen, table)
+		if err != nil {
+			return info, fmt.Errorf("the name responder for %s: %v", id, err)
+		}
+		h.dns.put(id, srv)
+		info.DNS = tapIP
+	}
 	return info, nil
+}
+
+// dedupe keeps the first of each identical forward accept: two granted
+// names that pin the same address and port need one rule.
+func dedupe(accepts [][]string) [][]string {
+	var out [][]string
+	for _, a := range accepts {
+		if !slices.ContainsFunc(out, func(b []string) bool { return slices.Equal(a, b) }) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // vethRange is every address netAddrs gives a veth or a namespace: the
@@ -1318,7 +1380,11 @@ func inputContainment(listing string, index int, allow []string) []string {
 	for _, d := range allow {
 		dst, err := exactDestination(d)
 		if err != nil {
-			p = append(p, fmt.Sprintf("destination %s: %v", d, err))
+			// a named destination never has an input exception (names.go):
+			// it is pinned to public addresses, never to the host
+			if _, _, _, named := namedDestination(d); !named {
+				p = append(p, fmt.Sprintf("destination %s: %v", d, err))
+			}
 			continue
 		}
 		want = append(want, []string{"ip", "daddr", dst[0], dst[1], "dport", dst[2], "accept"})
@@ -1365,22 +1431,6 @@ func (h *realHost) inputContainmentProblems(records []launcher.Record) []string 
 		}
 	}
 	return p
-}
-
-// defaultDevice is the interface `ip -4 route show default` names first.
-func defaultDevice(routes string) string {
-	for _, line := range strings.Split(routes, "\n") {
-		f := strings.Fields(line)
-		if len(f) == 0 || f[0] != "default" {
-			continue
-		}
-		for i := 0; i+1 < len(f); i++ {
-			if f[i] == "dev" {
-				return f[i+1]
-			}
-		}
-	}
-	return ""
 }
 
 // netnsExists says whether a named network namespace id is mounted.
@@ -1446,6 +1496,21 @@ func (h *realHost) tableObjects(index int) (tableState, error) {
 	return st, nil
 }
 
+// vmBootArgs is the guest kernel's command line: the image's own, the
+// attempt, and for a networked VM its address and gateway and, when it was
+// granted a name, its pinned-name responder (names.go). Without one the
+// guest keeps an empty resolver.
+func vmBootArgs(spec launcher.VMSpec) string {
+	args := spec.Image.BootArgs + " urgit.attempt=" + spec.Attempt
+	if spec.Net != nil {
+		args += " urgit.ip=" + spec.Net.GuestIP + "," + spec.Net.Gateway
+		if spec.Net.DNS != "" {
+			args += " urgit.dns=" + spec.Net.DNS
+		}
+	}
+	return args
+}
+
 // startBound bounds a start: the jailer and the wait for its pid file
 // (the core passes the same bound; the adapter keeps it without one).
 const startBound = 30 * time.Second
@@ -1461,15 +1526,13 @@ func (h *realHost) StartVM(id string, spec launcher.VMSpec) (int, error) {
 	ctx, cancel := context.WithTimeout(h.context(), startBound)
 	defer cancel()
 	root := h.jailRoot(id)
-	bootArgs := spec.Image.BootArgs + " urgit.attempt=" + spec.Attempt
 	cfg := map[string]any{
-		"boot-source":    map[string]any{"kernel_image_path": "/vmlinux", "boot_args": bootArgs},
+		"boot-source":    map[string]any{"kernel_image_path": "/vmlinux", "boot_args": vmBootArgs(spec)},
 		"drives":         []map[string]any{{"drive_id": "rootfs", "path_on_host": "/disk.ext4", "is_root_device": true, "is_read_only": false}},
 		"machine-config": map[string]any{"vcpu_count": spec.CPUs, "mem_size_mib": spec.MemoryMiB, "smt": false},
 		"vsock":          map[string]any{"guest_cid": spec.CID, "uds_path": "/v.sock"},
 	}
 	if spec.Net != nil {
-		cfg["boot-source"].(map[string]any)["boot_args"] = bootArgs + " urgit.ip=" + spec.Net.GuestIP + "," + spec.Net.Gateway
 		cfg["network-interfaces"] = []map[string]any{{"iface_id": "eth0", "host_dev_name": spec.Net.TAP}}
 	}
 	data, _ := json.MarshalIndent(cfg, "", "  ")
@@ -1647,6 +1710,11 @@ func (h *realHost) RemoveNetwork(id string, index int) error {
 	veth := fmt.Sprintf("%q", fmt.Sprintf("vh%d", index))
 	saddr := netnsSaddr(index)
 	var problems []string
+	// the VM's name responder first: its sockets would keep the namespace,
+	// and with it the veth and the TAP, alive after `ip netns del`
+	if err := h.dns.stop(id); err != nil {
+		problems = append(problems, err.Error())
+	}
 	listing, err := h.run("nft", "-a", "list", "table", "inet", t)
 	if err != nil && !strings.Contains(err.Error(), "No such file") {
 		problems = append(problems, err.Error())

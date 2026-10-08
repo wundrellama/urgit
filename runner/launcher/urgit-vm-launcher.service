@@ -42,9 +42,12 @@ ProtectSystem=strict
 # every writable path is one the install creates — the protected root, this
 # unit's RuntimeDirectory, the cgroup filesystem — or is optional (`-`):
 # systemd refuses to start a unit whose listed path is missing (226/NAMESPACE)
-# (C6). /run/netns exists only once a network namespace does, and Stage A
-# creates none. Stage B must make it writable: under ProtectSystem=strict
-# /run is read-only, and `ip netns add` creates and mounts /run/netns.
+# (C6). /run/netns exists only once a network namespace does. An optional
+# entry that is absent when the sandbox is set up stays read-only under
+# ProtectSystem=strict, so `ip netns add` could not create it (N1). The
+# privileged ExecStartPre (`+`, run outside the sandbox) creates it first;
+# the sandbox then makes it writable.
+ExecStartPre=+/usr/bin/mkdir -p /run/netns
 ReadWritePaths=/var/lib/urgit-ci-p4-opus /run/urgit-ci-p4-opus /sys/fs/cgroup -/run/netns
 
 [Install]

@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +56,11 @@ func main() {
 	}
 	if err := configureNetwork(cmdline["urgit.ip"]); err != nil {
 		log.Printf("network: %v", err)
+	}
+	// before Docker starts: dockerd and every job container read the
+	// resolver from this file
+	if err := configureResolver("/etc/resolv.conf", cmdline["urgit.dns"]); err != nil {
+		log.Printf("resolver: %v", err)
 	}
 	dockerVersion, err := startDocker()
 	if err != nil {
@@ -219,7 +225,8 @@ func readTrim(p string) string {
 }
 
 // configureIdentity: hostname, hosts, a fresh machine-id per boot, an
-// empty resolver (locked profile: no DNS), the loopback up.
+// empty resolver (configureResolver replaces it when the launcher names a
+// pinned-name responder), the loopback up.
 func configureIdentity(hostname string) error {
 	if err := syscall.Sethostname([]byte(hostname)); err != nil {
 		return err
@@ -251,6 +258,25 @@ func configureNetwork(spec string) error {
 		return run("ip", "route", "add", "default", "via", gw, "dev", "eth0")
 	}
 	return nil
+}
+
+// configureResolver writes the guest's resolver. With no responder on the
+// kernel command line (a locked VM, or one granted only literals) it stays
+// empty: no name resolves. With one (urgit.dns=<IPv4>, the launcher's
+// pinned-name responder on the VM's gateway, which answers only the names
+// the job was granted), it is the only nameserver, with no search domain,
+// so a short name is never tried against anything else. Anything but one
+// plain IPv4 address leaves it empty.
+func configureResolver(path, dns string) error {
+	if dns == "" {
+		return os.WriteFile(path, nil, 0o644)
+	}
+	a, err := netip.ParseAddr(dns)
+	if err != nil || !a.Is4() || a.String() != dns {
+		os.WriteFile(path, nil, 0o644)
+		return fmt.Errorf("urgit.dns=%q is not one IPv4 address; the resolver stays empty", dns)
+	}
+	return os.WriteFile(path, []byte("nameserver "+dns+"\noptions ndots:1 attempts:1 timeout:2\n"), 0o644)
 }
 
 func run(argv ...string) error {

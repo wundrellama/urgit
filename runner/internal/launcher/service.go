@@ -139,11 +139,14 @@ type Config struct {
 }
 
 // NetInfo is what the host's network setup hands back for the kernel
-// command line.
+// command line. DNS is the address of the VM's pinned-name responder
+// (CI-P4-NET-1, named destinations): set only when the VM was granted a
+// named destination; empty, the guest keeps an empty resolver.
 type NetInfo struct {
 	TAP     string
 	GuestIP string
 	Gateway string
+	DNS     string
 	Index   int
 }
 
@@ -823,9 +826,11 @@ func (s *Service) usage() (cpus, mem, guests int) {
 	return
 }
 
-// destinationAllowed says whether a `proto:addr:port` entry is inside
+// destinationAllowed says whether a `proto:host:port` entry is inside
 // the launcher's ceiling (exact entry match; the ceiling is a list of
-// exact destinations by design — no ranges to widen by mistake).
+// exact destinations by design — no ranges to widen by mistake). A named
+// entry matches only the same name: the host adapter pins it to addresses
+// when the VM's network is created.
 func (s *Service) destinationAllowed(d string) bool {
 	for _, c := range s.cfg.Ceiling {
 		if c == d {

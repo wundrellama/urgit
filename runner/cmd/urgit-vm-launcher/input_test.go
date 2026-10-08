@@ -170,14 +170,17 @@ func TestRecoveryRefusesTheInputChainMissing(t *testing.T) {
 }
 
 // No exception is broader than its entry. A destination that is a network,
-// a port range, port 0, a padded port, a name, an IPv6 or IPv4-mapped
-// address, another proto or no port is refused before anything is created,
-// and check names it in the ceiling. An exception the table holds broader
-// than its entry — a network, no port, an extra accept — fails the create's
-// verification and the recovery check.
+// a port range, port 0, a padded port, a name outside the shared grammar
+// (upper case, a wildcard, one label: names_test.go covers the named
+// destinations the grammar admits), an IPv6 or IPv4-mapped address, another
+// proto or no port is refused before anything is created, and check names
+// it in the ceiling. An exception the table holds broader than its entry —
+// a network, no port, an extra accept — fails the create's verification and
+// the recovery check.
 func TestNoInputExceptionBroaderThanItsEntry(t *testing.T) {
 	broad := []string{"tcp:198.51.100.0/24:8472", "tcp:198.51.100.20:1-65535", "tcp:198.51.100.20:0", "tcp:198.51.100.20:08472",
-		"tcp:host.example:8472", "tcp:[::1]:8472", "tcp:[::ffff:198.51.100.20]:8472", "icmp:198.51.100.20:1", "tcp:198.51.100.20",
+		"tcp:Host.example:8472", "tcp:*.example.com:8472", "tcp:localhost:8472",
+		"tcp:[::1]:8472", "tcp:[::ffff:198.51.100.20]:8472", "icmp:198.51.100.20:1", "tcp:198.51.100.20",
 		"tcp:198.51.100.20:8472,8473", "tcp:198.51.100.20:+8472", "tcp:198.51.100.20:65536"}
 	for _, d := range broad {
 		if _, err := exactDestination(d); err == nil {

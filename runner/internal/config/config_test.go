@@ -120,8 +120,16 @@ func TestNetworkProfilesAreValidated(t *testing.T) {
 	}
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"\"\ndestinations = [\"tcp:198.51.100.20:8472\"]\n"), "network profile name is required")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"locked\"\ndestinations = [\"tcp:198.51.100.20:8472\"]\n"), "locked is reserved")
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:store.example:8472\"]\n"), "IP literal")
-	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"198.51.100.20:8472\"]\n"), "proto:addr:port")
+	// a DNS name is a destination (CI-P4-NET-1, named destinations); the
+	// launcher resolves and pins it, the runner never does
+	named, err := Load(write(t, base+"[[network_profiles]]\nname = \"apt\"\ndestinations = [\"tcp:archive.ubuntu.com:80\", \"tcp:bootstrap.urbit.org:443\"]\n"))
+	if err != nil || len(named.NetworkProfiles[0].Destinations) != 2 {
+		t.Fatalf("a profile of DNS names was refused: %v", err)
+	}
+	for _, d := range []string{"tcp:Store.example:8472", "tcp:*.example.com:443", "tcp:localhost:80", "tcp:store.example.:8472", "tcp:host_1.example:80", "tcp:[store.example]:8472"} {
+		mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\""+d+"\"]\n"), "lower-case DNS name")
+	}
+	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"198.51.100.20:8472\"]\n"), "proto:host:port")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:198.51.100.20:70000\"]\n"), "port")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = []\n"), "at least one destination")
 	mustFail(t, write(t, base+"[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:1.2.3.4:1\"]\n[[network_profiles]]\nname = \"a\"\ndestinations = [\"tcp:1.2.3.4:2\"]\n"), "duplicate network profile")

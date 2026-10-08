@@ -394,17 +394,38 @@ and A20 guarded the late release, which no longer exists; they are retired
   `vm-<index>`, any rule naming `"vh<index>"` or the namespace address — and
   refuses with `ErrNoEffect`, issuing no mutating command, if one does. The
   per-VM chain is created with `nft create chain` (fails if it exists) and no
-  `File exists` is tolerated. The egress interface is parsed from
-  `ip -4 route show default` without a shell. D1 (P4-VM-STAGE-A-SOURCE-01):
+  `File exists` is tolerated. The host masquerade names no interface:
+  `ip saddr <namespace address> oifname != "vh*" masquerade`, so it holds on
+  whichever interface the routing table picks (N2, Stage B review); the
+  retired `egress_interface` setting is refused. D1 (P4-VM-STAGE-A-SOURCE-01):
   traffic from a VM's veth to the host's own addresses takes the input hook,
   which the forward chain never sees. The launcher's table gets a shared
   `input` chain on that hook that drops the veth range `10.113.0.0/16`; each
   VM's veth jumps first (`insert`) to its own `in-<index>`, created new,
-  holding exactly one exception per exact destination (`tcp`/`udp`, one IPv4
-  address, one port) and a drop. Every destination, and every ceiling entry
-  in `check`, must be such an exact entry. The create lists the table back
+  holding exactly one exception per exact literal destination (`tcp`/`udp`,
+  one IPv4 address, one port) and a drop. Every destination, and every
+  ceiling entry in `check`, must be such an exact entry or a named one.
+  Named destinations (CI-P4-NET-1, pinned names): `tcp:archive.ubuntu.com:80`
+  names one DNS name in the shared grammar (`internal/netname`). The create
+  resolves each granted name on the host before it changes anything, and
+  refuses without effect if any answer is not a public IPv4 address (private,
+  shared, loopback, link-local, documentation, multicast and reserved ranges,
+  and the host's own addresses), if there is no IPv4 answer, or if there are
+  more than `pindns.MaxAddrs`. Each pinned address gets a forward accept at
+  the entry's proto and port; a name never gets an input-hook exception. The
+  launcher then serves a responder (`internal/pindns`) on the VM's gateway
+  inside the VM's namespace. It answers the granted names from the pinned
+  table, refuses every other query, and forwards nothing. The guest gets
+  `urgit.dns=<gateway>` on its kernel command line and writes it as its only
+  nameserver; a VM with no named destination keeps an empty resolver. If a
+  CDN moves a name while the job runs, connections to the new address fail;
+  access never widens. A pinned address may serve other sites as well (a
+  shared CDN address): the grant is the address and port, not the name. A
+  launcher restart ends every responder; a VM still running then fails its
+  lookups closed. The create lists the table back
   and fails unless the containment is exactly that; `serve` refuses to start
-  while a networked VM that may still run lacks it; `RemoveNetwork` deletes
+  while a networked VM that may still run lacks it; `RemoveNetwork` stops the
+  VM's responder first (its sockets would keep the namespace alive), deletes
   each rule naming the veth in the chain the listing shows it in, then
   `vm-<index>` and `in-<index>`. The host's own firewall is not touched: an
   exception only withholds the launcher's drop.
