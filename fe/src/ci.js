@@ -32,6 +32,24 @@ export const noRunnerMessage = (protectedRefs = [], runners = []) =>
     ? 'No runner is enrolled. Mint a token in Settings → Runners and install the daemon; every candidate staged for a CI-required branch waits until one polls.'
     : ''
 
+// a web edit to a CI-protected branch is staged, not committed (Q4): the
+// ship answers 202 with the candidate, and the branch keeps its tip until
+// the candidate's checks pass and it lands. '' for an applied write
+export const stagedEditNote = (answer, ref, what = 'This change') =>
+  answer?.staged
+    ? `${what} was staged as CI candidate ${answer.candidate}, not committed: ${ref ? branchLabel(ref) : 'the branch'} is CI-protected and keeps its current tip until the candidate's checks pass and it lands. Follow it in the CI tab.`
+    : ''
+
+// a publication to a CI-protected bound branch is staged, not committed
+// (Q5): the ship answers 202 with staged and the branch, and stages the
+// desk's snapshot as a candidate once it has read the desk. '' when the
+// publication goes straight to the branch
+export const stagedPublishNote = (answer) => {
+  if (!answer?.staged) return ''
+  const branch = answer.ref ? branchLabel(answer.ref) : 'the branch'
+  return `Publishing to ${branch} stages a CI candidate instead of committing: ${branch} is CI-protected and keeps its current tip until the candidate's checks pass and it lands. Follow it in the CI tab.`
+}
+
 // the pips under a candidate: one per job attempt (plans are the ship's
 // own step and are not shown), newest attempts last
 export function attemptPips(attempts = []) {

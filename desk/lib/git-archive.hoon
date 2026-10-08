@@ -27,7 +27,7 @@
   %-  crip
   %-  flop
   |-  ^-  tape
-  ?:(=(0 value) ~ [(add '0' (mod value base)) $(value (div value base))])
+      ?:(=(0 value) ~ [(add '0' (mod value base)) $(value (div value base))])
 ::
 ++  ud-oct  (curr sud-base 8)
 ::
@@ -112,7 +112,7 @@
         ''
         ''
         prefix.u.names
-  ==
+    ==
   =/  head=octs  (encode-header header)
   =/  padding=@ud  (mod (sub 512 (mod p.body 512)) 512)
   =/  padded=octs  [(add p.body padding) q.body]
@@ -135,7 +135,7 @@
     `result
   =/  indexed=flat-entry:git-tree  +.i.remaining
   =/  object=(unit object:git)  (~(get by objects) oid.indexed)
-  ?.  ?&(?=(^ object) =(%blob kind.u.object))  ~
+  ?.  &(?=(^ object) =(%blob kind.u.object))  ~
   =/  entry=(unit octs)
     (file-entry -.i.remaining mode.indexed data.u.object)
   ?~  entry  ~

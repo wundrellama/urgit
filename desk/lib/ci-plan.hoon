@@ -37,7 +37,12 @@
       runs-on=(set @t)
       timeout=(unit @ud)
   ==
-+$  wire-plan  [oid=@t workflows=(list @t) jobs=(list wire-job)]
+::  P4: .workflows-oid is the revision the daemon read the workflow files
+::  at (the baseline under a required run, the candidate under a trial);
+::  the ship checks it against the mode.  a plan without it read the
+::  candidate's own files (a pre-P4 daemon) and says so.
+::
++$  wire-plan  [oid=@t workflows-oid=@t workflows=(list @t) jobs=(list wire-job)]
 ::
 ++  quote
   |=  text=@t
@@ -77,6 +82,7 @@
   ?^  error  [%| u.error]
   =/  oid=(unit @t)  (string-field fields 'oid')
   ?~  oid  [%| 'plan is missing oid']
+  =/  workflows-oid=@t  (fall (string-field fields 'workflows-oid') u.oid)
   =/  workflows=(unit (list @t))  (string-list-field fields 'workflows')
   ?~  workflows  [%| 'plan is missing workflows']
   =/  raw-jobs=(unit json)  (~(get by fields) 'jobs')
@@ -91,7 +97,7 @@
     ?:  ?=(%| -.parsed)  parsed
     $(remaining t.remaining, out [p.parsed out])
   ?:  ?=(%| -.jobs)  jobs
-  [%& u.oid u.workflows p.jobs]
+  [%& u.oid workflows-oid u.workflows p.jobs]
 ::
 ++  parse-job
   |=  jon=json
@@ -180,7 +186,7 @@
     [%| (rap 3 ~[name ': unknown condition version'])]
   =/  kind=(unit @t)  (string-field inner 'kind')
   ?~  kind  [%| (rap 3 ~[name ': unknown condition version'])]
-  ?+    u.kind  [%| (rap 3 ~[name ': unknown condition version'])]
+  ?+  u.kind  [%| (rap 3 ~[name ': unknown condition version'])]
       %output-eq
     =/  job=(unit @t)  (string-field inner 'job')
     =/  output=(unit @t)  (string-field inner 'output')
@@ -239,7 +245,8 @@
   =/  named=(list @t)  (sort-texts workflows.plan)
   ?.  =(in-tree named)
     :-  %|
-    %-  rap  :-  3
+    %-  rap
+    :-  3
     :~  'workflow files under .github/workflows differ from the plan: tree has '
         (join in-tree ', ')  '; plan has '  (join named ', ')
     ==
@@ -337,13 +344,13 @@
     ?-  standing
       %pending  [%wait ~]
       %running  [%wait ~]
-      %failed   [%skip (rap 3 ~['needs ' i.needs ' failed'])]
+      %failed  [%skip (rap 3 ~['needs ' i.needs ' failed'])]
       %unknown  [%skip (rap 3 ~['needs ' i.needs ' did not complete'])]
       %skipped  [%skip (rap 3 ~['needs ' i.needs ' was skipped'])]
-      %passed   $(needs t.needs)
+      %passed  $(needs t.needs)
     ==
   ?~  cond.job  [%run ~]
-  ?-    -.u.cond.job
+  ?-  -.u.cond.job
       %unsupported
     [%invalid (rap 3 ~['unsupported if expression ' (quote raw.u.cond.job)])]
   ::

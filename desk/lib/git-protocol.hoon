@@ -42,7 +42,7 @@
   |-
   ?:  (gte offset p.bytes)  ?:(seen `value ~)
   =/  byte=@ud  (byte-at:git-codec bytes offset)
-  ?:  ?|(=(byte 0) =(byte 10) =(byte 32))  ?:(seen `value ~)
+  ?:  |(=(byte 0) =(byte 10) =(byte 32))  ?:(seen `value ~)
   ?.  &((gte byte '0') (lte byte '9'))  ~
   $(offset +(offset), value (add (mul value 10) (sub byte '0')), seen %.y)
 ::
@@ -69,8 +69,8 @@
     =/  parsed=(unit oid:git)  (oid-at payload 5)
     ?~  parsed  ~
     %=  $
-      packets         t.packets
-      wants           (~(put in wants) u.parsed)
+      packets  t.packets
+      wants  (~(put in wants) u.parsed)
       deepen-relative  |(deepen-relative (contains-text payload 'deepen-relative'))
     ==
   ?:  (starts-with payload 'have ')
@@ -83,7 +83,7 @@
     $(packets t.packets, shallow (~(put in shallow) u.parsed))
   ?:  (starts-with payload 'deepen ')
     =/  parsed=(unit @ud)  (decimal-at payload 7)
-    ?.  ?&(?=(^ parsed) (gth u.parsed 0) (lte u.parsed 2.147.483.647))  ~
+    ?.  &(?=(^ parsed) (gth u.parsed 0) (lte u.parsed 2.147.483.647))  ~
     $(packets t.packets, depth `u.parsed)
   ?:  (starts-with payload 'deepen-relative')
     $(packets t.packets, deepen-relative %.y)
@@ -233,9 +233,9 @@
       %flush
     ?:  =(0 (lent commands))  ~
     `[(flop commands) rest.u.next]
-  ::
-      %delim         ~
-      %response-end  ~
+::
+    %delim  ~
+    %response-end  ~
   ==
 ::
 ++  zero-oid-text
@@ -293,7 +293,8 @@
 ++  v2-ref-pkt
   |=  [oid=oid:git ref=@t attributes=@t]
   ^-  octs
-  (en-pkt:git-codec [%data (text:git-codec (rap 3 ~[(oid-text:git-codec oid) ' ' ref attributes '\0a']))])
+  %-  en-pkt:git-codec
+  [%data (text:git-codec (rap 3 ~[(oid-text:git-codec oid) ' ' ref attributes '\0a']))]
 ::
 ++  v2-ls-refs
   |=  [repo=repository:git request=octs]
@@ -342,7 +343,7 @@
   =/  oids=(list oid:git)  ~
   |-
   ?~  packets
-    ?.  ?&(size !=(~ oids))  ~
+    ?.  &(size !=(~ oids))  ~
     `(flop oids)
   =/  pkt=packet:git-codec  i.packets
   ?.  ?=(%data -.pkt)
@@ -370,7 +371,7 @@
     (rap 3 ~[(oid-text:git-codec i.remaining) ' ' (crip ((d-co:co 1) p.data.u.found)) '\0a'])
   %=  $
     remaining  t.remaining
-    packets    (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])])
+    packets  (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])])
   ==
 ::
 ++  receive-status
@@ -387,7 +388,10 @@
     ?:  ok.result
       (rap 3 ~['ok ' ref.result '\0a'])
     (rap 3 ~['ng ' ref.result ' ' message.result '\0a'])
-  $(remaining t.remaining, packets (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])]))
+  %=  $
+    remaining  t.remaining
+    packets  (weld packets ~[(en-pkt:git-codec [%data (text:git-codec line)])])
+  ==
 ::
 ++  line-payload
   |=  [oid=@t ref=@t caps=(unit @t)]
@@ -435,7 +439,7 @@
   |=  [objects=(map oid:git object:git) oid=oid:git]
   ^-  (unit oid:git)
   =/  found=(unit object:git)  (~(get by objects) oid)
-  ?.  ?&(?=(^ found) =(%tag kind.u.found))  ~
+  ?.  &(?=(^ found) =(%tag kind.u.found))  ~
   (peel-object objects oid ~)
 ::
 ++  advertised-refs
@@ -464,7 +468,7 @@
   %=  $
     entries  t.entries
     packets  next-packets
-    first    |
+    first  |
   ==
 ::
 ++  smart-advertisement

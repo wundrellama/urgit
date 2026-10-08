@@ -101,8 +101,41 @@
           now=@da
       ==
   ^-  (unit @t)
-  ?~  settings  ~
   ?.  =(trust requester)  ~
+  (presign-key settings (object-key repo run attempt trust name) expires now)
+::
+::  the content-addressed key of a mirrored download (P4 D4): the same
+::  bytes are one object whoever resolved them
+::
+++  download-key
+  |=  sha256=@t
+  ^-  @t
+  (rap 3 ~['ci/downloads/' sha256])
+::
+::  an upload of a mirrored download: header-authorized, the payload
+::  hash being the object's own sha256, so the store refuses other bytes
+::
+++  sign-put-download
+  |=  [=settings sha256=@t now=@da]
+  ^-  (unit signed-request:git-storage)
+  ?~  settings  ~
+  :-  ~
+  %:  sign-hash:git-storage
+    'PUT'
+    'application/octet-stream'
+    sha256
+    credentials.u.settings
+    configuration.u.settings
+    (download-key sha256)
+    now
+  ==
+::
+::  a presigned GET of any key, for at most max-presign
+::
+++  presign-key
+  |=  [=settings key=@t expires=@dr now=@da]
+  ^-  (unit @t)
+  ?~  settings  ~
   ?:  |(=(0 expires) (gth expires max-presign))  ~
   =/  seconds=@ud  (div expires ~s1)
   =.  seconds  ?:(=(0 seconds) 1 seconds)
@@ -110,7 +143,7 @@
   =/  configuration  configuration.u.settings
   =/  host=@t  (endpoint-host:git-storage endpoint.credentials)
   =/  path=@t
-    (rap 3 ~['/' current-bucket.configuration '/' (object-key repo run attempt trust name)])
+    (rap 3 ~['/' current-bucket.configuration '/' key])
   =/  canonical-uri=@t  (uri-encode:git-storage path)
   =/  timestamp=@t  (amz-date:git-storage now)
   =/  date=@t  (date-stamp:git-storage now)

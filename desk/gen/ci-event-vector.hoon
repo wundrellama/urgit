@@ -159,7 +159,9 @@
 ::  a 65 KiB line is refused with 413 before it is parsed
 ::
 =/  big=@t
-  (rap 3 ~['{"job":"j","jobID":"j","time":"2026-09-11T19:33:20-05:00","msg":"' (fil 3 66.560 'a') '"}'])
+  %+  rap
+    3
+  ~['{"job":"j","jobID":"j","time":"2026-09-11T19:33:20-05:00","msg":"' (fil 3 66.560 'a') '"}']
 ?>  (gth (met 3 big) 65.536)
 =/  big-result=(each event:ci refusal:ci-event)  (parse big)
 ?>  ?=(%| -.big-result)
@@ -167,7 +169,9 @@
 ::  a line just under the bound parses, with its message cut to 4 KiB
 ::
 =/  under=@t
-  (rap 3 ~['{"job":"j","jobID":"j","time":"2026-09-11T19:33:20-05:00","msg":"' (fil 3 65.000 'a') '"}'])
+  %+  rap
+    3
+  ~['{"job":"j","jobID":"j","time":"2026-09-11T19:33:20-05:00","msg":"' (fil 3 65.000 'a') '"}']
 ?>  (lte (met 3 under) 65.536)
 =/  under-result=(each event:ci refusal:ci-event)  (parse under)
 ?>  ?=(%& -.under-result)
@@ -201,14 +205,16 @@
 ::  an unknown top-level key is ignored
 ::
 =/  extra=(each event:ci refusal:ci-event)
-  (parse '{"job":"j","jobID":"j","time":"2026-09-11T19:33:20Z","surprise":{"deep":[1,2]},"msg":"ok"}')
+  %-  parse
+  '{"job":"j","jobID":"j","time":"2026-09-11T19:33:20Z","surprise":{"deep":[1,2]},"msg":"ok"}'
 ?>  ?=(%& -.extra)
 ?>  =('ok' msg.p.extra)
 ?>  =(~2026.9.11..19.33.20 at.p.extra)
 ::  an unknown command is carried as %other
 ::
 =/  other=(each event:ci refusal:ci-event)
-  (parse '{"job":"j","jobID":"j","time":"2026-09-11T19:33:20+02:00","command":"add-mask","arg":"x"}')
+  %-  parse
+  '{"job":"j","jobID":"j","time":"2026-09-11T19:33:20+02:00","command":"add-mask","arg":"x"}'
 ?>  ?=(%& -.other)
 ?>  =(`[%other 'add-mask'] command.p.other)
 ?>  =(~2026.9.11..17.33.20 at.p.other)
@@ -234,7 +240,8 @@
 ?>  =('untouched' (replace-all:ci-event 'untouched' ''))
 ?>  =('*** and ***' (scrub-text:ci-event 'one and two' ~['one' 'two']))
 =/  leaky=(each event:ci refusal:ci-event)
-  (parse '{"job":"w/j","jobID":"j","time":"2026-09-16T12:00:00Z","msg":"leak=s3cr3t","command":"set-output","name":"leak","arg":"s3cr3t"}')
+  %-  parse
+  '{"job":"w/j","jobID":"j","time":"2026-09-16T12:00:00Z","msg":"leak=s3cr3t","command":"set-output","name":"leak","arg":"s3cr3t"}'
 ?>  ?=(%& -.leaky)
 =/  scrubbed=event:ci  (scrub:ci-event p.leaky ~['s3cr3t'])
 ?>  =('leak=***' msg.scrubbed)

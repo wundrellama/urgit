@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ci, publicApi } from '../api'
-import { clockOffset, configSnippet, mergeRunnerFact, runnerActions, runnerRow, stateHint, stateLabel } from '../runners'
+import { clockOffset, configSnippet, mergeRunnerFact, retentionsText, runnerActions, runnerRow, stateHint, stateLabel } from '../runners'
 import { feedPip } from '../ciLive'
 import { watchAgent } from '../channel'
 import { relativeTime } from '../format'
 import { useConfirm } from './ConfirmDialog'
 import SetupGuide from './SetupGuide'
+import RunnerRecovery from './RunnerRecovery'
 
 // Settings → Runners (BRIEF-CI-P3 D3): the daemon records as a table with
 // a state pip, Mint token (the token shown once beside the config lines),
 // Expire / Revoke / Remove per row, the repository binding per row, and
 // Rotate CI key. Every button is one POST the ship answers 200 or a 409
-// with its reason; the table is re-read after each.
+// with its reason; the table is re-read after each. A runner that withholds
+// slots has a Retentions button: its withheld slots, and the release of a
+// legacy retention from here (legacy-recovery UI ruling 01). A runner whose
+// execution history is incomplete is marked paused, and its button opens the
+// same panel on its history and transition (legacy-replay-upgrade ruling 01).
 
 const stateClass = (state) => ({ healthy: 'good', stale: 'warn', refused: 'bad', revoked: 'bad', minted: '' })[state] || ''
 
@@ -114,6 +119,8 @@ export default function RunnersSection() {
   const [minting, setMinting] = useState(false)
   const [binding, setBinding] = useState(null)
   const [guide, setGuide] = useState(false)
+  // the runner whose withheld slots are open (legacy-recovery UI ruling 01)
+  const [recovering, setRecovering] = useState(null)
   const [repositories, setRepositories] = useState([])
   const [tick, setTick] = useState(0)
   const [status, setStatus] = useState('')
@@ -176,8 +183,10 @@ export default function RunnersSection() {
             <span>{row.enrolled ? relativeTime(row.enrolled, now) : '—'}</span>
             <span>{row.lastSeen ? relativeTime(row.lastSeen, now) : '—'}</span>
             <span>{row.running}</span>
-            <span className={`status ${stateClass(row.state)}`} title={row.refused || stateHint[row.state]}><span className={`ci-pip ${stateClass(row.state)}`} /> {stateLabel[row.state]}{row.refused && <small className="quiet"> · {row.refused}</small>}</span>
+            <span className={`status ${stateClass(row.state)}`} title={row.refused || stateHint[row.state]}><span className={`ci-pip ${stateClass(row.state)}`} /> {stateLabel[row.state]}{row.refused && <small className="quiet"> · {row.refused}</small>}{row.history?.paused && <small className="status bad" title="What it ran before its execution ledger is not known: it advertises no capacity and runs nothing until its transition is confirmed."> · execution paused</small>}</span>
             <span>
+              {row.history?.paused && <button type="button" className="text-button danger-text" title="Inspect its history and confirm its transition" disabled={busy !== ''} onClick={() => setRecovering(row)}>Transition…</button>}
+              {row.retentions?.total > 0 && <button type="button" className="text-button" title={retentionsText(row.retentions)} disabled={busy !== ''} onClick={() => setRecovering(row)}>{row.retentions.eligible > 0 ? `Retentions (${row.retentions.total}, ${row.retentions.eligible} releasable)` : `Retentions (${row.retentions.total})`}</button>}
               {row.actions.includes('expire') && <button type="button" className="text-button danger-text" disabled={busy !== ''} onClick={() => act(`expire-${row.id}`, runnerActions.expire(row.id), { title: 'Expire this token?', message: `The minted token for ${row.shortId} stops enrolling anything. A daemon started with it will be refused.`, confirmLabel: 'Expire' })}>{busy === `expire-${row.id}` ? 'Expiring…' : 'Expire'}</button>}
               {row.actions.includes('revoke') && <button type="button" className="text-button danger-text" disabled={busy !== ''} onClick={() => act(`revoke-${row.id}`, runnerActions.revoke(row.id), { title: 'Revoke this runner?', message: `Its next poll is refused and the daemon exits. ${row.running ? `Its ${row.running} running job${row.running === 1 ? '' : 's'} are offered to another runner.` : 'It is running nothing right now.'} To bring it back, mint a new token and re-enroll it.`, confirmLabel: 'Revoke' })}>{busy === `revoke-${row.id}` ? 'Revoking…' : 'Revoke'}</button>}
               {row.actions.includes('remove') && <button type="button" className="text-button" disabled={busy !== ''} onClick={() => act(`remove-${row.id}`, runnerActions.expire(row.id), { title: 'Remove this record?', message: `The revoked record of ${row.shortId} is deleted from the ship.`, confirmLabel: 'Remove', danger: false })}>{busy === `remove-${row.id}` ? 'Removing…' : 'Remove'}</button>}
@@ -192,6 +201,7 @@ export default function RunnersSection() {
       {minting && <MintModal repositories={repositories} onClose={() => { setMinting(false); load() }} onMinted={load} />}
       {binding && <BindModal row={binding} repositories={repositories} onClose={() => setBinding(null)} onSaved={load} />}
       {guide && <SetupGuide onClose={() => setGuide(false)} />}
+      {recovering && <RunnerRecovery runner={recovering} onClose={() => { setRecovering(null); load() }} onChanged={load} />}
     </div>
   )
 }

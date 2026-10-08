@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { clockOffset, configSnippet, enrolledCount, mergeRunnerFact, rowActions, runnerActions, runnerRow, runnerState } from './runners.js'
+import { clockOffset, configSnippet, enrolledCount, historyOf, mergeRunnerFact, retentionsOf, retentionsText, rowActions, runnerActions, runnerRow, runnerState } from './runners.js'
 
 const minted = { id: '0v5.abcde.fghij.klmno.pqrst.uvwxy', capacity: 1, sandbox: '', labels: [], repos: null, minted: 1000, enrolled: null, lastSeen: null, running: 0, revoked: null, refused: null, state: 'minted' }
 const healthy = { ...minted, id: '0v6.h', enrolled: 1010, lastSeen: 1090, capacity: 3, running: 1, sandbox: 'docker-rootless', labels: ['big-mem', 'linux'], state: 'healthy' }
@@ -61,4 +61,29 @@ test('the clock offset is the ship\'s now against the client\'s, and the enrolle
   assert.equal(clockOffset(1000, 1010), -10)
   assert.equal(clockOffset(null, 1010), 0)
   assert.equal(enrolledCount([minted, healthy, { ...healthy, revoked: 1 }]), 1)
+})
+
+test('a row carries what the runner\'s latest retention report says it withholds, and none when it reported none (legacy-recovery UI ruling 01)', () => {
+  assert.equal(runnerRow(healthy, 1100).retentions, null)
+  assert.equal(retentionsText(null), 'not reported')
+  const reported = runnerRow({ ...healthy, retentions: { reported: 1090, total: 2, legacy: 1, eligible: 1 } }, 1100)
+  assert.deepEqual(reported.retentions, { reported: 1090, total: 2, legacy: 1, eligible: 1 })
+  assert.equal(retentionsText(reported.retentions), '2 withheld · 1 legacy, 1 releasable')
+  assert.equal(retentionsText(retentionsOf({ retentions: { reported: 1, total: 0, legacy: 0, eligible: 0 } })), 'none')
+  assert.equal(retentionsText(retentionsOf({ retentions: { reported: 1, total: 3, legacy: 1, eligible: 0 } })), '3 withheld · 1 legacy')
+  assert.equal(retentionsOf({ retentions: 'x' }), null)
+  // the actions its state allows are unchanged by what it withholds
+  assert.deepEqual(reported.actions, ['revoke'])
+})
+
+test('a row carries whether the runner\'s latest report shows it waiting for its history transition, and nothing when it reported no history (legacy-replay-upgrade ruling 01)', () => {
+  assert.equal(runnerRow(healthy, 1100).history, null)
+  const paused = runnerRow({ ...healthy, history: { paused: true, revision: 1790000000 } }, 1100)
+  assert.deepEqual(paused.history, { paused: true, revision: 1790000000 }, 'A PAUSED RUNNER WAS NOT MARKED PAUSED')
+  assert.deepEqual(historyOf({ history: { paused: false, revision: 7 } }), { paused: false, revision: 7 })
+  assert.deepEqual(historyOf({ history: { paused: 'yes', revision: 'x' } }), { paused: false, revision: 0 })
+  assert.equal(historyOf({ history: 'x' }), null)
+  // a paused runner keeps its state and the actions its state allows
+  assert.equal(paused.state, 'healthy')
+  assert.deepEqual(paused.actions, ['revoke'])
 })

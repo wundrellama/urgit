@@ -65,7 +65,37 @@ export function runnerRow(runner, nowSeconds = Date.now() / 1000, staleAfter = 3
     revoked: runner.revoked || null,
     state,
     actions: rowActions(state),
+    retentions: retentionsOf(runner),
+    history: historyOf(runner),
   }
+}
+
+// whether a runner's latest report shows it waiting for its execution-
+// history transition (legacy-replay-upgrade ruling 01): null when it has
+// reported no history. A paused runner advertises no capacity and runs
+// nothing until its transition is confirmed.
+export function historyOf(runner) {
+  const h = runner?.history
+  if (!h || typeof h !== 'object') return null
+  return { paused: h.paused === true, revision: Number.isFinite(Number(h.revision)) ? Number(h.revision) : 0 }
+}
+
+// what a runner's latest retention report says it withholds (legacy-
+// recovery UI ruling 01): null when it has reported none
+export function retentionsOf(runner) {
+  const r = runner?.retentions
+  if (!r || typeof r !== 'object') return null
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+  return { reported: n(r.reported) || null, total: n(r.total), legacy: n(r.legacy), eligible: n(r.eligible) }
+}
+
+// the row's retention cell: how many slots it withholds, and how many a
+// release from here could return now
+export function retentionsText(retentions) {
+  if (!retentions) return 'not reported'
+  if (!retentions.total) return 'none'
+  const legacy = retentions.legacy ? ` · ${retentions.legacy} legacy${retentions.eligible ? `, ${retentions.eligible} releasable` : ''}` : ''
+  return `${retentions.total} withheld${legacy}`
 }
 
 // the ship's clock against the client's: facts and reads carry the ship's

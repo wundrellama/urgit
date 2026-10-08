@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ci, waitForPeerBrowse, waitForPeerTransfer } from '../api'
 import CiTab, { useStorageProbe } from './CiTab'
+import { CiPolicySection } from './CiProvenance'
 import RunnersSection from './Runners'
 import { probeMessage } from '../storageProbe'
-import { ciActions, credentialFormError, parseEnvs } from '../ci'
+import { ciActions, credentialFormError, parseEnvs, stagedEditNote, stagedPublishNote } from '../ci'
 import { exactBytes, formatBytes } from '../format'
 import { comparisonPatch } from '../patch'
 import FileTree from './FileTree'
@@ -168,6 +169,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(branch)
   const [upstream, setUpstream] = useState(null)
   const [upstreamBusy, setUpstreamBusy] = useState(false)
@@ -176,7 +178,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   const contentDraftKey = `file:${repository}:${branch}:${path}:content`
   const messageDraftKey = `file:${repository}:${branch}:${path}:message`
 
-  useEffect(() => { setRevision(branch); setHistory(null); setUpstream(null); setView('file') }, [branch, path])
+  useEffect(() => { setRevision(branch); setHistory(null); setUpstream(null); setView('file'); setNotice('') }, [branch, path])
   useEffect(() => { setMessage(readLocalDraft(messageDraftKey, `Edit ${path}`)); setEditing(false) }, [messageDraftKey, path])
   useEffect(() => { setBlame(null) }, [revision, path])
 
@@ -202,9 +204,14 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
   async function save() {
     setBusy(true)
     setError('')
+    setNotice('')
     try {
-      await api.saveFile(repository, path, encodeBase64(text), message.trim(), branch)
-      setOriginal(text)
+      const answer = await api.saveFile(repository, path, encodeBase64(text), message.trim(), branch)
+      // a CI-protected branch stages the edit and keeps its tip (Q4)
+      const staged = stagedEditNote(answer, branch, 'This edit')
+      if (staged) setText(original)
+      else setOriginal(text)
+      setNotice(staged)
       clearLocalDraft(contentDraftKey); clearLocalDraft(messageDraftKey)
       setEditing(false)
       await onSaved()
@@ -219,8 +226,12 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
     if (!await confirmAction({ title: 'Delete file?', message: path, detail: 'This creates a commit that removes the file from the selected branch.', confirmLabel: 'Delete file' })) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
-      await api.deleteFile(repository, path, `Delete ${path}`, branch)
+      const answer = await api.deleteFile(repository, path, `Delete ${path}`, branch)
+      // a CI-protected branch stages the deletion; the file is still there (Q4)
+      const staged = stagedEditNote(answer, branch, 'This deletion')
+      if (staged) { setNotice(staged); setBusy(false); await onSaved(); return }
       await onDeleted()
     } catch (cause) {
       setError(cause.message)
@@ -274,6 +285,7 @@ function FileView({ repository, path, branch, githubOrigin, lineStart, lineEnd, 
         </div>
       </div>
       {error && <div className="inline-error">{error}</div>}
+      {notice && <div className="field-note">{notice}</div>}
       {view === 'history' ? (
         !history ? <div className="empty">Loading file history…</div> : !history.commits?.length ? <div className="empty">No changes found for this file.</div> : <Commits data={history} loading={false} onSelect={(commit) => { if (commit.present) { setRevision(commit.oid); setView('file') } }} />
       ) : view === 'blame' ? (
@@ -306,18 +318,23 @@ function NewFile({ repository, branch, onCancel, onCreated }) {
   const [message, setMessage, clearMessage] = useLocalDraft(`new-file:${repository}:${branch}:message`, 'Create file')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const normalized = `/${path.trim().replace(/^\/+/, '')}`
   async function create() {
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setNotice('')
     try {
-      await api.saveFile(repository, normalized, encodeBase64(content), message.trim(), branch)
+      const answer = await api.saveFile(repository, normalized, encodeBase64(content), message.trim(), branch)
       clearPath(); clearContent(); clearMessage()
+      // a CI-protected branch stages the new file; it is not there yet (Q4)
+      const staged = stagedEditNote(answer, branch, 'This new file')
+      if (staged) { setNotice(staged); setBusy(false); return }
       await onCreated(normalized)
     } catch (cause) { setError(cause.message); setBusy(false) }
   }
   return <div className="new-file-panel">
     <div className="file-toolbar"><button className="text-button file-back" onClick={onCancel}>← Files</button><strong>New file</strong></div>
     {error && <div className="inline-error">{error}</div>}
+    {notice && <div className="field-note">{notice}</div>}
     <label><span>Path</span><input autoFocus value={path} onChange={(event) => setPath(event.target.value)} placeholder="lib/example.hoon" /></label>
     <HighlightedEditor value={content} path={normalized} onChange={(event) => setContent(event.target.value)} />
     <div className="editor-footer"><input value={message} onChange={(event) => setMessage(event.target.value)} aria-label="Commit message" /><button className="button" onClick={onCancel}>Cancel</button><button className="button primary" disabled={busy || !path.trim() || !message.trim()} onClick={create}>{busy ? 'Committing…' : 'Create file'}</button></div>
@@ -1042,6 +1059,8 @@ function Settings({ repo, onMutate }) {
   const [desk, setDesk] = useState(repo.binding?.desk || '')
   const [branch, setBranch] = useState(repo.binding?.branch || repo.head || 'refs/heads/main')
   const [message, setMessage] = useState('Publish Clay desk')
+  // a publication to a CI-protected branch is staged, not committed (Q5)
+  const [publishNote, setPublishNote] = useState('')
   const [token, setToken] = useState('')
   const [writer, setWriter] = useState('')
   const [reader, setReader] = useState('')
@@ -1316,8 +1335,9 @@ function Settings({ repo, onMutate }) {
             <label><span>Commit message</span><input value={message} onChange={(e) => setMessage(e.target.value)} /></label>
             <div className="bridge-actions">
               <button className="button" disabled={busy || bridgeStatus?.contentsMatch || !bridgeStatus?.canApply} onClick={() => act('apply-clay', () => api.applyToClay(repo.name))}>{busy === 'apply-clay' ? 'Applying…' : 'Apply branch to desk'}</button>
-              <button className="button primary" disabled={busy || !message.trim() || bridgeStatus?.contentsMatch} onClick={() => act('publish', () => api.publish(repo.name, message.trim()))}>{busy === 'publish' ? 'Publishing…' : 'Publish desk to branch'}</button>
+              <button className="button primary" disabled={busy || !message.trim() || bridgeStatus?.contentsMatch} onClick={() => act('publish', async () => { setPublishNote(''); setPublishNote(stagedPublishNote(await api.publish(repo.name, message.trim()))) })}>{busy === 'publish' ? 'Publishing…' : 'Publish desk to branch'}</button>
             </div>
+            {publishNote && <div className="field-note">{publishNote}</div>}
             <div className="form-actions split bridge-footer">
               <small className="quiet">Clay rejects invalid desk updates and returns the build trace.</small>
               <button className="button ghost danger-text" disabled={busy} onClick={() => act('unbind', () => api.unbind(repo.name))}>Unbind</button>
@@ -1426,6 +1446,7 @@ function Settings({ repo, onMutate }) {
             <div className="form-actions"><button className="button" type="submit" disabled={busy !== ''}>{busy === 'credential' ? 'Storing…' : 'Add credential'}</button></div>
           </form>
         </div>
+        {ciPolicy && <CiPolicySection repo={repo} policy={ciPolicy} onChanged={async () => { await loadCi(); await onMutate() }} />}
       </section>
       <section className="panel">
         <div className="section-title"><div><h2>Git LFS storage</h2><p>Locks protect shared binary paths. Cleanup removes verified payloads that no advertised ref can reach.</p></div><span className="status">{repo.lfsLockCount || 0} locks</span></div>

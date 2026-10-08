@@ -6,6 +6,8 @@ import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
 import { exactTime, relativeTime } from '../format'
 import SetupGuide from './SetupGuide'
+import { CandidateProvenance } from './CiProvenance'
+import { useConfirm } from './ConfirmDialog'
 
 // The repository page's CI tab (BRIEF-CI-P2 D6; P3 D4/D7), read-first
 // and then live: the candidate list (ref, head, actor, status, age,
@@ -148,7 +150,8 @@ function LogView({ attempt, onClose }) {
   )
 }
 
-function CandidatePage({ id, live, policy, onBack, onMutate }) {
+function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
+  const confirm = useConfirm()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
@@ -183,6 +186,7 @@ function CandidatePage({ id, live, policy, onBack, onMutate }) {
         {c.verdictReason && <div><dt>{c.status === 'pending' ? 'Waiting' : 'Verdict'}</dt><dd>{c.verdictReason}</dd></div>}
       </dl>
       {error && <small className="field-error">{error}</small>}
+      <CandidateProvenance data={data} tip={(repo?.refs || []).find((r) => r.name === c.ref)?.oid || ''} onAct={act} busy={busy} confirm={confirm} />
       <div className="form-actions">
         {c.trust === 'untrusted' && c.status !== 'skipped' && <button className="button primary" disabled={busy !== ''} title={approveHint(policy)} onClick={() => act('approve', ciActions.approve(c.id))}>{busy === 'approve' ? 'Approving…' : 'Approve and run trusted'}</button>}
         {c.status !== 'pending' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
@@ -229,7 +233,7 @@ export default function CiTab({ repo, onMutate }) {
       </div>
       {(probe.state === 'unreachable' || probe.state === 'cors') && <div className="empty ci-first-run ci-storage-warning">{probeMessage(probe.state, probe.host)}</div>}
       {firstRun && <div className="empty ci-first-run">{firstRun} <button type="button" className="text-button" onClick={() => setGuide(true)}>Setup guide</button></div>}
-      {open ? <CandidatePage id={open} live={liveCandidate} policy={policy?.untrusted} onBack={() => { setOpen(''); feed.load('') }} onMutate={onMutate} /> : <CandidateList feed={feed} onOpen={setOpen} />}
+      {open ? <CandidatePage id={open} live={liveCandidate} policy={policy?.untrusted} repo={repo} onBack={() => { setOpen(''); feed.load('') }} onMutate={onMutate} /> : <CandidateList feed={feed} onOpen={setOpen} />}
       {guide && <SetupGuide onClose={() => setGuide(false)} />}
     </section>
   )

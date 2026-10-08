@@ -31,7 +31,7 @@
     |=  [remaining=tape value=@ud]
     ^-  (unit @ud)
     ?~  remaining  `value
-    ?.  ?&((gte i.remaining '0') (lte i.remaining '9'))  ~
+    ?.  &((gte i.remaining '0') (lte i.remaining '9'))  ~
     $(remaining t.remaining, value (add (mul value 10) (sub i.remaining '0')))
   (parse chars 0)
 ::
@@ -71,7 +71,7 @@
   =/  state=(unit @t)  (string-at 'state' jon)
   =/  url=(unit @t)  (string-at 'html_url' jon)
   =/  author=(unit @t)  (nested-string 'user' 'login' jon)
-  ?.  ?&(?=(^ number) ?=(^ title) ?=(^ state) ?=(^ url) ?=(^ author))
+  ?.  &(?=(^ number) ?=(^ title) ?=(^ state) ?=(^ url) ?=(^ author))
     ~
   =/  body=(unit @t)  (string-at 'body' jon)
   =/  created=(unit @t)  (string-at 'created_at' jon)
@@ -176,7 +176,12 @@
   |=  [token=(unit @t) content-type=(unit @t)]
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
-    :~  ['accept' ?~(content-type 'application/x-git-upload-pack-advertisement' 'application/x-git-upload-pack-result')]
+    :~  :*  'accept'
+            ?~
+              content-type
+              'application/x-git-upload-pack-advertisement'
+            'application/x-git-upload-pack-result'
+        ==
         ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
@@ -190,7 +195,12 @@
   |=  [token=(unit @t) content-type=(unit @t)]
   ^-  (list [@t @t])
   =/  headers=(list [@t @t])
-    :~  ['accept' ?~(content-type 'application/x-git-receive-pack-advertisement' 'application/x-git-receive-pack-result')]
+    :~  :*  'accept'
+            ?~
+              content-type
+              'application/x-git-receive-pack-advertisement'
+            'application/x-git-receive-pack-result'
+        ==
         ['user-agent' 'urgit']
     ==
   =?  headers  ?=(^ content-type)
@@ -254,15 +264,15 @@
         ?:  (~(has by refs) u.symref)  symref
         ~
       =/  main=(unit oid:git)  (~(get by refs) 'refs/heads/main')
-      ?:  ?&(?=(^ main) ?=(^ head-oid) =(u.main u.head-oid))  `'refs/heads/main'
+      ?:  &(?=(^ main) ?=(^ head-oid) =(u.main u.head-oid))  `'refs/heads/main'
       =/  master=(unit oid:git)  (~(get by refs) 'refs/heads/master')
-      ?:  ?&(?=(^ master) ?=(^ head-oid) =(u.master u.head-oid))  `'refs/heads/master'
+      ?:  &(?=(^ master) ?=(^ head-oid) =(u.master u.head-oid))  `'refs/heads/master'
       =/  entries=(list [@t oid:git])  ~(tap by refs)
       ?~  entries  ~
       `-.i.entries
     ?~  chosen  ~
     `[[u.chosen refs]]
-  =/  packet=packet:git-codec  i.remaining
+  =/  =packet:git-codec  i.remaining
   ?.  ?=(%data -.packet)
     $(remaining t.remaining)
   =/  payload=octs  payload.packet
@@ -273,9 +283,10 @@
   =/  ref=@t  (text-through payload 41 (silt ~[0 10]))
   =?  head-oid  =('HEAD' ref)
     `u.parsed
-  =?  refs  ?&  !=('HEAD' ref)
-                 (valid-ref:git-protocol ref)
-             ==
+  =?  refs
+    ?&  !=('HEAD' ref)
+        (valid-ref:git-protocol ref)
+    ==
     (~(put by refs) ref u.parsed)
   =/  marker=(unit @ud)  (find-sequence payload 'symref=HEAD:' 41)
   =?  symref  ?=(^ marker)
@@ -301,9 +312,16 @@
         :~  'want '  (oid-text:git-codec i.remaining)
             ?:(first ' no-progress ofs-delta include-tag\0a' '\0a')
         ==
-      $(remaining t.remaining, out [(en-pkt:git-codec [%data (text:git-codec line)]) out], first %.n)
+      %=  $
+        remaining  t.remaining
+        out  [(en-pkt:git-codec [%data (text:git-codec line)]) out]
+        first  %.n
+      ==
     =.  packets  (build ids ~ %.y)
-    (join-all:git-codec (weld packets ~[(en-pkt:git-codec [%flush ~]) (en-pkt:git-codec [%data (text:git-codec 'done\0a')])]))
+    %-  join-all:git-codec
+    %+  weld
+      packets
+    ~[(en-pkt:git-codec [%flush ~]) (en-pkt:git-codec [%data (text:git-codec 'done\0a')])]
   =.  wants  (~(put in wants) +.i.entries)
   $(entries t.entries)
 ::
@@ -351,7 +369,7 @@
     ?^  failure  `[%.n u.failure]
     ?:  &(unpacked updated)  `[%.y '']
     ~
-  =/  packet=packet:git-codec  i.remaining
+  =/  =packet:git-codec  i.remaining
   ?.  ?=(%data -.packet)
     $(remaining t.remaining)
   =/  payload=octs  payload.packet
@@ -377,14 +395,14 @@
   ?~  items  `(flop out)
   =/  item=json  i.items
   =/  pull=(unit json)  (json-at 'pull_request' item)
-  ?:  ?&(!include-pulls ?=(^ pull))
+  ?:  &(!include-pulls ?=(^ pull))
     $(items t.items)
   =/  number=(unit @ud)  (nat-at 'number' item)
   =/  title=(unit @t)  (string-at 'title' item)
   =/  state=(unit @t)  (string-at 'state' item)
   =/  url=(unit @t)  (string-at 'html_url' item)
   =/  author=(unit @t)  (nested-string 'user' 'login' item)
-  ?.  ?&(?=(^ number) ?=(^ title) ?=(^ state) ?=(^ url) ?=(^ author))
+  ?.  &(?=(^ number) ?=(^ title) ?=(^ state) ?=(^ url) ?=(^ author))
     $(items t.items)
   =/  draft=(unit ?)  (bool-at 'draft' item)
   =/  entry=forge-item:git  [u.number u.title u.state u.url u.author ?~(draft %.n u.draft)]

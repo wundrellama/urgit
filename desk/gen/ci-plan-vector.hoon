@@ -16,13 +16,15 @@
   ^-  json
   %-  need
   %-  de:json:html
-  %-  rap  :-  3
+  %-  rap
+  :-  3
   :~  '{"oid":"'  oid  '","workflows":["chain.yml","pass.yml"],"jobs":['  jobs  ']}'
   ==
 =/  job-json
   |=  [id=@t workflow=@t stage=@t needs=@t cond=@t extra=@t]
   ^-  @t
-  %-  rap  :-  3
+  %-  rap
+  :-  3
   :~  '{"id":"'  id  '","workflow":"'  workflow  '","name":"wf","stage":'  stage
       ',"needs":'  needs  ',"cond":'  cond  ',"events":["push"]'  extra  '}'
   ==
@@ -43,7 +45,8 @@
 ::
 =/  chain=json
   %-  plan-json
-  %-  rap  :-  3
+  %-  rap
+  :-  3
   :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
       (job-json 'b' 'chain.yml' '1' '["a"]' cond-eq '')  ','
       (job-json 'pass' 'pass.yml' '0' '[]' 'null' '')
@@ -86,27 +89,41 @@
       .=  'duplicate job id a in chain.yml'
       %-  reason
       %-  plan-json
-      (rap 3 ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'a' 'chain.yml' '0' '[]' 'null' '')])
+      %+  rap
+        3
+      ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'a' 'chain.yml' '0' '[]' 'null' '')]
     ::
       :-  'needs on a missing job'
       .=  'job b in chain.yml needs zz, which is not a job in chain.yml'
       %-  reason
       %-  plan-json
-      (rap 3 ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '["zz"]' 'null' '')])
+      %+  rap
+        3
+      ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '["zz"]' 'null' '')]
     ::
       :-  'needs never crosses a workflow file'
       .=  'job b in chain.yml needs pass, which is not a job in chain.yml'
       %-  reason
       %-  plan-json
-      (rap 3 ~[(job-json 'pass' 'pass.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '["pass"]' 'null' '')])
+      %+  rap
+        3
+      ~[(job-json 'pass' 'pass.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '["pass"]' 'null' '')]
     ::
       :-  'unsupported if expression'
       .=  'job b in chain.yml: unsupported if expression "github.event_name == \'push\'"'
       %-  reason
       %-  plan-json
-      %-  rap  :-  3
+      %-  rap
+      :-  3
       :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
-          (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":1,"kind":"unsupported","raw":"github.event_name == \'push\'"}' '')
+          %:  job-json
+            'b'
+            'chain.yml'
+            '1'
+            '["a"]'
+            '{"v":1,"kind":"unsupported","raw":"github.event_name == \'push\'"}'
+            ''
+          ==
       ==
     ::
       :-  'matrix unsupported in P1'
@@ -123,9 +140,17 @@
       =/  planned=(each (list job:ci) @t)
         %-  check
         %-  plan-json
-        %-  rap  :-  3
+        %-  rap
+        :-  3
         :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' ',"runs-on":"ubuntu-latest"')  ','
-            (job-json 'b' 'chain.yml' '1' '["a"]' cond-eq ',"runs-on":["self-hosted","big-mem","self-hosted"],"timeout-minutes":3')  ','
+            %:  job-json
+              'b'
+              'chain.yml'
+              '1'
+              '["a"]'
+              cond-eq
+              ',"runs-on":["self-hosted","big-mem","self-hosted"],"timeout-minutes":3'
+            ==  ','
             (job-json 'pass' 'pass.yml' '0' '[]' 'null' '')
         ==
       ?.  ?=(%& -.planned)  %.n
@@ -160,16 +185,25 @@
       .=  'job b in chain.yml: unknown condition version'
       %-  reason
       %-  plan-json
-      %-  rap  :-  3
+      %-  rap
+      :-  3
       :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
-          (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":2,"kind":"output-eq","job":"a","output":"go","literal":"true"}' '')
+          %:  job-json
+            'b'
+            'chain.yml'
+            '1'
+            '["a"]'
+            '{"v":2,"kind":"output-eq","job":"a","output":"go","literal":"true"}'
+            ''
+          ==
       ==
     ::
       :-  'unknown condition version (unknown kind)'
       .=  'job b in chain.yml: unknown condition version'
       %-  reason
       %-  plan-json
-      %-  rap  :-  3
+      %-  rap
+      :-  3
       :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
           (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":1,"kind":"always","job":"a"}' '')
       ==
@@ -178,7 +212,9 @@
       .=  'job b in chain.yml: if references needs.a, which is not in needs'
       %-  reason
       %-  plan-json
-      (rap 3 ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '[]' cond-eq '')])
+      %+  rap
+        3
+      ~[(job-json 'a' 'chain.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '[]' cond-eq '')]
     ::
       :-  'stage must be a natural number'
       .=  'job a in chain.yml: stage -1 is not a natural number'
@@ -187,7 +223,9 @@
       (job-json 'a' 'chain.yml' '-1' '[]' 'null' '')
     ::
       :-  'plan oid must be the candidate oid'
-      .=  (rap 3 ~['plan oid 0000000000000000000000000000000000000000 is not the candidate oid ' oid])
+      .=  %+  rap
+            3
+          ~['plan oid 0000000000000000000000000000000000000000 is not the candidate oid ' oid]
       %-  reason
       %-  need
       %-  de:json:html
@@ -205,7 +243,8 @@
       %-  reason
       %-  need
       %-  de:json:html
-      %-  rap  :-  3
+      %-  rap
+      :-  3
       :~  '{"oid":"'  oid  '","workflows":["chain.yml","pass.yml"],"jobs":['
           '{"id":"a","workflow":"chain.yml","stage":0,"needs":[],"cond":null,"events":["workflow_dispatch"]}]}'
       ==

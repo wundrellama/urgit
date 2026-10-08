@@ -38,7 +38,7 @@
   ?~  parents  ~
   %=  $
     pending  (weld t.pending u.parents)
-    seen     (~(put in seen) i.pending)
+    seen  (~(put in seen) i.pending)
   ==
 ::
 ::  the nearest ancestor of .base that is also an ancestor of .head,
@@ -61,7 +61,7 @@
   ?~  parents  ~
   %=  $
     pending  (weld t.pending u.parents)
-    seen     (~(put in seen) i.pending)
+    seen  (~(put in seen) i.pending)
   ==
 ::
 ::  .head is the staged source head; .base is the destination tip it was

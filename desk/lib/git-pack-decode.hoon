@@ -144,7 +144,7 @@
   =/  entry=packed-entry  i.remaining
   =/  object=(unit object:git)
     ?-  -.kind.entry
-        %full  `[kind.kind.entry data.entry]
+      %full  `[kind.kind.entry data.entry]
         %ofs
       =/  base=(unit object:git)  (~(get by offsets) base-offset.kind.entry)
       ?~  base  ~
@@ -160,7 +160,7 @@
     ==
   ?~  object
     $(remaining t.remaining, pending [entry pending])
-  =/  oid=oid:git  (object-oid:git-codec kind.u.object data.u.object)
+  =/  =oid:git  (object-oid:git-codec kind.u.object data.u.object)
   =.  all  (~(put by all) oid u.object)
   =.  staged  (~(put by staged) oid u.object)
   =.  offsets  (~(put by offsets) offset.entry u.object)
@@ -182,8 +182,8 @@
   ?.  progress.result  ~
   %=  $
     pending  pending.result
-    all      all.result
-    staged   staged.result
+    all  all.result
+    staged  staged.result
     offsets  offsets.result
     attempts  (dec attempts)
   ==

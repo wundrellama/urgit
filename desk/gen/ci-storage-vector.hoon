@@ -35,7 +35,17 @@
 ::  an upload signs into the attempt's own namespace
 ::
 =/  put=(unit signed-request:git-storage)
-  (sign-put:ci-storage configured 'erpit' 'run1' 'att1' %untrusted 'log.txt' 'text/plain' payload when)
+  %:  sign-put:ci-storage
+    configured
+    'erpit'
+    'run1'
+    'att1'
+    %untrusted
+    'log.txt'
+    'text/plain'
+    payload
+    when
+  ==
 ?>  ?=(^ put)
 ?>  =('https://objects.example/git-data/ci/erpit/run1/att1/untrusted/log.txt' url.u.put)
 ?>  =(`payload (get-header:http 'x-amz-content-sha256' headers.u.put))
@@ -67,7 +77,9 @@
 =/  starts
   |=  [prefix=tape text=tape]
   =(prefix (scag (lent prefix) text))
-?>  (starts "https://objects.example/git-data/ci/erpit/run1/att1/trusted/log.jsonl?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=EXAMPLEKEY%2F20260816%2Flocal-1%2Fs3%2Faws4_request&X-Amz-Date=20260816T123456Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=" link)
+?>  %+  starts
+      "https://objects.example/git-data/ci/erpit/run1/att1/trusted/log.jsonl?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=EXAMPLEKEY%2F20260816%2Flocal-1%2Fs3%2Faws4_request&X-Amz-Date=20260816T123456Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature="
+    link
 ?>  =(64 (lent (slag (need (find "Signature=" link)) (slag 10 link))))
 ?>  =(~ (find "authorization" link))
 ?>  =(~ (presign-get:ci-storage configured %untrusted 'erpit' 'run1' 'att1' %trusted 'log.jsonl' ~m5 when))

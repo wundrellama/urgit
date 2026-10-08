@@ -214,7 +214,7 @@
     ?:  |(=(u.dot 0) =(+(u.dot) (lent chars)))  ~
     =/  base=@t  (crip (scag u.dot chars))
     =/  extension=@t  (crip (slag +(u.dot) chars))
-    ?.  ?&((safe-segment base) (safe-segment extension))  ~
+    ?.  &((safe-segment base) (safe-segment extension))  ~
     `(weld prefix ~[base extension])
   =?  dot  =('.' i.remaining)  `index
   $(remaining t.remaining, index +(index), dot dot)
@@ -245,7 +245,7 @@
       (walk-tree objects oid.entry u.child files visiting)
     ?~  walked  ~
     $(remaining t.remaining, files u.walked)
-  ?.  ?|(=('100644' mode.entry) =('100755' mode.entry))  ~
+  ?.  |(=('100644' mode.entry) =('100755' mode.entry))  ~
   =/  file-path=(unit path)  (leaf-path prefix name.entry)
   ::  Git permits names that Clay cannot represent as a marked file (for
   ::  example LICENSE or .gitignore).  Omit those from the Clay projection;

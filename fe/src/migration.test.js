@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { arm, armsNamed, gaps } from './hoonSource.js'
 
 const surface = readFileSync(
   new URL('../../desk/sur/git.hoon', import.meta.url),
@@ -11,6 +12,9 @@ const agent = readFileSync(
   'utf8',
 )
 const migrationUrl = new URL('../../desk/lib/git-migrate.hoon', import.meta.url)
+// the state migrations are lib/git-migrate's, which the agent imports whole;
+// read in the tests that need it, so a missing library fails those alone
+const migrations = () => readFileSync(migrationUrl, 'utf8')
 const vectorUrl = new URL('../../desk/gen/git-migration-vector.hoon', import.meta.url)
 
 function sourceBlock(source, start, end) {
@@ -106,7 +110,12 @@ test('state-2 keeps the four fields installed ships stored, state-3 adds the que
 })
 
 test('migrate-state-2 carries the repositories forward and defaults the queue empty', () => {
-  const migrate = sourceBlock(agent, '++  migrate-state-2', '++  migrate-state-3')
+  // the agent takes them from the library: imported whole, none of its own
+  assert.ok(agent.split('\n').some((line) => line.startsWith('/+') && line.slice(2).split(',').map((entry) => entry.trim()).includes('*git-migrate')))
+  for (const step of ['migrate-state-0', 'migrate-state-1', 'migrate-state-2', 'migrate-state-3']) {
+    assert.equal(armsNamed(agent, step).length, 0, `the agent defines no ${step} of its own`)
+  }
+  const migrate = arm(migrations(), 'migrate-state-2')
   assert.match(migrate, /\|=  stored=state-2:git/)
   assert.match(migrate, /\^-  state-3:git/)
   // The repositories must come across; a migration that drops them is worse
@@ -118,16 +127,18 @@ test('migrate-state-2 carries the repositories forward and defaults the queue em
 
   // migrate-state-1 must again produce a four-field %2, so the %0 and %1 paths
   // hand migrate-state-2 the same shape an installed ship stored.
-  const migrateOne = sourceBlock(agent, '++  migrate-state-1', '++  migrate-state-2')
+  const migrateOne = arm(migrations(), 'migrate-state-1')
   assert.match(migrateOne, /\^-  state-2:git/)
   assert.match(migrateOne, /\[%2 migrated peers\.stored github-token\.stored\]/)
 })
 
 test('migrate-state-3 rewrites every stored repository without a group policy', () => {
-  const migrate = sourceBlock(agent, '++  migrate-state-3', '++  settle-webhook-state')
+  const migrate = arm(migrations(), 'migrate-state-3')
   assert.match(migrate, /\|=  stored=state-3:git/)
   assert.match(migrate, /\^-  state-4:git/)
-  assert.match(migrate, /\(repository-3-to-4:git-migrate \+\.i\.remaining\)/)
+  // inside lib/git-migrate the call is unqualified and names the library's own arm
+  assert.match(migrate, /\(repository-3-to-4 \+\.i\.remaining\)/)
+  assert.ok(arm(migrations(), 'repository-3-to-4'))
   assert.match(migrate, /\[%4 migrated peers\.stored github-token\.stored peer-prepare-queue\.stored\]/)
 })
 
@@ -172,8 +183,8 @@ test('on-load migrates zero through three forward while accepting four', () => {
   assert.match(onLoad, /\?\+\s+-\.q\.old\s+!!/)
   assert.match(onLoad, /=\/  loaded=state-4:git/)
   assert.ok(
-    onLoad.includes(
-      '%0  (migrate-state-3 (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old)))))',
+    gaps(onLoad).includes(
+      '%0  %-  migrate-state-3  (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))',
     ),
   )
   assert.ok(

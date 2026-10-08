@@ -733,3 +733,34 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-secret { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; -webkit-text-security: disc; }
 .ci-radio { display: flex; flex-direction: column; gap: 0.25rem; }
 .ci-credential-form { margin-top: 0.75rem; }
+
+/* P4: the CI policy section and the candidate's provenance panel */
+.ci-policy-block { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0; border-top: 1px solid var(--border, #e2e2e2); }
+.ci-policy-block > strong { font-size: 0.95rem; }
+.ci-policy-block label { display: flex; flex-direction: column; gap: 0.2rem; }
+.ci-policy-block textarea, .ci-policy-block input { font-family: inherit; }
+.ci-lock-row { display: grid; grid-template-columns: 2fr 0.6fr 2.2fr 1.4fr 1fr; gap: 0.5rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border, #e2e2e2); overflow-wrap: anywhere; font-size: 0.9rem; }
+.ci-lock-row.bad { background: rgba(192, 57, 43, 0.06); }
+.ci-lock-diff { padding: 0.4rem 0.6rem; border-left: 3px solid #d4a017; margin: 0.4rem 0; overflow-wrap: anywhere; }
+.ci-backend-row { display: grid; grid-template-columns: 1.2fr 1fr 1.6fr 1.8fr 1.4fr; gap: 0.5rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border, #e2e2e2); font-size: 0.9rem; }
+.ci-audit { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.9rem; max-height: 22rem; overflow: auto; overflow-wrap: anywhere; }
+.ci-baseline { padding: 0.3rem 0; overflow-wrap: anywhere; }
+.ci-provenance { margin: 0.5rem 0 0.75rem; }
+
+.ci-waits { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.ci-waits li { margin: 0.2rem 0; }
+
+/* Settings → Runners → a runner's withheld slots (legacy-recovery UI ruling 01) */
+.ci-recovery { width: min(860px, 100%); }
+.ci-recovery .modal-body { max-height: 75vh; overflow: auto; }
+.ci-recovery-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.5rem; align-items: center; padding: 0.45rem 0.6rem; border: 1px solid var(--border, #e2e2e2); border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ci-recovery-row.selected { border-color: var(--accent); background: var(--soft); }
+.ci-recovery-inspection { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.ci-recovery-conditions { list-style: none; margin: 0.5rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; overflow-wrap: anywhere; }
+.ci-recovery-conditions .ci-pip { vertical-align: middle; }
+.ci-recovery-command { margin: 0.5rem 0; overflow-wrap: anywhere; }
+.status.bad { color: #b42318; background: #fdecea; }
+.ci-recovery-history { margin-top: 0.75rem; font-size: 0.9rem; }
+.ci-history { margin: 0.5rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
+.ci-history ul { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; font-size: 0.9rem; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .ci-recovery-row { grid-template-columns: minmax(0, 1fr); } }

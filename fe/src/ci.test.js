@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, renderLog } from './ci.js'
+import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, renderLog, stagedEditNote } from './ci.js'
 
 const jobA = { attempt: '0v1.a', kind: 'job', job: 'a', status: 'passed', started: 100, finished: 130, log: { key: 'k', size: 1, sha256: 'x' } }
 const jobB = { attempt: '0v2.b', kind: 'job', job: 'b', status: 'running', started: 130, finished: null, log: null }
@@ -82,4 +82,14 @@ test('the credential form refuses a missing name, a bad name, a short value and 
   assert.match(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: ' ' }), /environment/)
   assert.equal(credentialFormError({ name: 'TOKEN', value: 'hunter2hunter2', scope: 'env', envs: 'staging, production' }), '')
   assert.deepEqual(parseEnvs('staging, production\nqa'), ['staging', 'production', 'qa'])
+})
+
+test('a staged web edit reads as staged, never as committed; an applied one has no note', () => {
+  const staged = { ok: true, staged: true, candidate: '0v1.abcde', trust: 'trusted', actor: '~zod', head: 'eef8913900000000000000000000000000000000', base: '6216f30200000000000000000000000000000000' }
+  const note = stagedEditNote(staged, 'refs/heads/main', 'This edit')
+  assert.match(note, /^This edit was staged as CI candidate 0v1\.abcde, not committed: main is CI-protected/)
+  assert.match(note, /until the candidate's checks pass and it lands/)
+  assert.match(stagedEditNote(staged, '', 'This deletion'), /^This deletion was staged .* the branch is CI-protected/)
+  assert.equal(stagedEditNote({ ok: true, commit: 'eef8913900000000000000000000000000000000' }, 'refs/heads/main', 'This edit'), '')
+  assert.equal(stagedEditNote(null, 'refs/heads/main'), '')
 })

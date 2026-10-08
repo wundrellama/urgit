@@ -7,8 +7,8 @@
 ::
 /-  ci
 |%
-++  max-line    65.536
-++  max-msg     4.096
+++  max-line  65.536
+++  max-msg  4.096
 ++  max-events  50.000
 ::
 +$  refusal  [status=@ud message=@t]
@@ -88,9 +88,9 @@
   ?~  value  [%& ~]
   =/  known=(unit result:ci)
     ?+  u.value  ~
-      %success    `%success
-      %failure    `%failure
-      %skipped    `%skipped
+      %success  `%success
+      %failure  `%failure
+      %skipped  `%skipped
       %cancelled  `%cancelled
     ==
   ?~  known
@@ -108,9 +108,9 @@
   =/  name=(unit @t)  (string-field fields 'command')
   ?~  name  [%& ~]
   =/  arg=@t  (fall (string-field fields 'arg') '')
-  ?+    u.name
-      =/  other=(unit command:ci)  `[%other u.name]
-      [%& other]
+  ?+  u.name
+    =/  other=(unit command:ci)  `[%other u.name]
+    [%& other]
   ::
       %set-output
     =/  output=(unit @t)
@@ -232,9 +232,9 @@
     ?~  remaining  ~
     ?.  &((gte i.remaining '0') (lte i.remaining '9'))  ~
     %=  $
-      count      (dec count)
+      count  (dec count)
       remaining  t.remaining
-      value      (add (mul value 10) (sub i.remaining '0'))
+      value  (add (mul value 10) (sub i.remaining '0'))
     ==
   =/  expect
     |=  [char=@tD remaining=tape]

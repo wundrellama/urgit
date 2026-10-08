@@ -154,19 +154,31 @@
         ?~  extra  ~
         =/  count=@ud  (add 3 value.u.extra)
         ?:  (gth (add produced count) total)  ~
-        $(lengths (repeat-list count i.lengths lengths), produced (add produced count), stream state.u.extra)
+        %=  $
+          lengths  (repeat-list count i.lengths lengths)
+          produced  (add produced count)
+          stream  state.u.extra
+        ==
       ?:  =(code 17)
         =/  extra=(unit [value=@ state=bit-state])  (read-bits 3 state.u.decoded)
         ?~  extra  ~
         =/  count=@ud  (add 3 value.u.extra)
         ?:  (gth (add produced count) total)  ~
-        $(lengths (repeat-list count 0 lengths), produced (add produced count), stream state.u.extra)
+        %=  $
+          lengths  (repeat-list count 0 lengths)
+          produced  (add produced count)
+          stream  state.u.extra
+        ==
       ?:  =(code 18)
         =/  extra=(unit [value=@ state=bit-state])  (read-bits 7 state.u.decoded)
         ?~  extra  ~
         =/  count=@ud  (add 11 value.u.extra)
         ?:  (gth (add produced count) total)  ~
-        $(lengths (repeat-list count 0 lengths), produced (add produced count), stream state.u.extra)
+        %=  $
+          lengths  (repeat-list count 0 lengths)
+          produced  (add produced count)
+          stream  state.u.extra
+        ==
       ~
     $(code-lengths [(fall (~(get by code-map) symbol) 0) code-lengths], symbol +(symbol))
   =/  next=(unit [value=@ state=bit-state])  (read-bits 3 cursor)
@@ -184,7 +196,37 @@
 ::
 ++  distance-base
   ^-  (list @ud)
-  ~[1 2 3 4 5 7 9 13 17 25 33 49 65 97 129 193 257 385 513 769 1.025 1.537 2.049 3.073 4.097 6.145 8.193 12.289 16.385 24.577]
+  :~  1
+      2
+      3
+      4
+      5
+      7
+      9
+      13
+      17
+      25
+      33
+      49
+      65
+      97
+      129
+      193
+      257
+      385
+      513
+      769
+      1.025
+      1.537
+      2.049
+      3.073
+      4.097
+      6.145
+      8.193
+      12.289
+      16.385
+      24.577
+  ==
 ::
 ++  distance-extra
   ^-  (list @ud)
@@ -198,7 +240,7 @@
 ++  copy-distance
   |=  [data=octs distance=@ud count=@ud]
   ^-  (unit octs)
-  ?:  ?|(=(distance 0) (gth distance p.data))  ~
+  ?:  |(=(distance 0) (gth distance p.data))  ~
   =/  remaining=@ud  count
   =/  out=octs  data
   |-
