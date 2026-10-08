@@ -1,0 +1,51 @@
+[Unit]
+Description=urgit CI VM launcher (Firecracker + jailer, this chair's protected root)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/var/lib/urgit-ci-p4-opus/bin/urgit-vm-launcher serve -config /etc/urgit-vm-launcher-p4-opus.toml
+Restart=on-failure
+RuntimeDirectory=urgit-ci-p4-opus
+RuntimeDirectoryMode=0755
+# the stop is bounded by the cleanup obligation (runner/launcher/
+# INTEGRATION.md §7.2): from the stop request (SIGTERM) a start in
+# progress is cut within 30 s and every owned VM's teardown runs side by
+# side, all of it — that wait included — ending by 120 s after the
+# request, each resource stopped and removed or explicitly quarantined.
+# TimeoutStopSec is systemd's outer backstop, not that obligation and no
+# extra execution or cleanup time: the 60 s past it leave room for the
+# outcomes' durable publication and the exit, whose duration on a real
+# filesystem is not bounded in source (a real-host qualification item).
+# systemd signals the launcher alone: its own cleanup commands are its to
+# bound, not systemd's to cut short mid-teardown
+KillMode=mixed
+TimeoutStopSec=180
+# cgroup v2 delegation (C1): systemd delegates this unit's own cgroup,
+# system.slice/urgit-vm-launcher.service (the configuration's
+# cgroup_service), to the launcher and starts it in the leaf
+# <service>/supervisor. The launcher enables cpu, memory and pids for its
+# jobs cgroup <service>/<cgroup_parent> and makes every job cgroup there:
+# systemd is the only writer above the service cgroup, the launcher the only
+# one below it, and nothing is made at the cgroup root. A job's VMM is
+# therefore in this unit's cgroup: once the launcher's own bounded teardown
+# has ended and it has exited, systemd's KillMode=mixed SIGKILLs anything
+# left in it, a VMM in a job cgroup included (a real-host qualification
+# item).
+Delegate=yes
+DelegateSubgroup=supervisor
+# root: the jailer needs mknod, chroot, setns, setuid; the launcher owns
+# its slice, its netns/nft objects and its jail root, nothing else
+NoNewPrivileges=no
+ProtectHome=read-only
+ProtectSystem=strict
+# every writable path is one the install creates — the protected root, this
+# unit's RuntimeDirectory, the cgroup filesystem — or is optional (`-`):
+# systemd refuses to start a unit whose listed path is missing (226/NAMESPACE)
+# (C6). /run/netns exists only once a network namespace does, and Stage A
+# creates none. Stage B must make it writable: under ProtectSystem=strict
+# /run is read-only, and `ip netns add` creates and mounts /run/netns.
+ReadWritePaths=/var/lib/urgit-ci-p4-opus /run/urgit-ci-p4-opus /sys/fs/cgroup -/run/netns
+
+[Install]
+WantedBy=multi-user.target

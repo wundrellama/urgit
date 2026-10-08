@@ -211,3 +211,73 @@ func TestWalkEnvironment(t *testing.T) {
 		t.Fatalf("%+v", walked)
 	}
 }
+
+// the projection names each locked image by the local name its archive
+// was loaded under (container:, image:, uses: docker://), on the chosen
+// job only, leaving every other byte and every unlocked reference as
+// written (P03: act finds the image locally and pulls nothing)
+func TestProjectRenamesLockedImages(t *testing.T) {
+	src := `name: images
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    container: docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+    steps:
+      - run: echo a
+  b:
+    runs-on: ubuntu-latest
+    container:
+      image: "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
+      options: --cpus 1
+    services:
+      db:
+        image: postgres:16
+      cache:
+        image: redis:7
+    steps:
+      - uses: docker://alpine:3.19
+      - uses: actions/checkout@v4
+      - run: 'echo "image: docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"'
+`
+	images := map[string]string{
+		"docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662": "urgit-locked/library/busybox:sha256-73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+		"postgres:16": "urgit-locked/postgres:sha256-aaaa",
+		"alpine:3.19": "urgit-locked/alpine:sha256-bbbb",
+	}
+	out, err := ProjectImages([]byte(src), "b", "0v1", "images.yml", images)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	for _, want := range []string{
+		"      image: \"urgit-locked/library/busybox:sha256-73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662\"\n",
+		"      options: --cpus 1\n",
+		"        image: urgit-locked/postgres:sha256-aaaa\n",
+		"        image: redis:7\n",
+		"      - uses: docker://urgit-locked/alpine:sha256-bbbb\n",
+		"      - uses: actions/checkout@v4\n",
+		"      - run: 'echo \"image: docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662\"'\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("projection lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "container: docker.io") || strings.Contains(got, "echo a") {
+		t.Errorf("job a leaked into b's projection:\n%s", got)
+	}
+	// job a: the scalar container form
+	out, err = ProjectImages([]byte(src), "a", "0v1", "images.yml", images)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "    container: urgit-locked/library/busybox:sha256-73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662\n") {
+		t.Errorf("scalar container not renamed:\n%s", out)
+	}
+	// no images locked: byte-identical to Project
+	plain, _ := Project([]byte(src), "b", "0v1", "images.yml")
+	same, _ := ProjectImages([]byte(src), "b", "0v1", "images.yml", nil)
+	if string(plain) != string(same) {
+		t.Error("ProjectImages without images must equal Project")
+	}
+}

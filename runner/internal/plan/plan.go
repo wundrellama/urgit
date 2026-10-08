@@ -162,6 +162,15 @@ func envToken(s string) string {
 	return b.String()
 }
 
+// SafeFilename is act's own directory naming for a `uses:` string in its
+// action cache (pkg/runner/step_action_remote.go safeFilename, 0.2.89):
+// the bundle materializes each locked action under exactly this name.
+func SafeFilename(s string) string {
+	return strings.NewReplacer(
+		`<`, "-", `>`, "-", `:`, "-", `"`, "-", `/`, "-", `\`, "-", `|`, "-", `?`, "-", `*`, "-",
+	).Replace(s)
+}
+
 // ProjectionName is the workflow name act sees for an attempt: the
 // attempt id, a slash, the original name (CI-PROJECT-1.1). act names a
 // job's container and volumes from sha256(workflow.Name/job.Name) and
@@ -181,6 +190,16 @@ func ProjectionName(attempt, original string) string {
 // the source. act then runs only what the ship admitted, under a name no
 // other attempt shares.
 func Project(data []byte, jobID, attempt, fileName string) ([]byte, error) {
+	return ProjectImages(data, jobID, attempt, fileName, nil)
+}
+
+// ProjectImages is Project with the locked container images renamed: on
+// the chosen job's `container:`, `image:` and `uses: docker://` lines,
+// each reference the lock pinned (as the workflow wrote it) becomes the
+// local name its archive was loaded under, so act runs exactly the
+// locked bytes and never asks a registry (P03). Nothing else on those
+// lines changes; a reference the lock does not name is left as written.
+func ProjectImages(data []byte, jobID, attempt, fileName string, images map[string]string) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
@@ -283,10 +302,40 @@ func Project(data []byte, jobID, attempt, fileName string) ([]byte, error) {
 			if l < chosen.start || l >= chosen.end || drop[l] {
 				continue
 			}
+			if len(images) > 0 {
+				out.WriteString(renameImage(lines[l], images))
+				continue
+			}
 		}
 		out.WriteString(lines[l])
 	}
 	return []byte(out.String()), nil
+}
+
+// renameImage rewrites one job line that names an image (`container:`,
+// `image:` or `uses: docker://`) when its reference is a locked one.
+func renameImage(line string, images map[string]string) string {
+	trimmed := strings.TrimLeft(line, " \t-")
+	key := ""
+	for _, k := range []string{"container:", "image:", "uses:"} {
+		if strings.HasPrefix(trimmed, k) {
+			key = k
+		}
+	}
+	if key == "" {
+		return line
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+	value = strings.Trim(value, `"'`)
+	written := strings.TrimPrefix(value, "docker://")
+	if key == "uses:" && written == value {
+		return line // an action, not an image
+	}
+	tag, ok := images[written]
+	if !ok {
+		return line
+	}
+	return strings.Replace(line, written, tag, 1)
 }
 
 // JobText returns the chosen job's block as it appears in the original

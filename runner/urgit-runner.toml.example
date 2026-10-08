@@ -1,7 +1,10 @@
-# urgit-runner configuration (BRIEF-CI-P1 D7, P3 D1). Copy to
-# /etc/urgit-runner.toml, mode 0600: the enrollment token is a credential
-# until the first start consumes it. The ship's web interface (Settings →
-# Runners → Mint token) shows the first three lines ready to paste.
+# urgit-runner configuration (BRIEF-CI-P1 D7, P3 D1, P4 riders 03/04).
+# Copy to /etc/urgit-runner.toml, mode 0600: the enrollment token is a
+# credential until the first start consumes it. The ship's web interface
+# (Settings → Runners → Mint token) shows the first three lines ready to
+# paste. Every value below is a product default (rider 04), not a test
+# ceiling: a campaign's larger per-chair caps are configured explicitly
+# and never inferred from the host.
 
 # the ship's HTTP origin; the daemon reaches /apps/urgit/api/ci and /git
 ship_url = "http://127.0.0.1:8080"
@@ -11,36 +14,69 @@ ship_url = "http://127.0.0.1:8080"
 # state_file, and never writes the token anywhere
 enroll_token = "0v..."
 
-# the one sandbox backend this release ships: container isolation on a
-# dedicated rootless Docker daemon (microvm backend pending)
-sandbox = "docker-rootless"
+# the sandbox backend. The default when this key is absent is "microvm":
+# a fresh Firecracker microVM per job, started through the
+# administrator-owned launcher (urgit-vm-launcher), the only backend for
+# privileged, trial, shadow and untrusted work. "docker-rootless" is the
+# explicit trusted-compatibility profile (a container, not a VM
+# boundary); the ship never places VM-required work on it.
+sandbox = "microvm"
 
-# the rootless daemon's socket; never the host's rootful socket
-docker_host = "unix:///run/user/1000/docker.sock"
+# microvm: the launcher's control socket (root-owned, group of this user)
+# and the verified guest image set (manifest.json + kernel + rootfs whose
+# digests the launcher pins). A missing socket, manifest or a digest
+# mismatch refuses to start: there is no fallback to a container.
+launcher_socket = "/run/urgit-ci-p4-opus/launcher.sock" # the launcher config's `socket` (its unit's RuntimeDirectory)
+image_path = "/var/lib/urgit-runner/images/current"
 
-# a statically linked act 0.2.89 (copied into every sandbox), and the
-# runner image act maps ubuntu-latest to
+# per-guest resources (rider 04 defaults) and this daemon's own budget
+# (counts preparing, running, stopping and quarantined guests); the
+# launcher admits each reservation against its own ceiling too
+cpus = 2
+memory_mib = 4096        # guest RAM; the launcher reserves 1024 MiB host overhead per guest on top
+disk_mib = 20480         # the job's writable disk
+budget_cpus = 2
+budget_memory_mib = 5120 # cpus × capacity guests plus their overhead; refused if the host cannot honour it
+
+# concurrent attempts this daemon offers the ship (guests, in microvm)
+capacity = 1
+
+# docker-rootless only: the rootless daemon's socket; never the host's
+# rootful socket. Refused together with the microvm keys.
+# docker_host = "unix:///run/user/1000/docker.sock"
+
+# a statically linked act 0.2.89 (the guest image carries its own; copied
+# into every container sandbox), and the image act maps ubuntu-latest to
 act_binary = "/usr/local/bin/act"
 act_image = "catthehacker/ubuntu:act-latest"
 
-# concurrent attempts this daemon offers the ship
-capacity = 1
-
-# the labels this daemon declares; a job runs here only when every label in
-# its `runs-on` is one of these or one of the implicit set every runner
-# stands for (self-hosted, linux, ubuntu-latest, ubuntu-22.04,
-# ubuntu-24.04, x64). Which repositories this runner may take is set on the
-# ship (Settings → Runners), never here.
+# the labels this daemon declares: placement only, never containment or a
+# grant. A job runs here only when every label in its `runs-on` is one of
+# these or one of the implicit set every runner stands for (self-hosted,
+# linux, ubuntu-latest, ubuntu-22.04, ubuntu-24.04, x64). Which
+# repositories this runner may take is set on the ship (Settings →
+# Runners), never here.
 labels = []
+
+# network profiles this daemon offers (rider 03). Locked (no network) is
+# every job's default and needs no entry. A profile names the widest set
+# of destinations this runner is willing to reach (proto:ip:port); a job
+# gets it only when the ship's policy names the same profile for that job,
+# and only the intersection of the policy's destinations, this list and
+# the launcher's ceiling. In docker-rootless mode a profile grants NAT
+# egress as a whole; destinations are narrowed only by the VM launcher.
+# [[network_profiles]]
+# name = "egress"
+# destinations = ["tcp:140.82.112.3:443"]
+
+# resolver: this daemon also performs explicit imports (the dependency
+# walk that mirrors actions into the ship and downloads into its store).
+# Imports may fetch from the origins named in the workflows and the
+# operator's mappings; execution never does.
+resolver = false
 
 # checkouts, projections and act streams; one directory per attempt
 work_dir = "/var/lib/urgit-runner/work"
 
 # daemon_id and bearer after enrollment, written mode 0600
 state_file = "/var/lib/urgit-runner/state.json"
-
-# microvm backend (not available in this release; parsed, never used)
-# image_path = "/var/lib/urgit-runner/guest.img"
-# cpus = 2
-# memory_mib = 4096
-# disk_mib = 20480

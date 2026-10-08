@@ -1,0 +1,27 @@
+# The guest root filesystem (BRIEF-CI-P4 D2): Debian bookworm-slim at a
+# pinned digest, packages from a dated snapshot.debian.org archive (the
+# same input set on every build), the pinned Docker static release, the
+# pinned act, and this tree's urgit-guest helper as /sbin/urgit-guest.
+# Built rootless by podman; exported to a tar; turned into ext4 by
+# build.sh. No service runs here: the helper is init.
+ARG BASE_DIGEST
+FROM docker.io/library/debian:bookworm-slim@${BASE_DIGEST}
+ARG APT_SNAPSHOT
+RUN set -eux; \
+    printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: bookworm bookworm-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: http://snapshot.debian.org/archive/debian-security/%s\nSuites: bookworm-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' "$APT_SNAPSHOT" "$APT_SNAPSHOT" > /etc/apt/sources.list.d/debian.sources; \
+    printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99snapshot; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        iproute2 iptables nftables ca-certificates git e2fsprogs procps; \
+    dpkg-query -W -f '${Package}=${Version}\n' | sort > /etc/urgit-guest-packages.txt; \
+    apt-get clean; rm -rf /var/lib/apt/lists/*
+# the Docker static release: dockerd, containerd, runc, docker-init,
+# docker-proxy, ctr and the docker client, all into /usr/local/bin
+COPY docker/ /usr/local/bin/
+COPY act /usr/local/bin/act
+COPY urgit-guest /sbin/urgit-guest
+RUN set -eux; chmod 0755 /usr/local/bin/* /sbin/urgit-guest; \
+    mkdir -p /work /var/lib/docker /etc/docker; \
+    printf '{"storage-driver":"overlay2"}\n' > /etc/docker/daemon.json; \
+    printf 'urgit-guest\n' > /etc/hostname; \
+    rm -f /etc/machine-id; touch /etc/machine-id

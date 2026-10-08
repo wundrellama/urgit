@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"urgit/runner/internal/sig"
 )
 
 // ErrUnauthorized is the ship answering 401 to a bearer it no longer
@@ -43,6 +45,19 @@ type Client struct {
 	// Labels ride every request the same way (`x-ci-labels`, comma
 	// separated): the daemon's declared labels (CI-P3-SCHED-A).
 	Labels []string
+	// Profiles are the network profile names this daemon supports
+	// (`x-ci-profiles`, rider 03); Resolver says it may run imports.
+	Profiles []string
+	Resolver bool
+	// Recovery says this daemon carries out the operator's recovery
+	// commands (`x-ci-recovery`): only then does the ship hand one over on
+	// its poll (INTEGRATION.md §11.12)
+	Recovery bool
+	// Paused says this daemon runs nothing: it waits for its history
+	// transition (INTEGRATION.md §11.15). Its polls then advertise capacity
+	// 0 explicitly, which its ship honours; a capacity of 0 is otherwise
+	// never sent
+	Paused bool
 }
 
 func New(base, bearer string) *Client {
@@ -66,6 +81,10 @@ type Grant struct {
 }
 
 // Assignment is the ship's assignment object as delivered on the channel.
+// P4 adds the execution manifest the signature binds (D5), the harness
+// paths and lock the bundle is built from (D4/D5), the network profile
+// (rider 03) and the attempt-bound read capability for private mirrors
+// (A06). None of it enters the guest.
 type Assignment struct {
 	ID              string                       `json:"id"`
 	Attempt         string                       `json:"attempt"`
@@ -85,11 +104,80 @@ type Assignment struct {
 	Assigned        string                       `json:"assigned"`
 	Grants          []Grant                      `json:"grants"`
 	Sig             *Signature                   `json:"sig"`
+	// P4
+	Manifest     *sig.Manifest `json:"manifest"`
+	HarnessPaths []string      `json:"harness-paths"`
+	Lock         *Lock         `json:"lock"`
+	Downloads    []Download    `json:"downloads"`
+	// ReadToken is the attempt-bound capability for cloning the private
+	// mirrors and the candidate repository (A06); the daemon presents it
+	// as HTTP basic auth to /git and never copies it anywhere
+	ReadToken string `json:"read-token"`
+	// WorkflowsOID is the revision the workflow files come from: the
+	// baseline for a required/shadow run, the candidate for a trial
+	WorkflowsOID string `json:"workflows-oid"`
+	// Mappings are the operator's explicit import mappings of a resolve
+	// (rider 03): origin or URL prefixes read from elsewhere, recorded
+	// in the lock's notices
+	Mappings []Mapping `json:"mappings"`
+	// BaselineRef is the scratch ref the ship keeps the baseline revision
+	// reachable under, fetched before the harness overlay
+	BaselineRef string `json:"baseline-ref"`
+}
+
+// Mapping is one explicit import mapping: From (a prefix) is read from To.
+type Mapping struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// Lock is the approved dependency lock the bundle materializes (D4).
+type Lock struct {
+	Digest string     `json:"digest"`
+	Nodes  []LockNode `json:"nodes"`
+}
+
+// LockNode is one resolved dependency: the original `uses:` text, its
+// immutable identity, and where the daemon fetches it from.
+type LockNode struct {
+	Uses         string `json:"uses"`    // original text, e.g. actions/cache@v4
+	Kind         string `json:"kind"`    // js / composite / container / local / download / reusable
+	Origin       string `json:"origin"`  // https://github.com/actions/cache
+	Ref          string `json:"ref"`     // v4
+	Commit       string `json:"commit"`  // resolved upstream commit sha
+	Tree         string `json:"tree"`    // the commit's tree sha
+	Subpath      string `json:"subpath"` // action directory inside the repository
+	Mirror       string `json:"mirror"`  // the urgit repository holding the mirror commit
+	MirrorCommit string `json:"mirror-commit"`
+	Digest       string `json:"digest"` // OCI digest for container images
+	License      string `json:"license"`
+}
+
+// Download is one inventoried known download (P06): staged into the
+// bundle by sha256 and exposed to actions through URGIT_CI_DOWNLOADS.
+type Download struct {
+	URL     string `json:"url"`
+	Uses    string `json:"uses"`    // the inventory name: the URL, toolchain:go@<version>, or container:/service:<name>:/docker://<image>
+	Kind    string `json:"kind"`    // download, or container: a docker-archive of the locked image
+	Subpath string `json:"subpath"` // a toolchain's tool-cache directory (go/<version>/x64)
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+	Mirror  string `json:"mirror"` // "store": the ship's object store
+	Commit  string `json:"commit"`
+	Path    string `json:"path"`  // the content-addressed key, ci/downloads/<sha256>
+	Store   string `json:"store"` // a presigned GET of that key for this assignment's window
+	// a container archive: the image reference as the workflow wrote it,
+	// the manifest digest it was pinned to and the id it loads as
+	Digest string `json:"digest"`
+	ID     string `json:"id"`
 }
 
 // Signature is the ship's authorization over an assignment (D5): the
 // fields it signed and the signature, hex of the little-endian bytes.
+// Version 2 (P4) signs the manifest too; a version this daemon does not
+// speak is refused.
 type Signature struct {
+	Version   int    `json:"version"`
 	Recipient string `json:"recipient"`
 	Attempt   string `json:"attempt"`
 	Operation string `json:"operation"`
@@ -129,11 +217,20 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 	if c.Bearer != "" {
 		req.Header.Set("x-ci-bearer", c.Bearer)
 	}
-	if c.Capacity > 0 {
+	if c.Capacity > 0 || c.Paused {
 		req.Header.Set("x-ci-capacity", strconv.Itoa(c.Capacity))
 	}
 	if len(c.Labels) > 0 {
 		req.Header.Set("x-ci-labels", strings.Join(c.Labels, ","))
+	}
+	if len(c.Profiles) > 0 {
+		req.Header.Set("x-ci-profiles", strings.Join(c.Profiles, ","))
+	}
+	if c.Resolver {
+		req.Header.Set("x-ci-resolver", "1")
+	}
+	if c.Recovery {
+		req.Header.Set("x-ci-recovery", "1")
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -157,11 +254,14 @@ type Enrollment struct {
 
 // Enroll consumes the token. The caller forgets the token afterwards.
 // The labels are declared here and again on every poll.
-func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string, labels []string) (*Enrollment, error) {
+func (c *Client) Enroll(ctx context.Context, token string, capacity int, sandbox string, labels []string, profiles []string, resolver bool) (*Enrollment, error) {
 	if labels == nil {
 		labels = []string{}
 	}
-	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox, "labels": labels})
+	if profiles == nil {
+		profiles = []string{}
+	}
+	body, _ := json.Marshal(map[string]any{"token": token, "capacity": capacity, "sandbox": sandbox, "labels": labels, "profiles": profiles, "resolver": resolver})
 	resp, err := c.do(ctx, http.MethodPost, "/daemon/enroll", body)
 	if err != nil {
 		return nil, err
@@ -306,6 +406,16 @@ func (c *Client) Plan(ctx context.Context, attempt string, plan any) (Response, 
 		return Response{}, err
 	}
 	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/plan", body)
+}
+
+// PostLock posts a resolver's dependency inventory and lock proposal for
+// a resolve attempt (D4); 200 stored, 422 refused with the reason.
+func (c *Client) PostLock(ctx context.Context, attempt string, lock any) (Response, error) {
+	body, err := json.Marshal(lock)
+	if err != nil {
+		return Response{}, err
+	}
+	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/lock", body)
 }
 
 // AttemptStatus reads an attempt's status for orphan reconciliation:

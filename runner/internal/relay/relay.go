@@ -24,6 +24,7 @@ type Summary struct {
 	Refused   int    // any other status
 	LastError string // the last refusal's body
 	JobResult string // the jobResult the stream carried, if any
+	Closed    bool   // the ship said the attempt is closed (cancelled or superseded)
 }
 
 type eventLine struct {
@@ -62,6 +63,9 @@ func Relay(ctx context.Context, stream io.Reader, send Sender, log func(string))
 		} else {
 			s.Refused++
 			s.LastError = truncate(string(body), 300)
+			if strings.Contains(s.LastError, "attempt is closed") {
+				s.Closed = true
+			}
 			if log != nil {
 				log("ship refused event: " + s.LastError)
 			}

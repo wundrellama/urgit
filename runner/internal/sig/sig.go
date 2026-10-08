@@ -71,6 +71,39 @@ func ParseUV(text string) (*big.Int, error) {
 	return v, nil
 }
 
+// FormatUV is the atom's @uv literal as Hoon writes it (scot %uv): 0v, then
+// its base-32 digits without leading zeros, grouped by five from the right
+// with dots. It is the one spelling of the atom; ParseUV reads every
+// spelling of it (independent review 08, R8-1).
+func FormatUV(v *big.Int) string {
+	if v.Sign() == 0 {
+		return "0v0"
+	}
+	digits := v.Text(32)
+	var b strings.Builder
+	b.WriteString("0v")
+	first := len(digits) % 5
+	if first == 0 {
+		first = 5
+	}
+	b.WriteString(digits[:first])
+	for i := first; i < len(digits); i += 5 {
+		b.WriteByte('.')
+		b.WriteString(digits[i : i+5])
+	}
+	return b.String()
+}
+
+// CanonicalUV is the canonical spelling of the atom text names (FormatUV of
+// ParseUV): the key of every identity a @uv is.
+func CanonicalUV(text string) (string, error) {
+	v, err := ParseUV(text)
+	if err != nil {
+		return "", err
+	}
+	return FormatUV(v), nil
+}
+
 // LittleEndian is the atom's bytes least-significant first with no
 // trailing zeros: the byte string hoon signs as (met 3 a)^a.
 func LittleEndian(a *big.Int) []byte {
@@ -202,6 +235,15 @@ func (m Message) Noun() (*Noun, error) {
 // over the jam of the message with pubHex (32 little-endian bytes of the
 // public key atom): the wire forms GET ci/key and the assignment carry.
 func Verify(pubHex string, m Message, sigHex string) error {
+	n, err := m.Noun()
+	if err != nil {
+		return err
+	}
+	return verifyNoun(pubHex, n, sigHex)
+}
+
+// verifyNoun checks sigHex over the jam of any noun.
+func verifyNoun(pubHex string, n *Noun, sigHex string) error {
 	pub, err := hex.DecodeString(strings.TrimPrefix(pubHex, "0x"))
 	if err != nil || len(pub) != ed25519.PublicKeySize {
 		return errors.New("public key is not 32 hex bytes")
@@ -209,10 +251,6 @@ func Verify(pubHex string, m Message, sigHex string) error {
 	sg, err := hex.DecodeString(strings.TrimPrefix(sigHex, "0x"))
 	if err != nil || len(sg) != ed25519.SignatureSize {
 		return errors.New("signature is not 64 hex bytes")
-	}
-	n, err := m.Noun()
-	if err != nil {
-		return err
 	}
 	msg := LittleEndian(Jam(n))
 	if !ed25519.Verify(ed25519.PublicKey(pub), msg, sg) {

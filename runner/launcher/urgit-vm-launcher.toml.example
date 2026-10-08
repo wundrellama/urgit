@@ -1,0 +1,40 @@
+# urgit-vm-launcher configuration (rider 01; specs/ci-execution-contract.md
+# §9). Root-owned, mode 0600. Every path is under the administrator's
+# protected root; every number is the launcher's own ceiling — the runner
+# daemon's requests are admitted against it, never the other way round.
+
+# the control socket the unprivileged runner daemon dials (SO_PEERCRED)
+socket = "/run/urgit-ci-p4-opus/launcher.sock"
+socket_group = "michael"          # the runner's group; the socket is 0660 root:<group>
+runner_uids = [1000]              # the only uids whose connections are answered
+
+# the protected root (rider 01): state, images, jails, pinned binaries
+state_dir = "/var/lib/urgit-ci-p4-opus/state"
+image_dir = "/var/lib/urgit-ci-p4-opus/images"     # <manifest sha256>/{manifest.json,vmlinux-…,urgit-guest.ext4}
+jail_base = "/var/lib/urgit-ci-p4-opus/jail"
+bin_dir   = "/var/lib/urgit-ci-p4-opus/bin"        # firecracker, jailer — verified against the pins below at start
+firecracker_sha256 = "99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5"   # firecracker-v1.17.0-x86_64
+jailer_sha256      = "65ef226e96f0ceda55ba643f445801ef2cc0ea667ef67cad8ac4f406c9c8434f"   # jailer-v1.17.0-x86_64
+
+# the unprivileged user the jailer drops Firecracker to (created by the recipe)
+vm_user = "urgit-vm"
+id_prefix = "urgit-p4o"
+
+# this chair's test ceiling (rider 04): two guests, 8 vCPUs, 18432 MiB guest+overhead
+budget_cpus = 8
+budget_memory_mib = 18432
+max_guests = 2
+
+# cgroup v2 (C1): the unit's own service cgroup, which systemd delegates to
+# the launcher (the unit's Delegate=yes; system.slice/<the unit file's name>),
+# and the jobs cgroup inside it, where the launcher enables cpu, memory and
+# pids and makes every job cgroup: <service>/<cgroup_parent>/<id>
+cgroup_service = "system.slice/urgit-vm-launcher.service"
+cgroup_parent = "jobs"
+
+# network profiles (rider 03): the ceiling of destinations any profile may
+# reach; a reservation naming anything else is refused. proto:ip:port only.
+ceiling = ["tcp:192.168.1.229:8472"]
+cidr_pool = "10.113.0.0/16"          # veth /30s; guests get 172.16.<n>.0/30 behind their TAP
+egress_interface = "enp191s0"        # empty: the default route's interface
+nft_table = "urgit-ci-p4-opus"       # the launcher's own inet table; nothing else is touched
