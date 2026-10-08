@@ -12,3 +12,4 @@ QUESTIONS-CI-P0.md
 .scratch/*.json
 .scratch/tmp/
 runner/urgit-runner
+runner/urgit-vm-launcher
