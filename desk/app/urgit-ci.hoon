@@ -45,9 +45,10 @@
 ::    evidence; a privileged attempt whose outcome is uncertain is marked
 ::    unknown and never retried; shadow candidates land nothing.
 ::
-::    persisted state is state-1 (contract §8c; state-migration ruling
-::    01): every earlier shape, all of them tagged %0, is converted to it
-::    explicitly on load by lib/ci-migrate, or refused with its reason.
+::    persisted state is state-2 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-1, and the three tagged %0 — is
+::    converted to it explicitly on load by lib/ci-migrate, or refused
+::    with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
@@ -101,7 +102,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-1:ci
+=|  state-2:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -134,7 +135,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-1, or converted to it explicitly, or refused with its
+    ::  current state-2, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::
     =/  loaded  (load:ci-migrate q.old)
@@ -144,7 +145,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-1")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-2")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [~[connect-card:hc keys-card:hc] this(polls ~)]
@@ -2449,7 +2450,7 @@
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
         trust.found  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  ~  now.bowl  ~
-        generation.found  mode.found  0v0  need  profile.net  approval  %known
+        generation.found  mode.found  0v0  need  profile.net  approval  %known  ~
     ==
   =/  =attempt:ci  attempt(manifest (manifest-id:ci-provenance (manifest-of found attempt)))
   =/  =assignment:ci
@@ -2553,7 +2554,7 @@
         ~
         now.bowl
         `now.bowl
-        generation.found  mode.found  0v0  sandbox.found  'locked'  ~  %known
+        generation.found  mode.found  0v0  sandbox.found  'locked'  ~  %known  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -3750,6 +3751,7 @@
       ['network' s+network.attempt]
       ['approval' ?~(approval.attempt ~ s+(scot %uv u.approval.attempt))]
       ['outcome' s+outcome.attempt]
+      ['pinned' (pinned-json pinned.attempt)]
   ==
 ::
 ++  object-ref-json
@@ -3834,6 +3836,12 @@
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-abandon eyre-id req i.t.t.t.t.t.site)
+  ::  the addresses the launcher pinned each granted DNS name to, once,
+  ::  when the VM starts (CI-P4-NET-1, pinned addresses shown per run)
+  ?:  ?=([%apps %urgit %api %ci %attempt @ %pinned ~] site)
+    ?.  =(%'POST' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-pinned eyre-id req i.t.t.t.t.t.site)
   ?:  ?=([%apps %urgit %api %ci %attempt @ %upload ~] site)
     ?.  =(%'POST' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -4205,6 +4213,57 @@
   =.  daemons  (touch-daemon daemon.next)
   (emit (give-json eyre-id 202 (attempt-json next)))
 ::
+::  what the launcher pinned each granted DNS name to for this run
+::  (CI-P4-NET-1, pinned addresses shown per run): `{"pinned": [{"name",
+::  "addrs"}]}`, posted once by the attempt's daemon when its VM starts.
+::  the names must be exactly the DNS names among the destinations the
+::  attempt's manifest grants — the current policy's, since a policy
+::  change cancels every running attempt (bump-generation) — each with 1
+::  to 64 distinct IPv4 addresses in their plain form.  kept in the ship's
+::  name order; a second report is refused, never merged
+::
+++  handle-pinned
+  |=  [eyre-id=@ta req=inbound-request:eyre segment=@t]
+  ^-  out
+  =/  attempt-id=(unit @uv)  (slaw %uv segment)
+  =/  found=(unit attempt:ci)  ?~(attempt-id ~ (~(get by attempts) u.attempt-id))
+  ?~  found
+    (emit (give-error eyre-id 404 'no such attempt'))
+  ?.  (attempt-authorized req u.found)
+    (emit (give-error eyre-id 401 'attempt authentication required'))
+  ?.  =(%running status.u.found)
+    (emit (give-error eyre-id 409 'attempt is closed'))
+  ?^  pinned.u.found
+    (emit (give-error eyre-id 409 'the pinned addresses are recorded already'))
+  =/  cand=(unit candidate:ci)  (~(get by candidates) candidate.u.found)
+  ?~  cand
+    (emit (give-error eyre-id 409 'the attempt names no candidate'))
+  =/  =manifest:ci-provenance  (manifest-of u.cand u.found)
+  =/  granted=(list @t)  (granted-names:ci-provenance scope.manifest)
+  ?~  granted
+    (emit (give-error eyre-id 409 'this attempt was granted no DNS name'))
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon
+    (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  parsed=(each (list pin:ci) @t)  (parse-pinned:ci-provenance u.jon granted)
+  ?:  ?=(%| -.parsed)
+    (emit (give-error eyre-id 422 p.parsed))
+  =/  next=attempt:ci  u.found(pinned p.parsed)
+  =.  attempts  (~(put by attempts) id.next next)
+  =.  daemons  (touch-daemon daemon.next)
+  (emit (give-json eyre-id 200 (attempt-json next)))
+::
+++  pinned-json
+  |=  pins=(list pin:ci)
+  ^-  json
+  :-  %a
+  %+  turn  pins
+  |=  =pin:ci
+  %-  pairs:enjs:format
+  :~  ['name' s+name.pin]
+      ['addrs' a+(turn addrs.pin |=(a=@t s+a))]
+  ==
+::
 ::  the claimed result.  a job result is accepted only after the daemon
 ::  relayed a matching jobResult event; an infrastructure error is always
 ::  accepted and never reads as success.
@@ -4391,6 +4450,7 @@
       ['network' s+network.attempt]
       ['approval' ?~(approval.attempt ~ s+(scot %uv u.approval.attempt))]
       ['outcome' s+outcome.attempt]
+      ['pinned' (pinned-json pinned.attempt)]
   ==
 ::
 ++  candidate-json

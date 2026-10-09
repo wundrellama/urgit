@@ -157,7 +157,7 @@ jobs:
                    | grep -vE "^$prompt" | grep -v '^> ' \
                    | grep -vE '^(gall|behn|clay|ames|eyre|dill|kiln|iris|jael|khan|lick|arvo): ')"
             counts="$(printf '%s\n' "$out" | grep -oE 'passed=[0-9]+ of=[0-9]+' | tail -1)"
-            if grep -qE '^%\.y$|^\?~  failures|^%\.n$' "$f"; then
+            if grep -qE '^%\.y$|^\?~  failures|^%\.n$|^\?=\(~ failed\)$' "$f"; then
               verdict="$(printf '%s\n' "$out" | grep -oE '^%\.[yn]$' | tail -1)"
               if [ "$verdict" = '%.y' ]; then
                 pass=$((pass + 1)); echo "$v: %.y${counts:+ ($counts)}"; rows+=("| \`$v\` | %.y ${counts} |")

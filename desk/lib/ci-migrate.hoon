@@ -2,22 +2,25 @@
 ::  one (state-migration ruling 01: Q12 A; QUESTIONS-SOURCE-01 §12;
 ::  specs/ci-execution-contract.md §8c).
 ::
-::    three historical shapes are known from this worktree's own sources,
+::    four earlier shapes are known from this worktree's own sources,
 ::    each frozen byte for byte, every nested type with it, in a sur file
 ::    of its own: the committed base (sur/ci-state-base), review 06's
-::    accepted schema (sur/ci-state-review06) and the Q11 schema
-::    (sur/ci-state-q11).  none is claimed to have been deployed.  all
-::    three carry the tag %0, so the tag never decides: a %0 state must fit
-::    exactly one of them, as a noun.  the current state is state-1, tagged
-::    %1.  an unknown, partial, corrupt or ambiguous state is refused —
-::    never cast, reset or read another way — and every conversion is
-::    written out field by field.
+::    accepted schema (sur/ci-state-review06), the Q11 schema
+::    (sur/ci-state-q11) and state-1 (sur/ci-state-1).  none is claimed to
+::    have been deployed.  the first three carry the tag %0, so the tag
+::    never decides: a %0 state must fit exactly one of them, as a noun.
+::    state-1 is tagged %1.  the current state is state-2, tagged %2: an
+::    attempt gains the addresses each granted DNS name was pinned to
+::    (CI-P4-NET-1, pinned addresses shown per run).  a %0 shape is
+::    converted to state-1, and state-1 to state-2.  an unknown, partial,
+::    corrupt or ambiguous state is refused — never cast, reset or read
+::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %q11 %review06 %base)
++$  shape  ?(%current %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -37,8 +40,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %2
+    ?:  !=(~ (mole |.(;;(state-2:ci old))))  &+%current
+    |+'a %2 state that is not exactly state-2: partial or corrupt'
+  ::
       %1
-    ?:  !=(~ (mole |.(;;(state-1:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-1:ci-state-1 old))))  &+%state-1
     |+'a %1 state that is not exactly state-1: partial or corrupt'
   ::
       %0
@@ -56,7 +63,7 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-1:ci]
+  ^-  [=shape new=state-2:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
@@ -64,18 +71,93 @@
     !!
   :-  p.found
   ?-  p.found
-    %current  ;;(state-1:ci old)
-    %q11  (from-q11 ;;(state-0:ci-state-q11 old))
-    %review06  (from-review06 ;;(state-0:ci-state-review06 old))
-    %base  (from-base ;;(state-0:ci-state-base old))
+    %current  ;;(state-2:ci old)
+    %state-1  (from-state-1 ;;(state-1:ci-state-1 old))
+    %q11  (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old)))
+    %review06  (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old)))
+    %base  (from-state-1 (from-base ;;(state-0:ci-state-base old)))
+  ==
+::
+::  state-1: its twenty-eight fields as they are, under the tag %2, and
+::  each attempt with no pinned addresses — none was reported before
+::  state-2
+::
+++  from-state-1
+  |=  o=state-1:ci-state-1
+  ^-  state-2:ci
+  ;;  state-2:ci
+  :*  %2
+      candidates.o
+      daemons.o
+      assignments.o
+      (~(run by attempts.o) attempt-from-1)
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      locks.o
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+  ==
+::
+::  an attempt of state-1: every field as it was — a running one stays
+::  running — and no pinned addresses
+::
+++  attempt-from-1
+  |=  a=attempt:ci-state-1
+  ^-  attempt:ci
+  :*  id.a
+      candidate.a
+      assignment.a
+      daemon.a
+      trust.a
+      kind.a
+      workflow.a
+      job.a
+      status.a
+      events.a
+      outputs.a
+      job-result.a
+      result.a
+      reason.a
+      projection-name.a
+      log.a
+      started.a
+      finished.a
+      generation.a
+      mode.a
+      manifest.a
+      sandbox.a
+      network.a
+      approval.a
+      outcome.a
+      ~
   ==
 ::
 ::  the Q11 schema: its twenty-eight fields as they are, under the tag %1
+::  (state-1)
 ::
 ++  from-q11
   |=  o=state-0:ci-state-q11
-  ^-  state-1:ci
-  ;;  state-1:ci
+  ^-  state-1:ci-state-1
+  ;;  state-1:ci-state-1
   :*  %1
       candidates.o
       daemons.o
@@ -113,8 +195,8 @@
 ::
 ++  from-review06
   |=  o=state-0:ci-state-review06
-  ^-  state-1:ci
-  ;;  state-1:ci
+  ^-  state-1:ci-state-1
+  ;;  state-1:ci-state-1
   :*  %1
       candidates.o
       daemons.o
@@ -154,8 +236,8 @@
 ::
 ++  from-base
   |=  o=state-0:ci-state-base
-  ^-  state-1:ci
-  ;;  state-1:ci
+  ^-  state-1:ci-state-1
+  ;;  state-1:ci-state-1
   :*  %1
       (~(run by candidates.o) candidate-from-base)
       (~(run by daemons.o) daemon-from-base)
@@ -195,6 +277,7 @@
 ::
 ++  daemon-from-base
   |=  d=daemon:ci-state-base
+  ^-  daemon:ci-state-1
   :*  id.d
       token-hash.d
       bearer-hash.d
@@ -219,6 +302,7 @@
 ::
 ++  candidate-from-base
   |=  c=candidate:ci-state-base
+  ^-  candidate:ci-state-1
   :*  id.c
       repo.c
       ref.c
@@ -255,6 +339,7 @@
 ::
 ++  attempt-from-base
   |=  a=attempt:ci-state-base
+  ^-  attempt:ci-state-1
   :*  id.a
       candidate.a
       assignment.a

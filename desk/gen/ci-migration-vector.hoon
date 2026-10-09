@@ -1,23 +1,25 @@
 ::  ci-migration-vector: %urgit-ci's state migrations (state-migration
 ::  ruling 01: Q12 A; QUESTIONS-SOURCE-01 §12; contract §8c).  A
-::  populated state of each supported historical shape — the committed
-::  base, review 06's schema, the Q11 schema — is loaded by lib/ci-migrate
-::  and checked field by field:
+::  populated state of each supported earlier shape — the committed
+::  base, review 06's schema, the Q11 schema and state-1 — is loaded by
+::  lib/ci-migrate and checked field by field:
 ::    - enrollment and bearers, a revoked daemon kept revoked;
 ::    - trust, policies, credentials, the signing key and ship keys;
 ::    - candidates, assignments and a running attempt;
 ::    - an expired approval and a consumed one, an override, roles,
 ::      environments, a baseline and the audit;
-::    - open and final recovery commands and a retention report.
-::  The current state reloads unchanged.  An unknown version, an atom, a
-::  malformed %0, a corrupt %0 and a corrupt %1 are refused, and so is an
+::    - open and final recovery commands and a retention report;
+::    - state-1's attempts, which gain no pinned addresses (state-2).
+::  The current state reloads unchanged, its pinned addresses with it.  An
+::  unknown version, an atom, a malformed %0, a corrupt %0, %1 or %2, a
+::  state-1 tagged %2 and a state-2 tagged %1 are refused, and so is an
 ::  ambiguous classification.  Every case names the verdict it expects;
 ::  the intentionally FALSE cases are refusals.  Prints `passed=N of=M`
 ::  and ends in a loobean.
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -167,12 +169,37 @@
       (my ~[[0v1.aaaaa report]])
       (my ~[[0v5.jjjjj open-cmd] [0v5.lllll final-cmd]])
   ==
+::  state-1: the Q11 fields under the tag %1
+::
+=/  s1-state=state-1:ci-state-1  ;;(state-1:ci-state-1 [%1 +.q11-state])
+::  the running attempt as state-2 holds it: every field as it was, and no
+::  pinned addresses; and the same attempt once its daemon reported them
+::
+=/  r-running-2=attempt:ci
+  :*  0v7.aaaaa  0v3.ccccc  0v8.ddddd  0v1.aaaaa  %trusted  %job  `'ci.yml'  `'build'
+      %running  3  ~  ~  ~  ~  ~  ~  ~2026.9.21  ~
+      4  %required  0v5.fffff  %vm  'locked'  ~  %known  ~
+  ==
+=/  pins=(list pin:ci)
+  :~  ['archive.ubuntu.com' ~['91.189.91.82' '185.125.190.81']]
+      ['bootstrap.urbit.org' ~['104.21.64.85']]
+  ==
 ::  every load that must succeed
 ::
 =/  b  (load:ci-migrate base-state)
 =/  r  (load:ci-migrate r6-state)
 =/  q  (load:ci-migrate q11-state)
+=/  s  (load:ci-migrate s1-state)
 =/  c  (load:ci-migrate new.q)
+=/  pinned-state=state-2:ci  new.q(attempts (my ~[[0v7.aaaaa r-running-2(pinned pins)]]))
+=/  p  (load:ci-migrate pinned-state)
+=/  s-running  (~(got by attempts.new.s) 0v7.aaaaa)
+=/  p-running  (~(got by attempts.new.p) 0v7.aaaaa)
+::  the Q11 state's fields around its attempts, as it had them and as
+::  state-2 holds them: the records before, and the tail after
+=/  q11-head  [candidates daemons assignments]:q11-state
+=/  q-head  [candidates daemons assignments]:new.q
+=/  want-attempts  (my ~[[0v7.aaaaa r-running-2]])
 =/  b-active  (~(got by daemons.new.b) 0v1.aaaaa)
 =/  b-revoked  (~(got by daemons.new.b) 0v2.bbbbb)
 =/  b-cand  (~(got by candidates.new.b) 0v3.ccccc)
@@ -196,6 +223,7 @@
     ['a migrated candidate is bound to a baseline' %.n !=(~ baseline.b-cand)]
     ['a running attempt stays running on its daemon' %.y &(=(%running status.b-running) =(daemon.running daemon.b-running) =(started.running started.b-running) =(events.running events.b-running))]
     ['a migrated attempt carries no manifest and no approval, its outcome known' %.y &(=(0v0 manifest.b-running) =(~ approval.b-running) =(%known outcome.b-running))]
+    ['a migrated attempt has no pinned addresses' %.y =(~ pinned.b-running)]
     ['the assignment, protected refs, policies and credentials are kept' %.y &(=(assignments.base-state assignments.new.b) =(ci-protected.base-state ci-protected.new.b) =(policies.base-state policies.new.b) =(credentials.base-state credentials.new.b))]
     ['the signing key and ship keys are kept' %.y &(=(signing.base-state signing.new.b) =(ship-keys.base-state ship-keys.new.b))]
     ['P4 and Q11 bookkeeping starts empty' %.y &(=(~ incarnations.new.b) =(~ generations.new.b) =(~ baselines.new.b) =(~ approvals.new.b) =(~ overrides.new.b) =(~ audit.new.b) =(~ recovery-reports.new.b) =(~ recovery-commands.new.b))]
@@ -203,21 +231,36 @@
     ['review 06 loads as its own shape' %.y =(%review06 shape.r)]
     ['an expired approval stays expired and a consumed one consumed' %.y =(approvals.r6-state approvals.new.r)]
     ['overrides, roles, environments, baselines and the audit are kept' %.y &(=(overrides.r6-state overrides.new.r) =(roles.r6-state roles.new.r) =(environments.r6-state environments.new.r) =(baselines.r6-state baselines.new.r) =(audit.r6-state audit.new.r))]
-    ['review 06 daemons, candidates and attempts are kept whole' %.y &(=(daemons.r6-state daemons.new.r) =(candidates.r6-state candidates.new.r) =(attempts.r6-state attempts.new.r))]
+    ['review 06 daemons are kept whole' %.y =(daemons.r6-state daemons.new.r)]
+    ['review 06 candidates are kept whole' %.y =(candidates.r6-state candidates.new.r)]
+    ['a review 06 attempt is kept whole, unpinned' %.y =(want-attempts attempts.new.r)]
     ['no retention report and no recovery command yet' %.y &(=(~ recovery-reports.new.r) =(~ recovery-commands.new.r))]
     ::  the Q11 schema
     ['the Q11 schema loads as its own shape' %.y =(%q11 shape.q)]
-    ['every Q11 field is carried as it is' %.y =(+.q11-state +.new.q)]
+    ['the Q11 records before the attempts are kept' %.y =(q11-head q-head)]
+    ['the Q11 fields after the attempts are kept' %.y =(+63.q11-state +63.new.q)]
+    ['a Q11 attempt is kept whole, with no pinned addresses' %.y =(want-attempts attempts.new.q)]
     ['an open and a final recovery command are kept' %.y =(recovery-commands.q11-state recovery-commands.new.q)]
+    ::  state-1
+    ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
+    ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
+    ['state-1 is tagged %2 once converted' %.y =(%2 -.new.s)]
+    ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  the current state
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
+    ['a pinned state-2 reloads unchanged' %.y &(=(%current shape.p) =(pinned-state new.p))]
+    ['its pinned addresses are kept' %.y =(pins pinned.p-running)]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%2 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%3 +.new.q])]
+    ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
+    ['a state-2 tagged %1 is refused' %.y (refused [%1 +.new.q])]
+    ['a %2 state with a corrupt candidates map is refused' %.y (refused [%2 5 +>.new.q])]
     ['an atom is refused' %.y (refused 0)]
     ['a malformed %0 is refused' %.y (refused [%0 1 2 3])]
     ['a %0 state with a corrupt candidates map is refused' %.y (refused [%0 5 +>.q11-state])]
     ['a %1 state with a corrupt candidates map is refused' %.y (refused [%1 5 +>.new.q])]
     ['a %0 state of the Q11 fields with its tag changed to %1 loads' %.y !(refused [%1 +.q11-state])]
+    ['a %0 state of the Q11 fields loads as Q11, never as state-1' %.n =(%state-1 shape.q)]
     ['an ambiguous classification is refused' %.y =(%| -:(pick:ci-migrate ~[%base %q11]))]
     ['no shape found is refused' %.y =(%| -:(pick:ci-migrate ~))]
     ['exactly one shape found is chosen' %.y =([%& %q11] (pick:ci-migrate ~[%q11]))]

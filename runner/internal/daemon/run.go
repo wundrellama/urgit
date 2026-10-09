@@ -123,13 +123,6 @@ func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
 		return !added
 	}
 	logf("sandbox %s prepared (%s)", h.ID, describeHandle(h))
-	// what the launcher pinned each granted DNS name to, for this run only
-	// (CI-P4-NET-1, pinned addresses shown per run)
-	if p, ok := d.box.(sandbox.Pinner); ok {
-		for _, pin := range p.Pinned(h) {
-			logf("network: %s pinned to %s", pin.Name, strings.Join(pin.Addrs, " "))
-		}
-	}
 	keep = true
 	jobStopped := false
 	defer func() {
@@ -153,6 +146,27 @@ func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
 		}
 		logf("sandbox %s destroyed", h.ID)
 	}()
+
+	// what the launcher pinned each granted DNS name to, for this run
+	// only, reported to the ship before anything runs (CI-P4-NET-1, pinned
+	// addresses shown per run): a run the ship cannot show is not run
+	if p, ok := d.box.(sandbox.Pinner); ok {
+		if pins := p.Pinned(h); len(pins) > 0 {
+			report := make([]ship.Pin, 0, len(pins))
+			for _, pin := range pins {
+				logf("network: %s pinned to %s", pin.Name, strings.Join(pin.Addrs, " "))
+				report = append(report, ship.Pin{Name: pin.Name, Addrs: pin.Addrs})
+			}
+			resp, err := d.client.Pinned(actx, a.Attempt, report)
+			if err == nil && resp.Status != 200 {
+				err = errors.New(resp.Error())
+			}
+			if err != nil {
+				d.fail(actx, a, "the pinned addresses could not be recorded on the ship: "+err.Error(), logf)
+				return keep
+			}
+		}
+	}
 
 	env := d.box.ExecEnv(h)
 	bundle, err := d.assembleBundle(actx, a, work, env)

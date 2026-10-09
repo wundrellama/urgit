@@ -106,6 +106,10 @@ type fakeShip struct {
 	// INTEGRATION.md §11.12): taken, and kept
 	reports []string
 	answers []string
+	// the pinned-address reports (CI-P4-NET-1), and the status the ship
+	// answers them with (0: 200)
+	pinned       []string
+	pinnedStatus int
 }
 
 func (s *fakeShip) handler(t *testing.T) http.Handler {
@@ -133,6 +137,14 @@ func (s *fakeShip) handler(t *testing.T) http.Handler {
 			w.WriteHeader(200)
 		case strings.HasSuffix(r.URL.Path, "/abandon"):
 			s.abandons = append(s.abandons, string(body))
+			w.WriteHeader(200)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pinned"):
+			s.pinned = append(s.pinned, string(body))
+			if s.pinnedStatus != 0 {
+				w.WriteHeader(s.pinnedStatus)
+				_, _ = w.Write([]byte(`{"error":"attempt is closed"}`))
+				return
+			}
 			w.WriteHeader(200)
 		case strings.HasSuffix(r.URL.Path, "/plan"):
 			s.plans = append(s.plans, string(body))

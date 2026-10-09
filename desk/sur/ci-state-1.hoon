@@ -18,13 +18,10 @@
 ::    daemon's profiles and resolver flag.
 ::
 ::    that in-place rule ends here (state-migration ruling 01: Q12 A).
-::    the state is versioned from now on.  state-1, tagged %1, was the
-::    Q11 schema's fields exactly; it is frozen byte for byte as
-::    sur/ci-state-1.  state-2, tagged %2, is state-1 with each attempt's
-::    pinned addresses (CI-P4-NET-1, pinned addresses shown per run).
-::    every earlier shape shared the tag %0 and is frozen byte for byte in
-::    a sur file of its own — ci-state-base, ci-state-review06 and
-::    ci-state-q11 — and every shape is converted explicitly by
+::    the state is versioned from now on: state-1, tagged %1, is the Q11
+::    schema's fields exactly.  every earlier shape shared the tag %0 and
+::    is frozen byte for byte in a sur file of its own — ci-state-base,
+::    ci-state-review06 and ci-state-q11 — and converted explicitly by
 ::    lib/ci-migrate on load, never cast (contract §8c).
 ::
 /-  git
@@ -488,19 +485,10 @@
       network=@t
       approval=(unit @uv)
       =outcome
-      ::  state-2: what the launcher pinned each granted DNS name to for
-      ::  this run, as the daemon reported it when the VM started; ~ for
-      ::  a run granted no name, and for every run before state-2
-      pinned=(list pin)
   ==
 ::
-::  one granted DNS name and the IPv4 addresses the launcher pinned it to
-::  for one run (CI-P4-NET-1): they change from run to run
-::
-+$  pin  [name=@t addrs=(list @t)]
-::
-+$  state-2
-  $:  %2
++$  state-1
+  $:  %1
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)

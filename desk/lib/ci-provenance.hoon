@@ -278,7 +278,9 @@
   ?~  host  %.n
   ?~  port  %.n
   ?.  (levy `tape`port |=(c=@tD &((gte c '0') (lte c '9'))))  %.n
-  =/  n=(unit @ud)  (rush (crip port) dem:ag)
+  ::  plain decimal with no padding (dim:ag): dem:ag wants a thousands
+  ::  dot, so it refused every port of four or more digits
+  =/  n=(unit @ud)  (rush (crip port) dim:ag)
   ?~  n  %.n
   ?.  &((gth u.n 0) (lte u.n 65.535))  %.n
   ::  an IPv6 literal in brackets is accepted as written; a DNS name in
@@ -336,6 +338,90 @@
   ?~  text  (flop [(flop cur) acc])
   ?:  =(sep i.text)  $(text t.text, acc [(flop cur) acc], cur ~)
   $(text t.text, cur [i.text cur])
+::
+::  the DNS names a signed scope grants (scope-text's sorted, comma-
+::  separated destinations), each once, in name order; IP literals grant
+::  no name (CI-P4-NET-1, pinned addresses shown per run)
+::
+++  granted-names
+  |=  scope=@t
+  ^-  (list @t)
+  =/  names=(list @t)
+    %+  murn  (split-on (trip scope) ',')
+    |=  d=tape
+    ^-  (unit @t)
+    ?.  (destination-valid (crip d))  ~
+    =/  rest=tape  (slag 4 d)
+    =/  colon=(unit @ud)  (find ":" (flop rest))
+    ?~  colon  ~
+    =/  host=@t  (crip (scag (sub (lent rest) +(u.colon)) rest))
+    ?.  (dns-name-valid host)  ~
+    `host
+  (sort ~(tap in (silt names)) aor)
+::
+::  a daemon's report of what the launcher pinned for one run:
+::  `{"pinned": [{"name": .., "addrs": [..]}]}`.  each granted name
+::  exactly once and nothing else, each with 1 to 64 distinct IPv4
+::  addresses in their plain form; answered in the order of .granted
+::
+++  parse-pinned
+  |=  [jon=json granted=(list @t)]
+  ^-  (each (list pin:ci) @t)
+  ?.  ?=([%o *] jon)  |+'the body is not a JSON object'
+  =/  field=(unit json)  (~(get by p.jon) 'pinned')
+  ?.  &(?=(^ field) ?=([%a *] u.field))  |+'pinned must be a list'
+  =/  items=(list json)  p.u.field
+  =|  got=(map @t (list @t))
+  |-  ^-  (each (list pin:ci) @t)
+      ?~  items
+        ?.  =(~(wyt by got) (lent granted))
+          |+'pinned must name every DNS name the attempt was granted'
+        &+(turn granted |=(n=@t `pin:ci`[n (~(got by got) n)]))
+      =/  item=(each pin:ci @t)  (parse-pin i.items)
+      ?:  ?=(%| -.item)  |+p.item
+      ?:  =(~ (find ~[name.p.item] granted))
+        |+(rap 3 ~['pinned names ' name.p.item ', which the attempt was not granted'])
+      ?:  (~(has by got) name.p.item)
+        |+(rap 3 ~['pinned names ' name.p.item ' twice'])
+      $(items t.items, got (~(put by got) name.p.item addrs.p.item))
+::
+++  parse-pin
+  |=  jon=json
+  ^-  (each pin:ci @t)
+  ?.  ?=([%o *] jon)  |+'a pinned entry is not a JSON object'
+  =/  name=(unit json)  (~(get by p.jon) 'name')
+  =/  addrs=(unit json)  (~(get by p.jon) 'addrs')
+  ?.  &(?=(^ name) ?=([%s *] u.name))  |+'a pinned entry has no name'
+  ?.  &(?=(^ addrs) ?=([%a *] u.addrs))  |+'a pinned entry has no address list'
+  =/  texts=(list json)  p.u.addrs
+  ?.  &((gte (lent texts) 1) (lte (lent texts) 64))
+    |+(rap 3 ~['pinned names ' p.u.name ' with no address, or more than 64'])
+  =|  out=(list @t)
+  |-  ^-  (each pin:ci @t)
+      ?~  texts  &+[p.u.name (flop out)]
+      ?.  ?=([%s *] i.texts)  |+'a pinned address is not a string'
+      ?.  (ipv4-plain-valid p.i.texts)
+        =/  why=@t  ' with an address that is not one IPv4 address in its plain form'
+        |+(rap 3 ~['pinned names ' p.u.name why])
+      ?.  =(~ (find ~[p.i.texts] out))
+        |+(rap 3 ~['pinned names ' p.u.name ' with one address twice'])
+      $(texts t.texts, out [p.i.texts out])
+::
+::  an IPv4 address in its plain form: four dotted decimal octets, each
+::  0-255, with no leading zero (dem:ag refuses one)
+::
+++  ipv4-plain-valid
+  |=  a=@t
+  ^-  ?
+  =/  parts=(list tape)  (split-on (trip a) '.')
+  ?.  =(4 (lent parts))  %.n
+  %+  levy  parts
+  |=  p=tape
+  ?~  p  %.n
+  ?.  (lte (lent p) 3)  %.n
+  ?.  (levy `tape`p |=(c=@tD &((gte c '0') (lte c '9'))))  %.n
+  =/  v=(unit @ud)  (rush (crip p) dem:ag)
+  &(?=(^ v) (lte u.v 255))
 ::
 ::  a harness path is a repository-relative path with no traversal
 ::

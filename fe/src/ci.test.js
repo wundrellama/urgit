@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, renderLog, stagedEditNote } from './ci.js'
+import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, pinnedNote, pinnedRows, renderLog, stagedEditNote } from './ci.js'
 
 const jobA = { attempt: '0v1.a', kind: 'job', job: 'a', status: 'passed', started: 100, finished: 130, log: { key: 'k', size: 1, sha256: 'x' } }
 const jobB = { attempt: '0v2.b', kind: 'job', job: 'b', status: 'running', started: 130, finished: null, log: null }
@@ -92,4 +92,16 @@ test('a staged web edit reads as staged, never as committed; an applied one has 
   assert.match(stagedEditNote(staged, '', 'This deletion'), /^This deletion was staged .* the branch is CI-protected/)
   assert.equal(stagedEditNote({ ok: true, commit: 'eef8913900000000000000000000000000000000' }, 'refs/heads/main', 'This edit'), '')
   assert.equal(stagedEditNote(null, 'refs/heads/main'), '')
+})
+
+test('a run row carries the addresses each granted name was pinned to, text only, and nothing for a run granted no name', () => {
+  const pinned = [{ name: 'archive.ubuntu.com', addrs: ['91.189.91.82', '185.125.190.81'] }, { name: 'bootstrap.urbit.org', addrs: ['104.21.64.85'] }]
+  const [row] = attemptRows([{ ...jobA, pinned }])
+  assert.deepEqual(row.pinned, pinned)
+  assert.deepEqual(attemptRows([jobA])[0].pinned, [])
+  assert.deepEqual(attemptRows([{ ...jobA, pinned: [] }])[0].pinned, [])
+  // anything that is not a list of {name, addrs} is dropped, never guessed
+  assert.deepEqual(pinnedRows('91.189.91.82'), [])
+  assert.deepEqual(pinnedRows([null, { name: 7, addrs: [] }, { name: 'a.example' }, { name: 'b.example', addrs: ['1.1.1.1', 9] }]), [{ name: 'b.example', addrs: ['1.1.1.1'] }])
+  assert.match(pinnedNote, /shared CDN/)
 })

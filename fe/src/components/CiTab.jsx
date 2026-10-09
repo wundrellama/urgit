@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { ci, publicApi } from '../api'
-import { approveHint, attemptRows, candidateRow, ciActions, lineText, noRunnerMessage, renderLog, statusLabel } from '../ci'
+import { approveHint, attemptRows, candidateRow, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, statusLabel } from '../ci'
 import { applyCandidateFactToPage, feedPip, mergeCandidateFact, mergeRunnerCount } from '../ciLive'
 import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
@@ -194,7 +194,8 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
       <div className="ci-list">
         <div className="table-head ci-attempt-row"><span>Job</span><span>Daemon</span><span>Status</span><span>Started</span><span>Finished</span><span>Log</span></div>
         {rows.map((row) => (
-          <div className="ci-attempt-row" key={row.id} title={row.reason}>
+          <Fragment key={row.id}>
+          <div className={`ci-attempt-row${row.pinned.length ? ' has-pins' : ''}`} title={row.reason}>
             <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
             <code>{row.daemon}</code>
             <span className={`status ${statusClass(row.status)}`}>{statusLabel[row.status] || row.status}{row.reason && <small className="quiet"> · {row.reason}</small>}</span>
@@ -202,6 +203,13 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
             <span>{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
             <span>{row.hasLog ? <button className="text-button" onClick={() => setLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
           </div>
+          {row.pinned.length > 0 && (
+            <div className="ci-attempt-pins" title={pinnedNote}>
+              <small className="quiet">Pinned for this run</small>
+              {row.pinned.map((pin) => <small key={pin.name}><strong>{pin.name}</strong> → <span className="ci-pin-addrs">{pin.addrs.join(', ')}</span></small>)}
+            </div>
+          )}
+          </Fragment>
         ))}
         {!rows.length && <div className="empty">No attempts yet{c.trust === 'untrusted' ? ': an untrusted revision waits for approval unless the repository runs restricted checks.' : '.'}</div>}
       </div>

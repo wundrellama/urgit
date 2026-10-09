@@ -111,8 +111,24 @@ export function attemptRows(attempts = [], plan = []) {
     elapsed: duration(attempt.started, attempt.finished),
     reason: attempt.reason || '',
     hasLog: Boolean(attempt.log),
+    pinned: pinnedRows(attempt.pinned),
   }))
 }
+
+// what the launcher pinned each granted DNS name to for this run
+// (CI-P4-NET-1, pinned addresses shown per run): one row per name with its
+// addresses, text only; anything that is not a list of {name, addrs} is
+// dropped, never guessed
+export function pinnedRows(pinned) {
+  if (!Array.isArray(pinned)) return []
+  return pinned
+    .filter((p) => p && typeof p.name === 'string' && Array.isArray(p.addrs))
+    .map((p) => ({ name: p.name, addrs: p.addrs.filter((a) => typeof a === 'string') }))
+}
+
+// the note a pinned row carries: a name is allowed by its addresses, so
+// other sites on the same addresses are reachable on that port too
+export const pinnedNote = 'Pinned when this run started. Other sites on these addresses, such as sites on a shared CDN, were reachable on the granted port too.'
 
 // the raw act jsonl rendered client-side as `[job] step: msg` lines,
 // grouped by the group/endgroup commands act emits; a line that is not

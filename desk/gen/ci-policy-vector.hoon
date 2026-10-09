@@ -125,8 +125,61 @@
       ['a name of 253 characters is a name' %.y (dns-name-valid:ci-provenance name-253)]
       ['a port of zero' %.n (dest-ok 'tcp:140.82.112.3:0')]
       ['a port past 65535' %.n (dest-ok 'tcp:140.82.112.3:65536')]
+      ::  a port is plain decimal: no thousands dot, no padding
+      ['a four-digit port' %.y (dest-ok 'tcp:198.51.100.20:8472')]
+      ['the highest port' %.y (dest-ok 'tcp:140.82.112.3:65535')]
+      ['a named destination on a four-digit port' %.y (dest-ok 'tcp:archive.ubuntu.com:8080')]
+      ['a padded port' %.n (dest-ok 'tcp:140.82.112.3:0443')]
+      ['a port with a thousands dot' %.n (dest-ok 'tcp:198.51.100.20:8.472')]
       ['an octet past 255' %.n (dest-ok 'tcp:300.82.112.3:443')]
       ['a bare address' %.n (dest-ok '140.82.112.3:443')]
+  ==
+::  a daemon's report of what the launcher pinned (CI-P4-NET-1, pinned
+::  addresses shown per run): exactly the granted names, IPv4 only
+=/  scope=@t  'tcp:198.51.100.20:8472,tcp:archive.ubuntu.com:80,tcp:bootstrap.urbit.org:443'
+=/  granted=(list @t)  (granted-names:ci-provenance scope)
+=/  pin-json
+  |=  [name=@t addrs=(list @t)]
+  ^-  json
+  (pairs:enjs:format ~[['name' s+name] ['addrs' a+(turn addrs |=(a=@t s+a))]])
+=/  report
+  |=  items=(list json)
+  ^-  json
+  (pairs:enjs:format ~[['pinned' a+items]])
+=/  ubuntu  (pin-json 'archive.ubuntu.com' ~['91.189.91.82' '185.125.190.81'])
+=/  urbit  (pin-json 'bootstrap.urbit.org' ~['104.21.64.85'])
+=/  parse  |=(jon=json (parse-pinned:ci-provenance jon granted))
+=/  parses  |=(jon=json =/(r (parse jon) ?=(%& -.r)))
+=/  pin-ok  |=(items=(list json) (parses (report items)))
+::  archive.ubuntu.com with these addresses, beside the urbit entry
+=/  ubuntu-as  |=(addrs=(list @t) (pin-ok ~[(pin-json 'archive.ubuntu.com' addrs) urbit]))
+=/  names  granted-names:ci-provenance
+=/  sixty-five=(list @t)
+  (turn (gulf 1 65) |=(i=@ud (rap 3 ~['91.189.91.' (scot %ud i)])))
+=/  in-order=(list pin:ci)
+  :~  ['archive.ubuntu.com' ~['91.189.91.82' '185.125.190.81']]
+      ['bootstrap.urbit.org' ~['104.21.64.85']]
+  ==
+=/  evil  (pin-json 'evil.example' ~['203.0.113.9'])
+=/  pin-cases=(list [name=@t expect=? got=?])
+  :~  ['a scope grants its names in order' %.y =(granted (turn in-order head))]
+      ['a literals-only scope grants no name' %.y =(~ (names 'tcp:198.51.100.20:8472'))]
+      ['a name on two ports is granted once' %.y =(1 (lent (names 'tcp:a.ex:443,tcp:a.ex:80')))]
+      ['every granted name, each with addresses' %.y (pin-ok ~[urbit ubuntu])]
+      ['the report is kept in name order' %.y =([%& in-order] (parse (report ~[urbit ubuntu])))]
+      ['a granted name missing' %.n (pin-ok ~[ubuntu])]
+      ['a name not granted' %.n (pin-ok ~[ubuntu urbit evil])]
+      ['a granted name swapped for another' %.n (pin-ok ~[ubuntu evil])]
+      ['a name twice' %.n (pin-ok ~[ubuntu urbit ubuntu])]
+      ['a name with no address' %.n (ubuntu-as ~)]
+      ['a name with 65 addresses' %.n (ubuntu-as sixty-five)]
+      ['an IPv6 address' %.n (ubuntu-as ~['2620:2d:4000:1::16'])]
+      ['a padded octet' %.n (ubuntu-as ~['091.189.91.82'])]
+      ['an octet past 255' %.n (ubuntu-as ~['291.189.91.82'])]
+      ['one address twice' %.n (ubuntu-as ~['91.189.91.82' '91.189.91.82'])]
+      ['a name for an address' %.n (ubuntu-as ~['archive.ubuntu.com'])]
+      ['a body that is no object' %.n (parses a+~)]
+      ['a body with no pinned list' %.n (parses (pairs:enjs:format ~))]
   ==
 =/  other-cases=(list [name=@t expect=? got=?])
   :~  ::  authority (rider 02)
@@ -200,7 +253,7 @@
       ['the same nodes in another repository are another lock' %.n =((lock-digest:ci-provenance 'erpit' oid ~[js]) (lock-digest:ci-provenance 'urgit' oid ~[js]))]
       ['the same nodes at another revision are another lock' %.n =((lock-digest:ci-provenance 'erpit' oid ~[js]) (lock-digest:ci-provenance 'erpit' tip ~[js]))]
   ==
-=/  cases=(list [name=@t expect=? got=?])  (weld other-cases destination-cases)
+=/  cases=(list [name=@t expect=? got=?])  :(weld other-cases destination-cases pin-cases)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

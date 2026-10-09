@@ -317,6 +317,27 @@ func (c *Client) Event(ctx context.Context, attempt string, line []byte) (Respon
 	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/event", line)
 }
 
+// Pin is one granted DNS name and the IPv4 addresses the VM launcher
+// pinned it to for this run (CI-P4-NET-1, pinned addresses shown per run).
+type Pin struct {
+	Name  string   `json:"name"`
+	Addrs []string `json:"addrs"`
+}
+
+// Pinned reports, once, what the launcher pinned each granted DNS name to
+// when the attempt's VM started. 200 recorded; 409 refused (the attempt is
+// closed, its grant changed, or it is recorded already); 422 the report is
+// not exactly the granted names.
+func (c *Client) Pinned(ctx context.Context, attempt string, pins []Pin) (Response, error) {
+	body, err := json.Marshal(struct {
+		Pinned []Pin `json:"pinned"`
+	}{pins})
+	if err != nil {
+		return Response{}, err
+	}
+	return c.do(ctx, http.MethodPost, "/attempt/"+attempt+"/pinned", body)
+}
+
 // ObjectRef names an uploaded object by size and sha-256; the ship
 // derives the key from the attempt, never from the daemon.
 type ObjectRef struct {
