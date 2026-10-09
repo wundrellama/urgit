@@ -78,6 +78,16 @@ type Handle struct {
 	Request string
 }
 
+// Pinner is a backend whose sandbox network pins granted DNS names
+// (microvm): Pinned is each name the prepared sandbox h was granted, with
+// the addresses the launcher pinned it to when it created the VM's
+// network (CI-P4-NET-1, pinned addresses shown per run); nil when it was
+// granted no name. The pins are evidence of one run, not identity, so
+// they are kept beside the handle, never in it.
+type Pinner interface {
+	Pinned(h Handle) []launcher.Pin
+}
+
 // RetainedError is a Prepare that failed and could not release what it
 // had reserved or created (INTEGRATION.md §3): Handle names exactly what
 // stays owned and charged — the launcher's record and incarnation, or the

@@ -39,6 +39,9 @@ type Host struct {
 	alive  map[string]int
 	next   int
 	Bridge string // what the fake helper's READY names
+	// Pins is what CreateNetwork answers as pinned (NetInfo.Pinned): a
+	// test sets it to model the launcher's pinned names
+	Pins []launcher.Pin
 }
 
 func NewHost() *Host {
@@ -118,7 +121,10 @@ func (h *Host) PrepareDisk(id string, img launcher.Image, totalMiB int) (string,
 }
 func (h *Host) CreateCgroup(id string, cpus, memMiB int) error { return h.do("cgroup", id) }
 func (h *Host) CreateNetwork(id string, index int, allow []string) (launcher.NetInfo, error) {
-	return launcher.NetInfo{TAP: "tap0", GuestIP: "172.16.0.2/30", Gateway: "172.16.0.1", Index: index}, h.do("network", id)
+	h.mu.Lock()
+	pins := h.Pins
+	h.mu.Unlock()
+	return launcher.NetInfo{TAP: "tap0", GuestIP: "172.16.0.2/30", Gateway: "172.16.0.1", Index: index, Pinned: pins}, h.do("network", id)
 }
 func (h *Host) StartVM(id string, spec launcher.VMSpec) (int, error) {
 	if err := h.do("start", id); err != nil {

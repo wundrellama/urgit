@@ -180,6 +180,15 @@ func TestNamedDestinationIsPinnedInTheForwardChainOnly(t *testing.T) {
 	if len(f.table) != 2 {
 		t.Fatalf("the pinned table holds names it was not granted: %v", f.table)
 	}
+	// the create answers what was pinned, by name (CI-P4-NET-1, pinned
+	// addresses shown per run): exactly the responder's table
+	wantPins := []launcher.Pin{
+		{Name: "archive.ubuntu.com", Addrs: []string{"91.189.91.82", "185.125.190.81"}},
+		{Name: "bootstrap.urbit.org", Addrs: []string{"104.21.64.85", "172.67.179.114"}},
+	}
+	if !slices.EqualFunc(info.Pinned, wantPins, func(a, b launcher.Pin) bool { return a.Name == b.Name && slices.Equal(a.Addrs, b.Addrs) }) {
+		t.Fatalf("THE CREATE'S PINS ARE NOT THE PINNED TABLE: %+v", info.Pinned)
+	}
 }
 
 // Two names on one CDN address and port need one forward accept, and each
@@ -216,8 +225,8 @@ func TestLiteralsOnlyStartNoResponder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.started != 0 || info.DNS != "" {
-		t.Fatalf("a literals-only VM got a responder (%d) or a DNS address %q", f.started, info.DNS)
+	if f.started != 0 || info.DNS != "" || info.Pinned != nil {
+		t.Fatalf("a literals-only VM got a responder (%d), a DNS address %q or pins %+v", f.started, info.DNS, info.Pinned)
 	}
 }
 

@@ -422,7 +422,12 @@ and A20 guarded the late release, which no longer exists; they are retired
   access never widens. A pinned address may serve other sites as well (a
   shared CDN address): the grant is the address and port, not the name. A
   launcher restart ends every responder; a VM still running then fails its
-  lookups closed. The create lists the table back
+  lookups closed. The `create` answer carries what was pinned (`pinned`:
+  each granted name with its addresses, in name order; absent for a VM
+  granted no name), held in memory only. The runner checks that it names
+  exactly the granted names, each with 1 to 64 distinct IPv4 addresses,
+  and rolls the VM back otherwise (CI-P4-NET-1, pinned addresses shown per
+  run). The create lists the table back
   and fails unless the containment is exactly that; `serve` refuses to start
   while a networked VM that may still run lacks it; `RemoveNetwork` stops the
   VM's responder first (its sockets would keep the namespace alive), deletes

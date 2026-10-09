@@ -123,6 +123,13 @@ func (d *Daemon) handle(ctx context.Context, a *ship.Assignment) (keep bool) {
 		return !added
 	}
 	logf("sandbox %s prepared (%s)", h.ID, describeHandle(h))
+	// what the launcher pinned each granted DNS name to, for this run only
+	// (CI-P4-NET-1, pinned addresses shown per run)
+	if p, ok := d.box.(sandbox.Pinner); ok {
+		for _, pin := range p.Pinned(h) {
+			logf("network: %s pinned to %s", pin.Name, strings.Join(pin.Addrs, " "))
+		}
+	}
 	keep = true
 	jobStopped := false
 	defer func() {

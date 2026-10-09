@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -53,8 +55,9 @@ type Microvm struct {
 	incs     map[string]string         // handle id -> its incarnation token
 	cids     map[string]uint32
 	created  map[string]int64
-	labels   map[string]string // handle id -> the job's label
-	bridges  map[string]string // handle id -> the guest's job bridge address (READY)
+	labels   map[string]string         // handle id -> the job's label
+	bridges  map[string]string         // handle id -> the guest's job bridge address (READY)
+	pins     map[string][]launcher.Pin // handle id -> what the create pinned
 }
 
 // rollbackBound bounds the wait for the answer to the destroy that undoes
@@ -120,7 +123,7 @@ var bundleLimits = guest.Limits{MaxBytes: 4 << 30, MaxEntries: 400000}
 // and that the launcher answers with a compatible protocol. Anything
 // missing is ErrMicrovmUnavailable with the reason: no fallback.
 func NewMicrovm(cfg *config.Config) (Sandbox, error) {
-	m := &Microvm{cfg: cfg, socket: cfg.LauncherSocket, imageDir: cfg.ImagePath, sessions: map[string]*guest.Session{}, vms: map[string]string{}, incs: map[string]string{}, cids: map[string]uint32{}, created: map[string]int64{}, bridges: map[string]string{}, labels: map[string]string{}}
+	m := &Microvm{cfg: cfg, socket: cfg.LauncherSocket, imageDir: cfg.ImagePath, sessions: map[string]*guest.Session{}, vms: map[string]string{}, incs: map[string]string{}, cids: map[string]uint32{}, created: map[string]int64{}, bridges: map[string]string{}, labels: map[string]string{}, pins: map[string][]launcher.Pin{}}
 	if _, err := m.verified(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMicrovmUnavailable, err)
 	}
@@ -284,6 +287,7 @@ func (m *Microvm) untrack(id string) {
 	delete(m.cids, id)
 	delete(m.created, id)
 	delete(m.bridges, id)
+	delete(m.pins, id)
 	delete(m.labels, id)
 }
 
@@ -361,7 +365,14 @@ func (m *Microvm) Prepare(ctx context.Context, spec Spec) (Handle, error) {
 	h.VM, h.Incarnation, h.CID, h.Created = rsv.ID, rsv.Incarnation, rsv.CID, rsv.Created
 	m.track(h)
 	fail := func(step string, cause error) (Handle, error) { return m.rollback(h, step, cause) }
-	if _, err := cl.Create(rsv.Ref()); err != nil {
+	_, pinned, err := cl.CreatePinned(rsv.Ref())
+	if err != nil {
+		return fail("boot", err)
+	}
+	// the launcher pins exactly the names this reservation granted; an
+	// answer that names any other, misses one, or names anything but
+	// IPv4 addresses is not this reservation's, and the VM is rolled back
+	if err := checkPinned(dests, pinned); err != nil {
 		return fail("boot", err)
 	}
 	// the helper listens once Docker answers; the launcher's connect
@@ -395,6 +406,9 @@ func (m *Microvm) Prepare(ctx context.Context, spec Spec) (Handle, error) {
 	m.mu.Lock()
 	m.sessions[h.ID] = sess
 	m.bridges[h.ID] = ready.Bridge
+	if len(pinned) > 0 {
+		m.pins[h.ID] = pinned
+	}
 	m.mu.Unlock()
 	return h, nil
 }
@@ -661,4 +675,56 @@ func (m *Microvm) Orphans(ctx context.Context) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// Pinned is what the create of the sandbox h names pinned (Pinner): each
+// granted DNS name with its addresses, as checkPinned accepted them.
+func (m *Microvm) Pinned(h Handle) []launcher.Pin {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []launcher.Pin
+	for _, p := range m.pins[h.ID] {
+		out = append(out, launcher.Pin{Name: p.Name, Addrs: append([]string(nil), p.Addrs...)})
+	}
+	return out
+}
+
+// checkPinned says whether pinned is exactly the launcher's answer for
+// destinations: one entry for each distinct DNS name they grant, in name
+// order, each with 1 to 64 distinct IPv4 addresses in their plain form,
+// and nothing for an IP literal (CI-P4-NET-1, named destinations).
+func checkPinned(destinations []string, pinned []launcher.Pin) error {
+	var names []string
+	for _, d := range destinations {
+		_, rest, _ := strings.Cut(d, ":")
+		host := rest
+		if i := strings.LastIndex(rest, ":"); i >= 0 {
+			host = rest[:i]
+		}
+		if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+			continue
+		}
+		if !slices.Contains(names, host) {
+			names = append(names, host)
+		}
+	}
+	sort.Strings(names)
+	if len(pinned) != len(names) {
+		return fmt.Errorf("the launcher pinned %d name(s); this reservation granted %d (%s)", len(pinned), len(names), strings.Join(names, " "))
+	}
+	for i, p := range pinned {
+		if p.Name != names[i] {
+			return fmt.Errorf("the launcher pinned %q where this reservation granted %q", p.Name, names[i])
+		}
+		if len(p.Addrs) == 0 || len(p.Addrs) > 64 {
+			return fmt.Errorf("the launcher pinned %s to %d addresses", p.Name, len(p.Addrs))
+		}
+		for j, a := range p.Addrs {
+			ip, err := netip.ParseAddr(a)
+			if err != nil || !ip.Is4() || ip.String() != a || slices.Contains(p.Addrs[:j], a) {
+				return fmt.Errorf("the launcher pinned %s to %q, which is not one distinct IPv4 address", p.Name, a)
+			}
+		}
+	}
+	return nil
 }

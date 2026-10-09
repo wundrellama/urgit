@@ -148,6 +148,18 @@ type NetInfo struct {
 	Gateway string
 	DNS     string
 	Index   int
+	// Pinned is each granted name with the addresses it was pinned to,
+	// by name; nil when the VM was granted no name
+	Pinned []Pin
+}
+
+// Pin is one granted DNS name and the IPv4 addresses the launcher pinned
+// it to when it created the VM's network (CI-P4-NET-1, pinned addresses
+// shown per run). The addresses change from run to run, so they are this
+// VM's alone: the create answers them, and they are not persisted.
+type Pin struct {
+	Name  string   `json:"name"`
+	Addrs []string `json:"addrs"`
 }
 
 // VMSpec is everything StartVM needs; every path in it was chosen by the
@@ -392,6 +404,9 @@ type entry struct {
 	// the release overtook is answered from
 	released    bool
 	disposition Release
+	// pinned: what the host's network setup pinned for this incarnation
+	// (NetInfo.Pinned), held in memory for the create's answer only
+	pinned []Pin
 	// recover: loaded from an interrupted teardown (quarantined); its
 	// cleanup is still owed, and performing it releases nothing
 	recover bool
@@ -1056,21 +1071,30 @@ func (s *Service) ownedOfLocked(owner Owner, id string, same func(Record) bool) 
 // reservation is released when everything was removed and the release
 // is durable, quarantined otherwise.
 func (s *Service) Create(owner Owner, id string) (int, error) {
-	return s.create(owner, id, nil)
+	pid, _, err := s.create(owner, id, nil)
+	return pid, err
 }
 
 // CreateOf is Create of exactly the incarnation ref names (INTEGRATION.md
 // §11.1): another incarnation of the id is refused (ErrStale), untouched.
 func (s *Service) CreateOf(owner Owner, ref Ref) (int, error) {
+	pid, _, err := s.create(owner, ref.ID, ref.Names)
+	return pid, err
+}
+
+// CreateOfPinned is CreateOf, answering also what the VM's network setup
+// pinned: each granted DNS name with its addresses (NetInfo.Pinned; none
+// for a locked VM or one granted only literals).
+func (s *Service) CreateOfPinned(owner Owner, ref Ref) (int, []Pin, error) {
 	return s.create(owner, ref.ID, ref.Names)
 }
 
-func (s *Service) create(owner Owner, id string, same func(Record) bool) (int, error) {
+func (s *Service) create(owner Owner, id string, same func(Record) bool) (int, []Pin, error) {
 	s.mu.Lock()
 	e, err := s.ownedOfLocked(owner, id, same)
 	if err != nil {
 		s.mu.Unlock()
-		return 0, err
+		return 0, nil, err
 	}
 	switch {
 	case s.closing:
@@ -1090,25 +1114,25 @@ func (s *Service) create(owner Owner, id string, same func(Record) bool) (int, e
 	}
 	if err != nil {
 		s.mu.Unlock()
-		return 0, err
+		return 0, nil, err
 	}
 	img, ok := s.cfg.Images[e.rec.Image]
 	if !ok {
 		s.mu.Unlock()
-		return 0, fmt.Errorf("%w: image %s is no longer installed", ErrInvalid, e.rec.Image)
+		return 0, nil, fmt.Errorf("%w: image %s is no longer installed", ErrInvalid, e.rec.Image)
 	}
 	networked := e.rec.Network != "locked" && len(e.rec.Destinations) > 0
 	for _, d := range e.rec.Destinations {
 		if !s.destinationAllowed(d) {
 			s.mu.Unlock()
-			return 0, fmt.Errorf("%w: destination %s is outside the launcher's ceiling", ErrInvalid, d)
+			return 0, nil, fmt.Errorf("%w: destination %s is outside the launcher's ceiling", ErrInvalid, d)
 		}
 	}
 	index := 0
 	if networked {
 		if index, ok = s.allocNetLocked(); !ok {
 			s.mu.Unlock()
-			return 0, fmt.Errorf("%w: every network index is held", ErrOverBudget)
+			return 0, nil, fmt.Errorf("%w: every network index is held", ErrOverBudget)
 		}
 	}
 	s.take(e, "create")
@@ -1129,9 +1153,13 @@ func (s *Service) create(owner Owner, id string, same func(Record) bool) (int, e
 	s.mu.Lock()
 	e.stop = nil
 	if cause == nil {
+		pinned := make([]Pin, 0, len(e.pinned))
+		for _, p := range e.pinned {
+			pinned = append(pinned, Pin{Name: p.Name, Addrs: append([]string(nil), p.Addrs...)})
+		}
 		s.put(e)
 		s.mu.Unlock()
-		return pid, nil
+		return pid, pinned, nil
 	}
 	// the one cleanup path, still holding the token, now a teardown's
 	// (teardown returns it); its obligation runs from what asked for the
@@ -1147,16 +1175,16 @@ func (s *Service) create(owner Owner, id string, same func(Record) bool) (int, e
 	terr := s.teardown(e, StateDestroyed, fmt.Sprintf("%s failed: %v; rolled back", step, cause), releasing, trigger.Add(s.cfg.CleanupBound))
 	switch {
 	case terr == nil:
-		return 0, fmt.Errorf("%s: %w (rolled back)", step, cause)
+		return 0, nil, fmt.Errorf("%s: %w (rolled back)", step, cause)
 	case errors.Is(terr, ErrQuarantined):
-		return 0, &quarantineError{
+		return 0, nil, &quarantineError{
 			msg:    fmt.Sprintf("%s: %v; rollback failed, reservation quarantined: %v", step, cause, terr),
 			causes: []error{cause, terr},
 		}
 	}
 	// halted before any removal, or released without a confirmed
 	// withdrawal: still charged, not quarantined
-	return 0, fmt.Errorf("%s: %w; rollback not finished: %w", step, cause, terr)
+	return 0, nil, fmt.Errorf("%s: %w; rollback not finished: %w", step, cause, terr)
 }
 
 // allocNetLocked gives a network index in [MinNetIndex, MaxNetIndex] that
@@ -1260,6 +1288,9 @@ func (s *Service) provision(ctx context.Context, e *entry, img Image, networked 
 		}
 		info.Index = index
 		net = &info
+		s.mu.Lock()
+		e.pinned = info.Pinned
+		s.mu.Unlock()
 	}
 
 	if step, err := begin("start vm", func(r *Record) { r.HasVMM = true }, func(r *Record) { r.HasVMM = false }); err != nil {

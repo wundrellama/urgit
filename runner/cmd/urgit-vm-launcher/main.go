@@ -1253,6 +1253,15 @@ func (h *realHost) CreateNetwork(id string, index int, allow []string) (launcher
 		}
 		h.dns.put(id, srv)
 		info.DNS = tapIP
+		// what was pinned, by name, for the create's answer (CI-P4-NET-1,
+		// pinned addresses shown per run)
+		for _, name := range slices.Sorted(maps.Keys(table)) {
+			p := launcher.Pin{Name: name}
+			for _, a := range table[name] {
+				p.Addrs = append(p.Addrs, a.String())
+			}
+			info.Pinned = append(info.Pinned, p)
+		}
 	}
 	return info, nil
 }

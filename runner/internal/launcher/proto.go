@@ -77,7 +77,13 @@ type Reply struct {
 	// reserve's answer echoes its Request
 	Settled    string `json:"settled,omitempty"`
 	SettledWhy string `json:"settled_why,omitempty"`
-	Request    string `json:"request,omitempty"`
+	// Pinned is a create's answer for a VM granted DNS names: each name
+	// with the addresses it was pinned to (CI-P4-NET-1, pinned addresses
+	// shown per run). Absent, the VM was granted no name: a launcher that
+	// cannot pin names has no name in its ceiling, so it refuses a
+	// reservation that grants one.
+	Pinned  []Pin  `json:"pinned,omitempty"`
+	Request string `json:"request,omitempty"`
 }
 
 // Budget is what hello reports: the launcher's own limits and use.
@@ -267,11 +273,11 @@ func (sv *Server) mutate(owner Owner, op string, ref Ref, port uint32) (Reply, *
 		}
 		return Reply{OK: true, Release: &rel, LateAccounting: rel.Late()}, nil
 	case "create":
-		pid, err := sv.Service.CreateOf(owner, ref)
+		pid, pinned, err := sv.Service.CreateOfPinned(owner, ref)
 		if err != nil {
 			return Reply{Error: err.Error(), Quarantined: errors.Is(err, ErrQuarantined)}, nil
 		}
-		return Reply{OK: true, PID: pid}, nil
+		return Reply{OK: true, PID: pid, Pinned: pinned}, nil
 	case "connect":
 		f, err := sv.Service.ConnectOf(owner, ref, port)
 		if err != nil {
@@ -481,8 +487,15 @@ func refRequest(op string, ref Ref) Request {
 
 // Create boots exactly the incarnation ref names (ErrStale: another one).
 func (cl *Client) Create(ref Ref) (int, error) {
+	pid, _, err := cl.CreatePinned(ref)
+	return pid, err
+}
+
+// CreatePinned is Create, answering also each granted DNS name with the
+// addresses the launcher pinned it to (Reply.Pinned).
+func (cl *Client) CreatePinned(ref Ref) (int, []Pin, error) {
 	r, _, err := cl.call(refRequest("create", ref), false)
-	return r.PID, err
+	return r.PID, r.Pinned, err
 }
 
 // Connect connects to exactly the incarnation ref names.
