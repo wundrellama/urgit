@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -168,17 +167,12 @@ func Walk(root string, fetcher Fetcher, bounds Bounds) (Inventory, error) {
 // WalkWith is Walk with the operator's explicit mappings.
 func WalkWith(root string, fetcher Fetcher, bounds Bounds, mappings []Mapping) (Inventory, error) {
 	w := &walker{root: filepath.Clean(root), fetcher: fetcher, bounds: bounds, seen: map[string]bool{}, mappings: mappings}
-	files, err := filepath.Glob(filepath.Join(w.root, ".github", "workflows", "*.y*ml"))
+	files, err := WorkflowFiles(w.root)
 	if err != nil {
 		return w.inv, err
 	}
-	sort.Strings(files)
-	for _, f := range files {
-		name := filepath.Base(f)
-		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
-			continue
-		}
-		data, err := w.readBounded(f)
+	for _, name := range files {
+		data, err := w.readBounded(filepath.Join(w.root, ".github", "workflows", name))
 		if err != nil {
 			return w.inv, fmt.Errorf("%s: %w", name, err)
 		}
@@ -197,17 +191,11 @@ func WalkWith(root string, fetcher Fetcher, bounds Bounds, mappings []Mapping) (
 }
 
 func (w *walker) readBounded(p string) ([]byte, error) {
-	st, err := os.Lstat(p)
+	rel, err := filepath.Rel(w.root, p)
 	if err != nil {
 		return nil, err
 	}
-	if st.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("symlinked metadata is refused")
-	}
-	if st.Size() > maxActionYAML {
-		return nil, fmt.Errorf("%w: metadata file %s is %d bytes", ErrBound, p, st.Size())
-	}
-	data, err := os.ReadFile(p)
+	data, err := ReadTreeFile(w.root, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +468,7 @@ func (w *walker) toolchain(n Node, uses string, with *yaml.Node) error {
 			n.Uses, n.Kind, n.Origin, n.Refusal = "toolchain:go", "download", f.Value, "go-version-file traverses out of the tree"
 			return w.add(n)
 		}
-		data, err := os.ReadFile(filepath.Join(w.root, filepath.FromSlash(rel)))
+		data, err := ReadTreeFile(w.root, filepath.FromSlash(rel))
 		if err != nil {
 			n.Uses, n.Kind, n.Origin, n.Refusal = "toolchain:go", "download", f.Value, "go-version-file "+rel+" is not in the tree"
 			return w.add(n)

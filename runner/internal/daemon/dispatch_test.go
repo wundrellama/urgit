@@ -52,8 +52,7 @@ func TestResolveSendsTheManualInventory(t *testing.T) {
 	d := newTestDaemon(t, &fakeBox{}, sh, 1)
 	d.cfg.Resolver = true
 	d.checkout = manualCheckout(t)
-	a := &ship.Assignment{ID: "0v1.asg", Attempt: "0v1.att", Candidate: "0v1.cand", Repo: "r", Ref: "refs/ci/resolve",
-		OID: "0000000000000000000000000000000000000001", Kind: "resolve", DeadlineSeconds: 60, Manifest: &jobManifest}
+	a := testResolverAssignment("resolve", "r", "0000000000000000000000000000000000000001")
 	d.handle(context.Background(), a)
 	if len(sh.locks) != 2 {
 		t.Fatalf("the resolver posted %d lock bodies, want the inventory and the lock: %v (abandons %v)", len(sh.locks), sh.locks, sh.abandons)

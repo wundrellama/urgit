@@ -25,7 +25,7 @@ export function renderSelection(h, model) {
         h('span', { className: 'ci-job-cell' }, h('strong', null, r.name), h('small', { className: 'quiet ci-job-meta' }, r.workflow)),
         h('span', { className: `status ${r.tone}`, 'data-part': 'selection-verdict' }, r.verdictText),
         h('small', { className: 'quiet ci-selection-reason' }, r.reason))),
-      !model.rows.length && h('div', { className: 'empty' }, 'No workflow of the governing baseline declares this event.')))
+      !model.rows.length && h('div', { className: 'empty' }, 'No workflow in this revision declares this event.')))
 }
 
 const panelHead = (h, note, refreshPart, onRefresh, busy) =>
@@ -59,6 +59,7 @@ function eventRow(h, row, repo, actions) {
         h('span', { 'data-part': 'pull-title' }, row.pull.title),
         h('span', { className: 'quiet' }, ` · ${row.pull.headBranch} → ${row.pull.baseBranch} · ${row.pull.author}`)),
       row.runs.map((id) => h('button', { type: 'button', className: 'text-button', key: id, 'data-part': 'open-run', onClick: () => actions.openRun(id) }, `open run ${id}`)),
+      renderTagProvenance(h, row.workflowProvenance),
       row.selection && selectionDetails(h, row.selection)),
     h('span', { title: 'recorded by the ship' }, exactTime(row.received)))
 }
@@ -132,4 +133,20 @@ export function renderSchedules(h, { phase, error, model }, actions) {
         : h('div', { className: 'empty', 'data-part': 'schedules-empty' }, 'No schedule is registered for this repository\'s default branch. A workflow with on.schedule at the promoted baseline of the default branch is listed here once the ship arms it.'))
   }
   return h('div', { className: 'ci-schedules', 'data-part': 'schedules' }, head, body)
+}
+
+// Captured provenance, supplied by the controller. Identifiers stay in
+// details, while names and the resolution state remain visible.
+export function renderTagProvenance(h, p) {
+  if (p?.authority !== 'tagged-revision') return null
+  const state = p.resolution === 'resolved' ? 'Dependencies resolved' : `Dependency resolution ${p.resolution || 'unknown'}`
+  return h('div', { 'data-part': 'tag-provenance' },
+    h('strong', null, 'Tagged revision workflows'),
+    h('small', { className: 'quiet' }, ` · ${state}. Advisory only. No credentials, landing, or required-check credit.`),
+    h('details', null,
+      h('summary', null, 'Source, workflow and lock details'),
+      h('dl', { className: 'ci-facts' },
+        h('div', null, h('dt', null, 'Source commit'), h('dd', null, h('code', null, p.source || 'unavailable'))),
+        h('div', null, h('dt', null, 'Workflow revision'), h('dd', null, h('code', null, p.revision || 'unavailable'))),
+        h('div', null, h('dt', null, 'Dependency lock'), h('dd', null, h('code', null, p.lock || 'not resolved'))))))
 }

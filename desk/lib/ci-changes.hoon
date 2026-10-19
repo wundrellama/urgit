@@ -155,6 +155,17 @@
   ?.  ?=([~ [* ~]] target)  [%| (rap 3 ~['tag ' (oid-hex oid) ' is malformed'])]
   $(oid i.u.target, depth +(depth))
 ::
+::  A validated commit target for an automatic tag run.
+++  commit-at
+  |=  [objects=(map oid:git object:git) object=oid:git]
+  ^-  (each oid:git @t)
+  =/  peeled  (peel objects object)
+  ?:  ?=(%| -.peeled)  [%| p.peeled]
+  ?~  p.peeled  [%| 'the tag target is not a commit']
+  =/  checked  (commit-of objects u.p.peeled)
+  ?:  ?=(%| -.checked)  [%| p.checked]
+  [%& u.p.peeled]
+::
 ::  every commit reachable from .roots (each peeled; a tree or blob root
 ::  stands for none) by parent links, at most .bound of them, or why not
 ::

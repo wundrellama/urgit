@@ -18,20 +18,21 @@
 ::    its compiled condition and declared outputs, an attempt its step
 ::    outputs by step, its decision, its needs context and its resolved
 ::    outputs; it is frozen as sur/ci-state-4.  the current state is
-::    state-5, tagged %5 (Delivery 1C): the event run mode, a candidate's
+::    state-5, tagged %5 (Delivery 1C), added: the event run mode, a candidate's
 ::    event trigger and workflow selection, a lock's trigger catalog, and
 ::    the forge events, their ids and the armed schedules.  a %0 shape is
 ::    converted to state-1, state-1 to state-2, state-2 to state-3, state-3
 ::    to state-4 and state-4 to state-5.  an
-::    unknown, partial,
+::    State6 appends the tagged-run resolver bindings. State5 converts
+::    without changing any prior field. An unknown, partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -51,8 +52,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %6
+    ?:  !=(~ (mole |.(;;(state-6:ci old))))  &+%current
+    |+'a %6 state that is not exactly state-6: partial or corrupt'
+  ::
       %5
-    ?:  !=(~ (mole |.(;;(state-5:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-5:ci-state-5 old))))  &+%state-5
     |+'a %5 state that is not exactly state-5: partial or corrupt'
   ::
       %4
@@ -86,22 +91,72 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-5:ci]
+  ^-  [=shape new=state-6:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
+  ?:  =(%current p.found)  ;;(state-6:ci old)
+  %-  from-state-5
   ?-  p.found
-    %current  ;;(state-5:ci old)
+    %current  !!
+    %state-5  ;;(state-5:ci-state-5 old)
     %state-4  (from-state-4 ;;(state-4:ci-state-4 old))
     %state-3  (from-state-4 (from-state-3 ;;(state-3:ci-state-3 old)))
     %state-2  (from-state-4 (from-state-3 (from-state-2 ;;(state-2:ci-state-2 old))))
     %state-1  (from-state-4 (from-state-3 (from-state-2 (from-state-1 ;;(state-1:ci-state-1 old)))))
-    %q11  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old))))))
-    %review06  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old))))))
-    %base  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old))))))
+      %q11
+    %-  from-state-4
+    (from-state-3 (from-state-2 (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old)))))
+      %review06
+    %-  from-state-4
+    %-  from-state-3
+    (from-state-2 (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old))))
+      %base
+    %-  from-state-4
+    (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
+  ==
+::
+::  State5 is frozen in sur/ci-state-5, including every nested mold.
+::  Copy all fields. No historical run gains tagged-revision authority.
+++  from-state-5
+  |=  o=state-5:ci-state-5
+  ^-  state-6:ci
+  :*  %6
+      candidates.o
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      locks.o
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      forge-events.o
+      event-ids.o
+      schedules.o
+      ~
   ==
 ::
 ::  state-4: its twenty-eight fields as they are, under the tag %5, and
@@ -117,8 +172,8 @@
 ::
 ++  from-state-4
   |=  o=state-4:ci-state-4
-  ^-  state-5:ci
-  ;;  state-5:ci
+  ^-  state-5:ci-state-5
+  ;;  state-5:ci-state-5
   :*  %5
       (~(run by candidates.o) candidate-from-4)
       daemons.o
@@ -184,7 +239,8 @@
       harness-differs.c
       ?-  -.trigger.c
         %push  [%push ~]
-        %dispatch  [%dispatch workflow.trigger.c name.trigger.c inputs.trigger.c payload.trigger.c request.trigger.c]
+          %dispatch
+        [%dispatch workflow.trigger.c name.trigger.c inputs.trigger.c payload.trigger.c request.trigger.c]
       ==
       ~
   ==
@@ -239,7 +295,7 @@
   ==
 ::
 ::  state-3: its twenty-eight fields as they are, under the tag %4 (as
-::  state-4, frozen in sur/ci-state-4, holds them).  a
+::  state-4, frozen in sur/ci-state-4, ci-state-5, holds them).  a
 ::  planned job keeps its condition with the meaning it was admitted
 ::  under — an %output-eq stays one; an %unsupported one, which no stored
 ::  plan can hold (the plan was refused), refuses its job — and its

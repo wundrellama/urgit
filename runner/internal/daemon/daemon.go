@@ -629,11 +629,11 @@ func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
 	if a.Sig == nil || a.Sig.Sig == "" {
 		return errors.New("assignment is unsigned")
 	}
-	if a.Sig.Version != sig.ManifestVersion {
-		return fmt.Errorf("manifest version %d is not the version this runner speaks (%d)", a.Sig.Version, sig.ManifestVersion)
-	}
 	if a.Manifest == nil {
 		return errors.New("assignment carries no execution manifest")
+	}
+	if want := sig.ManifestVersionFor(*a.Manifest); a.Sig.Version != want {
+		return fmt.Errorf("manifest version %d is not the version for this purpose (%d)", a.Sig.Version, want)
 	}
 	// every signed field must arrive (Delivery 1B correction 01): one the
 	// ship's emission left out decodes empty and would only surface as a
@@ -662,6 +662,28 @@ func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
 	m := sig.ManifestMessage{Recipient: a.Sig.Recipient, Attempt: a.Sig.Attempt, Operation: a.Sig.Operation, Expiry: a.Sig.Expiry, Nonce: a.Sig.Nonce, Manifest: *a.Manifest}
 	if err := sig.VerifyManifest(d.ciKey, m, a.Sig.Sig); err != nil {
 		return err
+	}
+	if a.Kind == "resolve" || a.Manifest.Mode == "resolve" || a.Manifest.Mode == "resolve-tag" {
+		if _, err := resolverPurpose(a); err != nil {
+			return err
+		}
+	}
+	// A tag using its own YAML binds the same source and workflow revision.
+	// Check wire copies against those signed fields before any checkout.
+	// Historical promoted tag runs with a different baseline keep their
+	// existing policy. No unsigned authority flag controls this check.
+	if a.Manifest.Event == "push" && strings.HasPrefix(a.Manifest.Ref, "refs/tags/") &&
+		(a.Manifest.Mode == "event" || a.Manifest.Mode == "plan") && a.Manifest.Baseline == a.Manifest.OID {
+		if a.WorkflowsOID != a.Manifest.Baseline || a.Ref != a.Manifest.Ref || a.Trust != a.Manifest.Trust {
+			return errors.New("tagged revision fields disagree with the signed manifest")
+		}
+		if a.Manifest.Lock == "" || a.Lock == nil || a.Lock.Digest != a.Manifest.Lock ||
+			a.Lock.Repo != a.Manifest.Repo || a.Lock.Revision != a.Manifest.Baseline {
+			return errors.New("tagged revision lock disagrees with the signed manifest")
+		}
+		if len(a.Grants) != 0 {
+			return errors.New("an advisory tag run receives no credentials")
+		}
 	}
 	// the event's payload is bound by the signed context (Delivery 1A): act
 	// reads exactly the payload the ship signed for, and a payload the
@@ -710,7 +732,8 @@ func (d *Daemon) honourable(a *ship.Assignment) error {
 		if !d.cfg.Resolver {
 			return errors.New("resolve assignments need a resolver-capable runner (resolver = true)")
 		}
-		return nil
+		_, err := resolverPurpose(a)
+		return err
 	}
 	// the event the run's jobs receive (Delivery 1A; 1C adds the automatic
 	// pull_request and schedule): any other is given back, never run as a

@@ -18,6 +18,14 @@
 ::
 ++  manifest-version  5
 ::
+::  A new automatic resolver must not run on an old v5 importer, which
+::  ignored purpose. Only this authority uses v6; supported outstanding
+::  jobs and explicit imports retain the byte-identical v5 message shape.
+++  manifest-version-for
+  |=  m=manifest
+  ^-  @ud
+  ?:(=('resolve-tag' mode.m) 6 manifest-version)
+::
 ::  bounds (D4; the brief's proposed S0 bounds, adopted)
 ::
 ++  max-lock-bytes  1.048.576
@@ -74,7 +82,7 @@
 ++  message-noun
   |=  [recipient=@uv attempt=@uv operation=@t expiry=@ud nonce=@uv =manifest]
   ^-  *
-  [manifest-version recipient attempt operation expiry nonce manifest]
+  [(manifest-version-for manifest) recipient attempt operation expiry nonce manifest]
 ::
 ++  message-bytes
   |=  [recipient=@uv attempt=@uv operation=@t expiry=@ud nonce=@uv =manifest]

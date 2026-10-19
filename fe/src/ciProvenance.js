@@ -62,7 +62,9 @@ export function modeLabel(candidate = {}) {
   switch (candidate.mode) {
     case 'trial': return { label: 'trial', detail: `Runs the candidate's own harness, unprivileged, always in the VM; its evidence never lands and never replaces required evidence${candidate.trialOf ? ` (a twin of ${candidate.trialOf})` : ''}.` }
     case 'shadow': return { label: 'shadow', detail: 'A comparison run for an external event; it never lands and never deploys.' }
-    case 'event': return { label: 'event', detail: `An automatic run for a push, a pull request activity or a schedule, admitted from the trigger definitions of the promoted baseline${candidate.baseline ? ` (${String(candidate.baseline).slice(0, 12)})` : ''}; it never lands, never satisfies the required checks and receives no credentials.` }
+    case 'event':
+      if (candidate.workflowAuthority === 'tagged-revision') return { label: 'tag run', detail: 'Runs the workflows stored in the tagged revision. This advisory run never lands, never satisfies protected required checks and receives no credentials.' }
+      return { label: 'event', detail: `An automatic run for a push, a pull request activity or a schedule, admitted from the trigger definitions of the promoted baseline${candidate.baseline ? ` (${String(candidate.baseline).slice(0, 12)})` : ''}; it never lands, never satisfies the required checks and receives no credentials.` }
     case 'manual': return { label: 'manual', detail: `Runs the promoted baseline's workflow${candidate.baseline ? ` (${String(candidate.baseline).slice(0, 12)})` : ''} on this branch's tip because an operator dispatched it, with the inputs shown; it never lands, never satisfies the required checks and receives no credentials.` }
     default: return { label: 'required', detail: candidate.baseline ? `Runs the promoted baseline's harness (${String(candidate.baseline).slice(0, 12)}) against this exact checkout under policy generation ${candidate.generation ?? '?'}.` : 'Required checks come from a promoted baseline; none is promoted for this branch yet.' }
   }
@@ -85,6 +87,10 @@ export function waitRows(candidate = {}) {
 export function waitExplanation(reason = '') {
   const r = String(reason)
   if (!r) return ''
+  if (/automatic tag resolution has no external-input policy/.test(r)) return 'Automatic dependency fetching has no approved input policy. This dependency was refused without fetching; the captured source revision is unchanged. A job network profile does not authorize resolver fetches.'
+  if (/^pending:.*tagged revision.*re-offered/.test(r)) return 'Resolution is waiting for another eligible resolver. It will resume automatically at the same captured revision; the previous attempt cannot complete this run.'
+  if (/^pending:.*tagged revision/.test(r)) return 'Dependency resolution resumes automatically on a resolver-capable runner, using the same revision captured at admission. See Settings → Runners.'
+  if (/^refused: tagged revision resolution:/.test(r)) return 'Resolution failed. This run keeps its original source and cannot switch to another revision. Read the resolver attempt and its refusal.'
   if (/no promoted baseline/.test(r)) return 'Promote a harness revision for this branch in Settings → CI policy; the candidate\'s own YAML is not evidence.'
   if (/sandbox requirement vm/.test(r)) return 'This work needs a VM runner (Firecracker); the container compatibility profile never runs privileged, trial, shadow or untrusted work. Enroll a microvm runner.'
   if (/no runner supports network profile/.test(r)) return 'The job\'s network policy names a profile no enrolled runner declares; enroll a runner with that profile or change the policy.'

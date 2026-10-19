@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -352,21 +351,20 @@ func (d *Daemon) gitCheckout(ctx context.Context, a *ship.Assignment, dir string
 	}
 	steps = append(steps, []string{"git", "-C", dir, "checkout", "--quiet", "-B", branch, a.OID})
 	for _, argv := range steps {
-		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		cmd := checkoutCommand(ctx, a, argv)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s: %s", shownGit(argv), strings.TrimSpace(scrubToken(string(out), a.ReadToken)))
 		}
 	}
-	head, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+	head, err := checkoutCommand(ctx, a, []string{"git", "-C", dir, "rev-parse", "HEAD"}).Output()
 	if err != nil {
 		return err
 	}
 	if got := strings.TrimSpace(string(head)); got != a.OID {
 		return fmt.Errorf("checked out %s, not the candidate %s", got, a.OID)
 	}
-	if err := exec.CommandContext(ctx, "git", "-C", dir, "diff", "--quiet", "HEAD").Run(); err != nil {
+	if err := checkoutCommand(ctx, a, []string{"git", "-C", dir, "diff", "--quiet", "HEAD"}).Run(); err != nil {
 		return fmt.Errorf("checkout of %s is not clean", a.OID)
 	}
 	return nil
@@ -405,18 +403,18 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		return
 	}
 	type wireJob struct {
-		ID          string     `json:"id"`
-		Workflow    string     `json:"workflow"`
-		Name        string     `json:"name"`
-		Stage       int        `json:"stage"`
-		Needs       []string   `json:"needs"`
-		Cond        *plan.Condition `json:"cond"`
+		ID       string          `json:"id"`
+		Workflow string          `json:"workflow"`
+		Name     string          `json:"name"`
+		Stage    int             `json:"stage"`
+		Needs    []string        `json:"needs"`
+		Cond     *plan.Condition `json:"cond"`
 		// the job's declared outputs, compiled (CI-EXPR-2): the ship
 		// resolves them from the accepted attempt at the end of the job
-		Outputs []plan.Output `json:"outputs"`
-		Matrix      bool       `json:"matrix"`
-		Events      []string   `json:"events"`
-		Environment string     `json:"environment,omitempty"`
+		Outputs     []plan.Output `json:"outputs"`
+		Matrix      bool          `json:"matrix"`
+		Events      []string      `json:"events"`
+		Environment string        `json:"environment,omitempty"`
 		// the job's runs-on as a list (a string is one element) and its
 		// timeout-minutes; the ship matches labels and bounds the
 		// deadline with them (CI-P3-SCHED-A, CI-DELIVERY-1.1)
@@ -505,27 +503,7 @@ func projectionNameOf(original []byte, attempt, fileName, jobID string) string {
 }
 
 func workflowFiles(src string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(src, ".github", "workflows"))
-	if os.IsNotExist(err) {
-		return []string{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if strings.HasSuffix(e.Name(), ".yml") || strings.HasSuffix(e.Name(), ".yaml") {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-	if files == nil {
-		files = []string{}
-	}
-	return files, nil
+	return provenance.WorkflowFiles(src)
 }
 
 // capture runs argv in the sandbox and returns its combined output.

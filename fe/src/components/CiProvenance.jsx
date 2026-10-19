@@ -113,7 +113,7 @@ export function CiPolicySection({ repo, policy, onChanged }) {
       </div>
       <div className="ci-policy-block">
         <strong>Import (resolve) and promote</strong>
-        <small className="quiet">Resolving walks a revision's workflows on a resolver-capable runner, mirrors every action into this ship's repositories and every download into its store, and stores the lock; nothing runs. Promotion adopts the revision and its lock as the branch's baseline.</small>
+        <small className="quiet">Explicit imports walk the revision's workflows and mirror dependencies into this ship. Ordinary tags use their tagged YAML without promotion. Automatic resolution currently refuses external inputs because no automatic fetch policy is defined; dependency-free workflows and an existing lock for the exact revision are supported. Promotion adopts a revision and its lock as a branch baseline.</small>
         <label><span>Revision (40 hex)</span><input value={revision} onChange={(e) => setRevision(e.target.value.trim())} placeholder="a6d15edd…" /></label>
         <label><span>Explicit mappings (optional, one per line: from -&gt; http(s)://to)</span><textarea rows={2} value={mappings} onChange={(e) => setMappings(e.target.value)} /></label>
         {parsedMappings.error && <small className="field-error">{parsedMappings.error}</small>}
@@ -203,11 +203,11 @@ export function CandidateProvenance({ data, tip, onAct, busy, confirm }) {
     <div className="ci-provenance">
       <dl className="ci-facts">
         <div><dt>Mode</dt><dd><strong>{mode.label}</strong> <small className="quiet">{mode.detail}</small></dd></div>
-        <div><dt>Baseline</dt><dd><code>{c.baseline || 'none'}</code></dd></div>
+        <div><dt>{c.workflowAuthority === 'tagged-revision' ? 'Workflow revision' : 'Baseline'}</dt><dd><code>{c.baseline || 'none'}</code></dd></div>
         <div><dt>Lock</dt><dd><code>{c.lock || 'none'}</code></dd></div>
         <div><dt>Generation</dt><dd>{c.generation}{c.currentGeneration != null && c.currentGeneration !== c.generation && <small className="field-error"> (policy is at {c.currentGeneration}: this evidence is stale)</small>}</dd></div>
         <div><dt>Sandbox</dt><dd>{c.sandbox === 'vm' ? 'VM (Firecracker)' : 'container compatibility'}{c.harnessDiffers && <small className="quiet"> · the candidate's harness differs from the baseline's (a trial twin runs it)</small>}</dd></div>
-        <div><dt>Bindings</dt><dd>{c.bindingsCurrent ? 'current' : <span className="field-error">not current</span>} · {c.landable ? 'landable' : 'not landable'}</dd></div>
+        <div><dt>Bindings</dt><dd>{c.workflowAuthority === 'tagged-revision' ? 'captured at tag admission' : c.bindingsCurrent ? 'current' : <span className="field-error">not current</span>} · {c.landable ? 'landable' : 'not landable'}</dd></div>
       </dl>
       {explanation && <div className="empty ci-first-run">{explanation}</div>}
       {waitRows(c).length > 0 && (

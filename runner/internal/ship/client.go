@@ -86,23 +86,23 @@ type Grant struct {
 // (rider 03) and the attempt-bound read capability for private mirrors
 // (A06). None of it enters the guest.
 type Assignment struct {
-	ID              string                       `json:"id"`
-	Attempt         string                       `json:"attempt"`
-	Candidate       string                       `json:"candidate"`
-	Repo            string                       `json:"repo"`
-	Ref             string                       `json:"ref"`
-	OID             string                       `json:"oid"`
-	Head            string                       `json:"head"`
-	Base            string                       `json:"base"`
-	Trust           string                       `json:"trust"`
-	ScratchRef      string                       `json:"scratch-ref"`
-	Kind            string                       `json:"kind"`
-	Workflow        string                       `json:"workflow"`
-	Job             string                       `json:"job"`
-	DeadlineSeconds int                          `json:"deadline-seconds"`
-	Assigned        string                       `json:"assigned"`
-	Grants          []Grant                      `json:"grants"`
-	Sig             *Signature                   `json:"sig"`
+	ID              string     `json:"id"`
+	Attempt         string     `json:"attempt"`
+	Candidate       string     `json:"candidate"`
+	Repo            string     `json:"repo"`
+	Ref             string     `json:"ref"`
+	OID             string     `json:"oid"`
+	Head            string     `json:"head"`
+	Base            string     `json:"base"`
+	Trust           string     `json:"trust"`
+	ScratchRef      string     `json:"scratch-ref"`
+	Kind            string     `json:"kind"`
+	Workflow        string     `json:"workflow"`
+	Job             string     `json:"job"`
+	DeadlineSeconds int        `json:"deadline-seconds"`
+	Assigned        string     `json:"assigned"`
+	Grants          []Grant    `json:"grants"`
+	Sig             *Signature `json:"sig"`
 	// P4
 	Manifest     *sig.Manifest `json:"manifest"`
 	HarnessPaths []string      `json:"harness-paths"`
@@ -113,7 +113,8 @@ type Assignment struct {
 	// as HTTP basic auth to /git and never copies it anywhere
 	ReadToken string `json:"read-token"`
 	// WorkflowsOID is the revision the workflow files come from: the
-	// baseline for a required/shadow run, the candidate for a trial
+	// promoted baseline for required/shadow runs, the candidate for a trial,
+	// and the captured tagged commit for an ordinary automatic tag run
 	WorkflowsOID string `json:"workflows-oid"`
 	// Mappings are the operator's explicit import mappings of a resolve
 	// (rider 03): origin or URL prefixes read from elsewhere, recorded
@@ -172,8 +173,10 @@ type Mapping struct {
 
 // Lock is the approved dependency lock the bundle materializes (D4).
 type Lock struct {
-	Digest string     `json:"digest"`
-	Nodes  []LockNode `json:"nodes"`
+	Repo     string     `json:"repo"`
+	Revision string     `json:"revision"`
+	Digest   string     `json:"digest"`
+	Nodes    []LockNode `json:"nodes"`
 }
 
 // LockNode is one resolved dependency: the original `uses:` text, its

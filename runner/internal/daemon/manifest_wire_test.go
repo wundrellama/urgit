@@ -84,7 +84,7 @@ func wireBody(t *testing.T, priv ed25519.PrivateKey, m sig.Manifest, needsContex
 		"scratch-ref": "refs/ci/candidate/x", "kind": "job", "workflow": m.Workflow, "job": m.Job,
 		"deadline-seconds": 3720, "assigned": "~2026.10.16..04.41.09", "grants": []any{},
 		"sig": map[string]any{
-			"version": sig.ManifestVersion, "recipient": wireDaemon, "attempt": wireAttempt, "operation": "assign",
+			"version": sig.ManifestVersionFor(m), "recipient": wireDaemon, "attempt": wireAttempt, "operation": "assign",
 			"expiry": expiry, "nonce": "0v1.nonce", "sig": hex.EncodeToString(ed25519.Sign(priv, b)),
 		},
 		"manifest": manifest, "harness-paths": []any{}, "workflows-oid": wireOID, "baseline-ref": nil,

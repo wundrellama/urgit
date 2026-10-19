@@ -1,4 +1,7 @@
 import test from 'node:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { initialRecoveryState, recoveryReducer } from './runnerRecovery.js'
 import { renderRecovery } from './runnerRecoveryView.js'
@@ -41,7 +44,8 @@ test('every state of the panel renders through React', { skip }, () => {
 
 test('the component and the Runners panel load and render through the app\'s own JSX pipeline', { skip }, async () => {
   const { React, renderToStaticMarkup, createServer } = deps
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  const cacheDir = mkdtempSync(join(tmpdir(), 'urgit-ssr-'))
+  const server = await createServer({ configLoader: 'native', cacheDir, server: { middlewareMode: true, ws: false, hmr: false, watch: null }, appType: 'custom' })
   try {
     const { default: RunnerRecovery } = await server.ssrLoadModule('/src/components/RunnerRecovery.jsx')
     const first = renderToStaticMarkup(React.createElement(RunnerRecovery, { runner: { id: RUNNER }, onClose() {} }))
@@ -53,5 +57,6 @@ test('the component and the Runners panel load and render through the app\'s own
     assert.match(panel, /Runners/)
   } finally {
     await server.close()
+    rmSync(cacheDir, { recursive: true, force: true })
   }
 })

@@ -17,7 +17,7 @@ import (
 	"urgit/runner/internal/ship"
 )
 
-// runResolve is the explicit import (D4; rider 03): the bounded
+// runResolve handles explicit imports and automatic tag resolution: the bounded
 // dependency walk over the revision's workflows on the host (parsing
 // only — no sandbox, no execution), the fetch of every approved external
 // input through the fetcher, the mirror pushes into the repositories the
@@ -30,13 +30,18 @@ import (
 // one-resolve write tokens) and `lock` (the nodes with their mirror
 // identities; the ship validates, digests and stores it).
 func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string, logf func(string, ...any)) {
+	purpose, err := resolverPurpose(a)
+	if err != nil {
+		d.fail(ctx, a, err.Error(), logf)
+		return
+	}
 	src := filepath.Join(work, "src")
 	if err := d.checkout(ctx, a, src); err != nil {
 		d.fail(ctx, a, "checkout: "+err.Error(), logf)
 		return
 	}
 	cache := filepath.Join(d.cfg.WorkDir, "resolver-cache")
-	fetcher := &provenance.GitFetcher{Cache: cache, Log: func(line string) { logf("fetch: %s", line) }}
+	fetcher := &provenance.GitFetcher{Purpose: purpose, Cache: cache, Log: func(line string) { logf("fetch: %s", line) }}
 	bounds := provenance.Bounds{MaxNodes: 256, MaxDepth: 16, MaxBytes: 1 << 20}
 	var mappings []provenance.Mapping
 	for _, m := range a.Mappings {
@@ -170,6 +175,35 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 	logf("lock POST -> %s", resp.Error())
 }
 
+// The signed mode is the purpose. Automatic resolution uses domain 6 so
+// version-5 runners refuse it. No unsigned selector or version fallback can
+// elevate it; existing explicit imports keep their version-5 resolve mode.
+func resolverPurpose(a *ship.Assignment) (provenance.FetchPurpose, error) {
+	if a.Manifest == nil || a.Kind != "resolve" {
+		return "", errors.New("missing authenticated resolver purpose")
+	}
+	m := a.Manifest
+	if m.Ref != "refs/ci/resolve" || a.Ref != m.Ref || m.OID != a.OID ||
+		m.Workflow != "" || m.Job != "" || m.Event != "" || m.Context != "" ||
+		m.Needs != "" || m.Prerequisites != "" || m.Trigger != "" ||
+		m.Network != "locked" || m.NetworkScope != "" || len(a.Grants) != 0 {
+		return "", errors.New("resolver purpose has inconsistent source, event, credentials or network policy")
+	}
+	switch m.Mode {
+	case "resolve":
+		return provenance.PolicyImport, nil
+	case "resolve-tag":
+		if len(a.Mappings) != 0 || a.WorkflowsOID != m.OID || a.Trust != m.Trust ||
+			a.ScratchRef != "refs/ci/run/"+uvKey(m.Candidate) || a.BaselineRef != "" ||
+			m.Baseline != "" || m.Lock != "" || a.Lock != nil || len(a.Downloads) != 0 {
+			return "", errors.New("automatic resolver carries an import mapping or inconsistent captured input")
+		}
+		return provenance.AutomaticTag, nil
+	default:
+		return "", errors.New("missing or unsupported authenticated resolver purpose")
+	}
+}
+
 // workflowDispatches reads every workflow file of a checkout, in name
 // order, and lists those that declare workflow_dispatch (Delivery 1A).
 func workflowDispatches(src string) ([]plan.Dispatch, error) {
@@ -179,7 +213,7 @@ func workflowDispatches(src string) ([]plan.Dispatch, error) {
 	}
 	out := []plan.Dispatch{}
 	for _, file := range files {
-		data, err := os.ReadFile(filepath.Join(src, ".github", "workflows", file))
+		data, err := provenance.ReadTreeFile(src, filepath.Join(".github", "workflows", file))
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +236,7 @@ func workflowTriggers(src string) (plan.TriggerCatalog, error) {
 		return plan.TriggerCatalog{}, err
 	}
 	return plan.CatalogOf(files, func(file string) ([]byte, error) {
-		return os.ReadFile(filepath.Join(src, ".github", "workflows", file))
+		return provenance.ReadTreeFile(src, filepath.Join(".github", "workflows", file))
 	})
 }
 

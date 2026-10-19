@@ -8819,6 +8819,16 @@
           ?~  found  ~
           `head.u.found
     ::
+        [%x %ci-tag-commit @ @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  object=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.path))
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit (each oid:git @t))
+          ?~  found  ~
+          ?~  object  `[%| 'the tag target is not an object id']
+          `(commit-at:ci-changes objects.u.found u.object)
+    ::
         [%x %ci-push-changes @ @ @ @ ~]
       =/  name=@t  (ci-segment i.t.t.path)
       =/  ref=@t  (ci-segment i.t.t.t.path)

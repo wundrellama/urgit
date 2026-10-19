@@ -40,6 +40,7 @@ export function runEventSummary(event) {
   if (!event || !event.kind) return null
   switch (event.kind) {
     case 'push':
+      if (String(event.ref || '').startsWith('refs/tags/')) return { kind: 'push', label: 'Tag push', short: event.before ? 'tag update' : 'new tag' }
       return { kind: 'push', label: 'Push', short: event.before ? 'push' : 'push (new branch)' }
     case 'pull-request':
       return { kind: 'pull-request', label: 'Pull request', short: event.pull ? `PR #${event.pull.number} ${pullActivity(event.pull)}` : 'pull request' }
@@ -103,6 +104,7 @@ const refLabel = (ref) => (String(ref || '').startsWith('refs/tags/') ? `tag ${S
 function eventKind(e) {
   if (e.kind === 'pull-request') return e.pull ? `PR #${e.pull.number} ${pullActivity(e.pull)}` : 'pull request'
   if (e.kind === 'default-branch') return 'default branch'
+  if (String(e.ref || '').startsWith('refs/tags/')) return !e.after ? 'tag deletion' : !e.before ? 'new tag' : 'tag update'
   if (!e.before) return 'new branch'
   if (!e.after) return 'deletion'
   return 'push'
@@ -139,6 +141,7 @@ export function forgeEventRows(answer) {
       outcome,
       tone: outcomeTone(outcome),
       selection,
+      workflowProvenance: e.workflowProvenance || null,
       counts: selection ? selection.counts : null,
       runs: list(e.runs).map(text),
     }

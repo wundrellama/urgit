@@ -1,4 +1,7 @@
 import test from 'node:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { attemptRows } from './ci.js'
@@ -101,7 +104,8 @@ const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/
 
 test('the attempt row renders through the app\'s JSX: the badge is the status, the job cell keeps its two lines', { skip }, async () => {
   const { React, renderToStaticMarkup, createServer } = deps
-  const server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
+  const cacheDir = mkdtempSync(join(tmpdir(), 'urgit-ssr-'))
+  const server = await createServer({ configLoader: 'native', cacheDir, server: { middlewareMode: true, ws: false, hmr: false, watch: null }, appType: 'custom' })
   try {
     const { AttemptRow } = await server.ssrLoadModule('/src/components/CiTab.jsx')
     for (const [name, row] of rows) {
@@ -125,6 +129,7 @@ test('the attempt row renders through the app\'s JSX: the badge is the status, t
     assert.match(failed, /<button class="text-button">log<\/button>/, 'the log stays a button')
   } finally {
     await server.close()
+    rmSync(cacheDir, { recursive: true, force: true })
   }
 })
 

@@ -64,22 +64,25 @@
 ::    Delivery 1C adds automatic events: %urgit reports every persisted
 ::    ref move and pull request transition (%forge-events), which is
 ::    verified against %urgit's own state, recorded, and selected against
-::    the governing promoted baseline's trigger catalog (lib/ci-trigger),
+::    the applicable trigger catalog (lib/ci-trigger),
 ::    with changed paths %urgit computes from its objects; a selected
 ::    event becomes a run of mode %event, never landable, with no
 ::    credentials.  a required push whose push workflow the filters
 ::    exclude has absent required evidence and stays blocked.  the default
 ::    branch baseline's schedules are armed as Behn timers (lib/ci-cron)
 ::    and each due occurrence is admitted once, revalidated.
+::    Ordinary tags bind their own commit's YAML, resolving its catalog
+::    automatically. Promoted branch, PR and schedule authority stays
+::    unchanged. A tag run remains advisory and receives no credentials.
 ::
-::    persisted state is state-5 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-4, state-3, state-2, state-1, and
+::    persisted state is state-6 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-5, state-4, state-3, state-2, state-1, and
 ::    the three tagged %0 — is converted to it explicitly on load by
 ::    lib/ci-migrate, or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, ci-trigger, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -129,7 +132,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-5:ci
+=|  state-6:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -162,7 +165,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-5, or converted to it explicitly, or refused with its
+    ::  current state-6, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::  every active schedule's armed wake is set again (Delivery 1C): a
     ::  timer that survived is then set twice, and the armed-due and
@@ -176,7 +179,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-5")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-6")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
@@ -504,7 +507,22 @@
 ++  emit
   |=  cards=(list card)
   ^-  out
-  [cards state polls]
+  =/  retired  (sweep:ci-resolve state now.bowl)
+  =.  state  state.retired
+  =/  releases=(list card)
+    %+  turn  release.retired
+    |=  id=candidate-id:ci
+    =/  c=candidate:ci  (~(got by candidates) id)
+    (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.c (scratch-ref c)])
+  =/  clears=(list card)
+    %+  turn  ~(tap in mirrors.retired)
+    |=(repo=@t (urgit-git-poke /mirror-token/(scot %t repo) [%clear-write-token repo]))
+  =/  stops=(list card)
+    %+  turn  stop.retired
+    |=  id=attempt-id:ci
+    =/  a=attempt:ci  (~(got by attempts) id)
+    [%pass /deadline/(scot %uv id) %arvo %b %rest (add started.a resolve-deadline)]
+  [:(weld cards releases clears stops) state polls]
 ::
 ::  the live feed (D4).  for every watched repository: each candidate of
 ::  it whose record, or any of whose attempts, changed since the snapshot
@@ -931,19 +949,8 @@
           '; an event run keeps the policy it was admitted under: the next event runs under the new one'
         '; a manual run keeps the policy it was dispatched under: dispatch it again'
     ==
-  =.  attempts
-    %+  roll  attempts.c
-    |=  [id=attempt-id:ci acc=_attempts]
-    =/  found=(unit attempt:ci)  (~(get by acc) id)
-    ?~  found  acc
-    ?.  =(%running status.u.found)  acc
-    (~(put by acc) id u.found(status %cancelled, reason `reason, finished `now.bowl))
-  =.  daemons
-    %-  ~(run by daemons)
-    |=  d=daemon:ci
-    d(running (~(dif in running.d) (silt attempts.c)))
-  =.  candidates
-    (~(put by candidates) id.c c(status %skipped, verdict-reason `reason, updated now.bowl))
+  =.  state  (cancel:ci-resolve state c reason now.bowl)
+  =?  forge-events  (tagged-run c)  (note-tag-event c reason)
   state
 ::
 ::  a candidate whose bindings changed under it: running attempts are
@@ -1090,7 +1097,7 @@
   ?.  (~(has in repos.u.cap) repo)  %.n
   ?:  (gte now.bowl expires.u.cap)  %.n
   =/  running=(unit attempt:ci)  (~(get by attempts) attempt.u.cap)
-  ?&(?=(^ running) =(%running status.u.running))
+  ?&(?=(^ running) (active:ci-resolve state u.running))
 ::
 ++  urgit-poke
   |=  [=wire act=action:ci]
@@ -1285,6 +1292,12 @@
       ~|  'candidate was already superseded'
       !!
     =/  old=candidate:ci  u.found
+    ?:  ?&  (tagged-run old)
+            ?|  !=(generation.old (current-generation repo.old))
+                !=(incarnation.old (current-incarnation repo.old))
+            ==
+        ==
+      ~|('the admitted tag policy changed; this run cannot be approved' !!)
     =.  candidates
       %+  ~(put by candidates)  id.old
       %=  old
@@ -1308,7 +1321,13 @@
         ==
       =/  approved=candidate:ci
         fresh(candidate candidate.old, trigger trigger.old, selected selected.old)
+      =?  approved  (tagged-run old)  (twin:ci-resolve old fresh)
+      =?  state  (tagged-run old)  (approve:ci-resolve state old approved now.bowl)
       =.  candidates  (~(put by candidates) event-twin approved)
+      =?  forge-events  (tagged-run approved)
+        %+  note-tag-event
+          approved
+        (fall verdict-reason.approved 'tagged revision workflows selected after test approval')
       =.  audit  (record-audit actor.act 'approve-candidate' repo.old (scot %uv id.old))
       =/  source=card
         ?~  candidate.old
@@ -1576,6 +1595,8 @@
       %assign
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
     ?~  found  ~|('no such candidate' !!)
+    ?:  (tagged-run u.found)
+      ~|('tagged-revision runs use the scheduler and their admitted selection' !!)
     ?~  candidate.u.found  ~|('candidate is not materialized' !!)
     =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.act)
     ?~  runner  ~|('no such daemon' !!)
@@ -1735,6 +1756,10 @@
       %+  skip  ~(tap by shadows)
       |=([* sh=shadow:ci] =(repository.act repo.sh))
     =.  sandbox-requirements  (~(del by sandbox-requirements) repository.act)
+    =.  tag-runs
+      %-  malt
+      %+  skip  ~(tap by tag-runs)
+      |=([id=candidate-id:ci *] (~(has in gone) id))
     =.  resolve-mappings
       %-  malt
       %+  skip  ~(tap by resolve-mappings)
@@ -2489,21 +2514,21 @@
       [%set-ref repo.act (scratch-ref run) tip.act]
     =/  scheduled=out  schedule
     [[keep cards.scheduled] state.scheduled polls.scheduled]
-  ::
-      ::  what one of %urgit's events persisted (Delivery 1C; lib/ci-forge):
-      ::  each ref move and pull request transition is verified against
-      ::  %urgit's state, recorded, and selected against the governing
-      ::  catalog; a default-branch change registers the schedules again.
-      ::  the poke is local (src=our) and never a web or delegated action
-      ::
-      %forge-events  (admit-forge-events act)
+::
+    ::  what one of %urgit's events persisted (Delivery 1C; lib/ci-forge):
+    ::  each ref move and pull request transition is verified against
+    ::  %urgit's state, recorded, and selected against the governing
+    ::  catalog; a default-branch change registers the schedules again.
+    ::  the poke is local (src=our) and never a web or delegated action
+    ::
+    %forge-events  (admit-forge-events act)
   ::
       %materialize-run
     ~|  '%materialize-run is a poke on %urgit, not %urgit-ci'
     !!
-  ::
-      %run-ready  (run-ready id.act candidate.act)
-      %run-conflict  (run-conflict id.act reason.act)
+::
+    %run-ready  (run-ready id.act candidate.act)
+    %run-conflict  (run-conflict id.act reason.act)
   ==
 ::
 ::  the manual-run inventory of one ref (Delivery 1A): the workflows that
@@ -2762,21 +2787,12 @@
 ++  select-resolver
   |=  repo=@t
   ^-  (unit daemon-id:ci)
-  =/  able=(list daemon:ci)
-    %+  skim  ~(val by daemons)
-    |=  =daemon:ci
-    ?&  (live-daemon daemon)
-        resolver.daemon
-        ::  a runner that reports no capacity — one waiting for its
-        ::  history transition (INTEGRATION.md §11.15) — takes nothing
-        (gth capacity.daemon 0)
-        ?~(repos.daemon %.y (~(has in u.repos.daemon) repo))
-    ==
-  ?~  able  ~
-  =/  free=(list daemon:ci)
-    (skim `(list daemon:ci)`able |=(=daemon:ci (lth ~(wyt in running.daemon) capacity.daemon)))
-  ?^  free  `id.i.free
-  `id.i.able
+  (select-resolver-excluding repo ~)
+::
+++  select-resolver-excluding
+  |=  [repo=@t exclude=(set daemon-id:ci)]
+  ^-  (unit daemon-id:ci)
+  (choose:ci-resolve daemons now.bowl stale-after repo exclude)
 ::
 ::  a privileged attempt whose outcome cannot be known closes unknown
 ::  (rider 02): never re-offered, visible as needs-review
@@ -2919,7 +2935,16 @@
       (fall job.a '')
       trust.a
       ?-(sandbox.a %vm 'vm', %container 'container')
-      ?-(kind.a %plan 'plan', %resolve 'resolve', %job `@t`mode.c)
+      ?-  kind.a
+        %plan  'plan'
+        %resolve
+          ?-  (purpose:ci-resolve c)
+            %import  'resolve'
+            %tag  'resolve-tag'
+            %invalid  'resolve-invalid'
+          ==
+        %job  `@t`mode.c
+      ==
       profile.net
       (scope-text:ci-provenance destinations.net)
       ::  the event the run is for (Delivery 1A) and its payload's digest;
@@ -2940,7 +2965,10 @@
 ++  prerequisites-text
   |=  needs=(list need-entry:ci)
   ^-  @t
-  =/  sorted=(list need-entry:ci)  (sort needs |=([x=need-entry:ci y=need-entry:ci] (aor id.x id.y)))
+  =/  sorted=(list need-entry:ci)
+    %+  sort
+      needs
+    |=([x=need-entry:ci y=need-entry:ci] (aor id.x id.y))
   (join:ci-plan (turn sorted |=(n=need-entry:ci (rap 3 ~[id.n '=' (scot %uv attempt.n)]))) ',')
 ::
 ::  the event an attempt's job receives (Delivery 1A), as act is told it:
@@ -3024,7 +3052,7 @@
       ?.  =(daemon.assignment daemon)  %.n
       ?^  delivered.assignment  %.n
       =/  running=(unit attempt:ci)  (~(get by attempts) attempt.assignment)
-      ?&(?=(^ running) =(%running status.u.running))
+      ?&(?=(^ running) (active:ci-resolve state u.running))
     |=([a=assignment:ci b=assignment:ci] (lth assigned.a assigned.b))
   ?~  undelivered  (emit ~)
   =/  =assignment:ci  i.undelivered
@@ -3188,6 +3216,9 @@
 ++  schedule
   ^-  out
   =.  state  reoffer-unfetched
+  =/  tags=out  advance-tags
+  =.  state  state.tags
+  =.  polls  polls.tags
   ::  an untrusted candidate is planned only where the repository runs
   ::  restricted checks (D3); under the approval policy it waits
   ::
@@ -3199,12 +3230,13 @@
         !conflict.candidate
         ::  a resolve's record is no run (+resolver-record)
         !(resolver-record candidate)
+        ?|(!(tagged-run candidate) (ready:ci-tag candidate))
         ?|(=(%trusted trust.candidate) (restricted repo.candidate))
         ::  a required candidate runs only under a promoted baseline (P4
         ::  D5); a trial runs its own harness; a shadow like a trial
         ?|(!=(%required mode.candidate) ?=(^ baseline.candidate))
     ==
-  =|  cards=(list card)
+  =/  cards=(list card)  cards.tags
   =|  touched=(set daemon-id:ci)
   |-
   ?~  pending
@@ -3395,6 +3427,10 @@
     %+  close-unknown
       u.running
     'daemon stopped polling before it fetched a privileged assignment; the approval is spent: needs review'
+  ::  An undelivered automatic resolve has no uncertain execution to
+  ::  replay. Reoffer even without a replacement now; next preserves it.
+  ?:  &(?=(%resolve kind.u.running) =(%tag (purpose:ci-resolve u.found)))
+    (reoffer-attempt u.running 'daemon stopped polling before it fetched the resolver assignment; re-offered')
   ?.  %:  other-daemon-exists
         repo.u.found
         (attempt-runs-on u.found u.running)
@@ -3438,14 +3474,7 @@
 ++  reoffer-attempt
   |=  [=attempt:ci reason=@t]
   ^-  _state
-  =/  closed=attempt:ci
-    attempt(status %reoffered, reason `reason, finished `now.bowl)
-  =.  attempts  (~(put by attempts) id.attempt closed)
-  =.  daemons
-    =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.attempt)
-    ?~  runner  daemons
-    (~(put by daemons) daemon.attempt u.runner(running (~(del in running.u.runner) id.attempt)))
-  state
+  (reoffer:ci-resolve state attempt reason now.bowl)
 ::
 ::  a running attempt at its deadline (CI-DELIVERY-1.1 c): offered again
 ::  once on another daemon when one exists; else — or after that one
@@ -3477,6 +3506,8 @@
     =/  exclude=(set daemon-id:ci)
       %-  ~(put in (excluded-daemons u.found kind.attempt workflow.attempt job.attempt))
       daemon.attempt
+    ?:  &(?=(%resolve kind.attempt) =(%tag (purpose:ci-resolve u.found)))
+      ?=(^ (select-resolver-excluding repo.u.found exclude))
     %:  other-daemon-exists
       repo.u.found
       (attempt-runs-on u.found attempt)
@@ -4009,7 +4040,7 @@
     =/  nonce=@uv  (epoch-nonce:ci-recovery epoch (fresh-nonce [%assign id.assignment]))
     =/  sig-expiry=@da  (add expiry ~m1)
     %-  pairs:enjs:format
-    :~  ['version' (numb:enjs:format manifest-version:ci-provenance)]
+    :~  ['version' (numb:enjs:format (manifest-version-for:ci-provenance manifest))]
         ['recipient' s+(scot %uv daemon.assignment)]
         ['attempt' s+(scot %uv attempt.assignment)]
         ['operation' s+'assign']
@@ -4029,7 +4060,9 @@
         ['nonce' s+(scot %uv nonce.grant)]
         ['sig' s+(hex-bytes sig.grant 64)]
     ==
-  =/  base=(unit baseline:ci)  (~(get by baselines) [repo.candidate ref.candidate])
+  =/  base=(unit baseline:ci)
+    ?:  (tagged-run candidate)  ~
+    (~(get by baselines) [repo.candidate ref.candidate])
   =/  lock-json=json
     ?~  lock.candidate  ~
     =/  found=(unit lock:ci)  (~(get by locks) u.lock.candidate)
@@ -4092,7 +4125,12 @@
       ::  serializer, so the object always carries what the signature binds
       ['manifest' (manifest-json:ci-provenance manifest)]
       ['harness-paths' [%a ?~(base ~ (turn harness-paths.u.base |=(p=@t s+p)))]]
-      ['workflows-oid' s+?:(=(%trial mode.candidate) oid (oid-hex:ci-provenance baseline.candidate))]
+      ::  An automatic resolver has a captured source, not a promoted baseline.
+      :-  'workflows-oid'
+      :-  %s
+      ?:  |(=(%trial mode.candidate) =('resolve-tag' mode.manifest))
+        oid
+      (oid-hex:ci-provenance baseline.candidate)
       ['baseline-ref' ?~(base ~ s+(baseline-ref repo.candidate ref.candidate))]
       ['lock' lock-json]
       ['downloads' downloads-json]
@@ -4524,7 +4562,9 @@
   ^-  @t
   ?~  outcomes
     (rap 3 ~['no workflow of the governing baseline triggers on ' event])
-  (rap 3 ~['no workflow selected (' (crip (a-co:co (lent outcomes))) ' declare ' event '; see each reason)'])
+  %+  rap
+    3
+  ~['no workflow selected (' (crip (a-co:co (lent outcomes))) ' declare ' event '; see each reason)']
 ::
 ::  what a push's selection compared
 ::
@@ -4533,7 +4573,10 @@
   ^-  @t
   %+  rap  3
   :~  'push to '  ref  ': '
-      ?~  old  (rap 3 ~['a new ref at ' (oid-text:git-codec new) ', against the commits it brought'])
+      ?~  old
+        %+  rap
+          3
+        ~['a new ref at ' (oid-text:git-codec new) ', against the commits it brought']
       (rap 3 ~[(oid-text:git-codec u.old) '..' (oid-text:git-codec new) ' (two-dot)'])
       (evidence-text changes)
   ==
@@ -4657,10 +4700,204 @@
 ::  one push: recorded with its outcome, and run when the governing
 ::  catalog selects a workflow for it
 ::
+::  Tagged-revision authority is explicit. Historical promoted tag runs
+::  do not acquire it on upgrade.
+++  tagged-run
+  |=  c=candidate:ci
+  ^-  ?
+  (~(has by tag-runs) id.c)
+::
+++  tag-commit
+  |=  [repo=@t object=oid:git]
+  ^-  (each oid:git @t)
+  =/  raw=(unit *)
+    (urgit-peek /ci-tag-commit/(scot %t repo)/(scot %t (oid-text:git-codec object)))
+  ?~  raw  [%| '%urgit cannot be read for the tag target']
+  =/  got=(each (unit (each oid:git @t)) tang)
+    (mule |.(;;((unit (each oid:git @t)) u.raw)))
+  ?.  ?=(%& -.got)  [%| '%urgit returned an unreadable tag target']
+  ?~  p.got  [%| 'the tag repository is unavailable']
+  u.p.got
+::
+::  Verify the ref before this arm. From admission onward, use only the
+::  captured commit, actor, event payload and exact resolver attempt.
+++  admit-tag
+  |=  [e=forge-event:ci object=oid:git]
+  ^-  [(list card) _state]
+  =/  id=candidate-id:ci  (sham [%ci-event-run id.e])
+  ?:  (~(has by candidates) id)  [~ state]
+  =/  peeled=(each oid:git @t)  (tag-commit repo.e object)
+  ?:  ?=(%| -.peeled)
+    [~ state(forge-events (record-forge-event e(outcome (rap 3 ~['refused: ' p.peeled]))))]
+  =/  writable=(unit ?)  (can-write repo.e actor.e)
+  ?~  writable
+    [~ state(forge-events (record-forge-event e(outcome 'refused: the tag actor cannot be classified')))]
+  =/  waiting=@ud
+    %-  lent
+    %+  skim  ~(val by candidates)
+    |=  c=candidate:ci
+    ?&((tagged-run c) =(repo.e repo.c) =(%pending status.c) ?=(~ selected.c))
+  ?:  (gte waiting max-forge-events)
+    [~ state(forge-events (record-forge-event e(outcome 'refused: too many tag resolutions are pending')))]
+  =/  payload=@t
+    %:  push-event-payload:ci-trigger
+      repo.e  ref.e  before.e  p.peeled  actor.e  (fall (default-ref repo.e) ~)
+    ==
+  =/  event=run-event:ci
+    [id.e %push ref.e before.e after.e ~ ~ actor.e route.e at.e payload]
+  =/  run=candidate:ci
+    %:  event-candidate
+      id  repo.e  ref.e  p.peeled  p.peeled  actor.e  route.e
+      ?:(u.writable %trusted %untrusted)  ~  event  *event-selection:ci  `p.peeled
+    ==
+  =.  run
+    run(baseline `p.peeled, lock ~, selected ~, verdict-reason `'pending: resolving tagged revision workflows')
+  =.  candidates  (~(put by candidates) id run)
+  =.  tag-runs  (~(put by tag-runs) id ~)
+  =.  forge-events
+    (record-forge-event e(outcome 'pending: resolving tagged revision workflows', runs ~[id]))
+  =/  cached=(unit lock:ci)  (cached-lock:ci-tag locks repo.e p.peeled)
+  =?  state  ?=(^ cached)  (bind-tag-lock id u.cached)
+  =.  audit
+    %:  record-audit
+      actor.e
+      'tag-event-admitted'
+      repo.e
+      (rap 3 ~[ref.e ' at ' (oid-text:git-codec p.peeled)])
+    ==
+  ::  Keep the source reachable during resolution, including ref deletion.
+  ?.  =(%pending status:(~(got by candidates) id))  [~ state]
+  :_  state
+  ~[(urgit-git-poke /scratch/(scot %uv id) [%set-ref repo.e (scratch-ref run) p.peeled])]
+::
+++  note-tag-event
+  |=  [c=candidate:ci why=@t]
+  ^-  _forge-events
+  ?.  ?=(%event -.trigger.c)  forge-events
+  =/  found=(unit forge-event:ci)  (~(get by forge-events) id.run-event.trigger.c)
+  ?~  found  forge-events
+  %-  record-forge-event
+  %=  u.found
+    outcome  why
+    selected  selected.c
+    runs  ?:(?=(^ (find ~[id.c] runs.u.found)) runs.u.found (snoc runs.u.found id.c))
+  ==
+::
+++  fail-tag
+  |=  [c=candidate:ci why=@t]
+  ^-  _state
+  =/  reason=@t  (rap 3 ~['refused: tagged revision resolution: ' why])
+  =.  candidates
+    (~(put by candidates) id.c c(status %failed, verdict-reason `reason, updated now.bowl))
+  =.  forge-events  (note-tag-event c reason)
+  state
+::
+++  bind-tag-lock
+  |=  [id=candidate-id:ci l=lock:ci]
+  ^-  _state
+  =/  c=candidate:ci  (~(got by candidates) id)
+  ?.  ?&((tagged-run c) =(%pending status.c) ?=(~ selected.c))  state
+  =/  bound=(each candidate:ci @t)  (bind-lock:ci-tag c l)
+  ?:  ?=(%| -.bound)  (fail-tag c p.bound)
+  =/  next=candidate:ci  p.bound(updated now.bowl)
+  =.  candidates  (~(put by candidates) id next)
+  =/  why=@t
+    ?^  verdict-reason.next  u.verdict-reason.next
+    (rap 3 ~['tagged revision workflows selected: run ' (scot %uv id)])
+  =.  forge-events  (note-tag-event next why)
+  state
+::
+::  Only the lock returned by the captured attempt can complete admission.
+::  A resolved but excluded/refused tag has no job to release its source.
+++  tag-resolve-releases
+  |=  attempt=attempt-id:ci
+  ^-  (list card)
+  %+  murn  ~(tap by tag-runs)
+  |=  [id=candidate-id:ci resolver=(unit attempt-id:ci)]
+  ^-  (unit card)
+  ?.  =(`attempt resolver)  ~
+  =/  c=(unit candidate:ci)  (~(get by candidates) id)
+  ?~  c  ~
+  ?:  =(%pending status.u.c)  ~
+  `(urgit-git-poke /release/(scot %uv id) [%delete-ref repo.u.c (scratch-ref u.c)])
+::
+++  complete-tag-resolve
+  |=  [attempt=attempt-id:ci l=lock:ci]
+  ^-  _state
+  %+  roll  ~(tap by tag-runs)
+  |=  [[id=candidate-id:ci resolver=(unit attempt-id:ci)] acc=_state]
+  =.  state  acc
+  ?.  (accepts:ci-resolve state id attempt)  state
+  (bind-tag-lock id l)
+::
+::  A missing resolver waits durably. Its next poll/enrollment resumes the
+::  same revision. Failure closes the run explicitly, without a new input.
+++  advance-tags
+  ^-  out
+  =/  pending=(list candidate-id:ci)
+    %+  murn  ~(val by candidates)
+    |=  c=candidate:ci
+    ?:(?&((tagged-run c) (waiting:ci-resolve c)) `id.c ~)
+  =|  cards=(list card)
+  |-
+  ?~  pending  (emit cards)
+  ::  Read current bindings: a preceding twin may have rebound this run.
+  =/  c=candidate:ci  (~(got by candidates) i.pending)
+  =/  decision  (next:ci-resolve state c)
+  ?:  ?=(%running -.decision)  $(pending t.pending)
+  ?:  ?=(%failed -.decision)
+    =.  state  (fail-tag c why.decision)
+    %=  $
+      pending  t.pending
+      cards  %+  snoc
+               cards
+             (urgit-git-poke /release/(scot %uv id.c) [%delete-ref repo.c (scratch-ref c)])
+    ==
+  =/  chosen=(unit daemon-id:ci)
+    (select-resolver-excluding repo.c exclude.decision)
+  ?~  chosen
+    =/  why=@t
+      ?~  record.decision
+        'pending: tagged revision waits for a live resolver-capable runner'
+      'pending: tagged revision resolver was re-offered; waiting for another eligible runner'
+    =.  candidates  (note-wait c why)
+    =.  forge-events  (note-tag-event c why)
+    $(pending t.pending)
+  ::  Reuse the synthetic record on reoffer. Its history/exclusions and
+  ::  source retention stay intact. The event marker authenticates purpose.
+  =/  rid=candidate-id:ci
+    (fall record.decision (sham [%ci-tag-resolve id.c]))
+  =/  record=candidate:ci
+    ?^  record.decision  (~(got by candidates) rid)
+    =/  fresh=candidate:ci
+      %:  fresh-candidate
+        rid  repo.c  'refs/ci/resolve'  head.c  head.c
+        actor.c  via.c  trust.c  ~  %shadow  ~
+      ==
+    %=  fresh
+      candidate  `head.c
+      baseline  ~
+      lock  ~
+      trigger  trigger.c
+      generation  generation.c
+      incarnation  incarnation.c
+    ==
+  =.  candidates  (~(put by candidates) rid record)
+  =^  made  state  (create-attempt rid u.chosen %resolve ~ ~ resolve-deadline ~)
+  =.  state  (bind-attempt:ci-resolve state c -.made)
+  =/  restores=(list card)
+    ?^  record.decision  ~
+    ~[(urgit-git-poke /scratch/(scot %uv rid) [%set-ref repo.c (scratch-ref record) head.c])]
+  =/  delivered=out  (deliver u.chosen)
+  =.  state  state.delivered
+  =.  polls  polls.delivered
+  $(pending t.pending, cards :(weld cards restores ~[timer.made] cards.delivered))
+::
 ++  admit-push
   |=  [repo=@t u=ref-update:ci actor=@p route=@t at=@da]
   ^-  [(list card) _state]
   ?:  (~(has by event-ids) id.u)  [~ state]
+  ?:  (~(has by tag-runs) (sham [%ci-event-run id.u]))  [~ state]
   =.  event-ids  (remember-id id.u)
   =/  base=forge-event:ci
     [id.u repo %push ref.u old.u new.u ~ actor route at now.bowl '' ~ ~]
@@ -4678,6 +4915,7 @@
           'the required candidate before it moved; nothing runs again'
       ==
     [~ state(forge-events (record-forge-event base(outcome why, runs ?~(landed ~ ~[u.landed]))))]
+  ?:  (tag-ref:ci-tag ref.u)  (admit-tag base u.new.u)
   =/  gov  (governing repo ref.u)
   ?:  ?=(%| -.gov)  [~ state(forge-events (record-forge-event base(outcome p.gov)))]
   =/  cat=trigger-catalog:ci  catalog.p.gov
@@ -4704,7 +4942,13 @@
   =/  why=@t
     (rap 3 ~[(crip (a-co:co (lent chosen))) ' workflow(s) selected: run ' (scot %uv id)])
   =.  forge-events  (record-forge-event base(outcome why, selected `sel, runs ~[id]))
-  =.  audit  (record-audit actor 'event-run' repo (rap 3 ~['push to ' ref.u ' → run ' (scot %uv id)]))
+  =.  audit
+    %:  record-audit
+      actor
+      'event-run'
+      repo
+      (rap 3 ~['push to ' ref.u ' → run ' (scot %uv id)])
+    ==
   :_  state
   ~[(urgit-git-poke /scratch/(scot %uv id) [%set-ref repo (scratch-ref run) u.new.u])]
 ::
@@ -4717,7 +4961,8 @@
   ^-  (each ~ @t)
   =/  found=(unit (unit native-pull:git))  (pull-record repo number.p)
   ?~  found  [%| '%urgit cannot be read, so the pull request cannot be checked']
-  ?~  u.found  [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is not in the repository'])]
+  ?~  u.found
+    [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is not in the repository'])]
   =/  pr=native-pull:git  u.u.found
   =/  want=?(%open %merged %closed)
     ?:  =('closed' action.p)  ?:(merged.p %merged %closed)
@@ -5038,8 +5283,10 @@
   =/  sel=event-selection:ci
     :+  (rap 3 ~['schedule ' cron.def.e ' (' zone-text ') due ' (iso-utc:ci-cron due)])
       :~  :*  workflow  name.e  %selected
-              (rap 3 ~['due ' (iso-utc:ci-cron due) ' (' (local-text:ci-cron zone.e due) ')' late-text])
-      ==  ==
+              %+  rap
+                3
+              ~['due ' (iso-utc:ci-cron due) ' (' (local-text:ci-cron zone.e due) ')' late-text]
+          ==  ==
     ~
   =/  id=candidate-id:ci  (sham [%ci-occurrence-run occurrence])
   =/  run=candidate:ci
@@ -5493,7 +5740,8 @@
   =/  recorded=(unit (list step-output:ci))
     (record-output:ci-event step-outputs.u.found event redacted)
   ?~  recorded
-    (emit (give-error eyre-id 413 'the attempt\'s step outputs exceed their bound (256 outputs, 1 MiB)'))
+    %-  emit
+    (give-error eyre-id 413 'the attempt\'s step outputs exceed their bound (256 outputs, 1 MiB)')
   =/  next=attempt:ci
     %=  u.found
       events  +(events.u.found)
@@ -5710,7 +5958,7 @@
   =/  size=(unit (unit @ud))  (number-at 'size' u.jon)
   ?.  ?&(?=(^ size) ?=(^ u.size))
     (emit (give-error eyre-id 400 'size must be a natural number'))
-  ?.  =(%running status.u.found)
+  ?.  (active:ci-resolve state u.found)
     (emit (give-error eyre-id 409 'attempt is closed'))
   =/  signed=(unit signed-request:git-storage)
     %:  sign-put:ci-storage
@@ -5911,6 +6159,27 @@
     %wait  reason.d
   ==
 ::
+++  workflow-provenance-json
+  |=  c=candidate:ci
+  ^-  json
+  ?.  (tagged-run c)  ~
+  =/  resolution=@t
+    ?^  selected.c  'resolved'
+    ?:  =(%pending status.c)  'pending'
+    ?:  =(%skipped status.c)
+      ?:  =(`'superseded by approval' verdict-reason.c)  'superseded'
+      'cancelled'
+    'refused'
+  =/  resolver=(unit attempt-id:ci)  (~(got by tag-runs) id.c)
+  %-  pairs:enjs:format
+  :~  ['authority' s+'tagged-revision']
+      ['source' s+(oid-text:git-codec head.c)]
+      ['revision' ?~(baseline.c ~ s+(oid-text:git-codec u.baseline.c))]
+      ['lock' ?~(lock.c ~ s+(hex-bytes:ci-provenance u.lock.c 32))]
+      ['resolution' s+resolution]
+      ['resolverAttempt' ?~(resolver ~ s+(scot %uv u.resolver))]
+  ==
+::
 ++  candidate-json
   |=  =candidate:ci
   ^-  json
@@ -5942,7 +6211,11 @@
       ::  settle records
       ::
       =/  known  (standings candidate)
-      =/  entries=(map key:ci-plan need-entry:ci)  (need-entries candidate newest.known standings.known)
+      =/  entries=(map key:ci-plan need-entry:ci)
+        %^  need-entries
+          candidate
+          newest.known
+        standings.known
       =/  context=run-context:ci-plan  (run-context candidate)
       :-  %a
       %+  turn  u.plan.candidate
@@ -5950,7 +6223,14 @@
       =/  live=json
         ?:  (~(has by standings.known) [workflow.job id.job])  ~
         ?.  =(%pending status.candidate)  ~
-        =/  d=decision:ci-plan  (decide:ci-plan job u.plan.candidate standings.known entries context)
+        =/  d=decision:ci-plan
+          %:  decide:ci-plan
+            job
+            u.plan.candidate
+            standings.known
+            entries
+            context
+          ==
         (pairs:enjs:format ~[['verdict' s+-.d] ['reason' s+(decision-reason d)]])
       %-  pairs:enjs:format
       :~  ['id' s+id.job]
@@ -5974,6 +6254,8 @@
       ==
       ['created' (numb:enjs:format (unix-seconds created.candidate))]
       ['updated' (numb:enjs:format (unix-seconds updated.candidate))]
+      ['workflowAuthority' s+?:((tagged-run candidate) 'tagged-revision' 'promoted-baseline')]
+      ['workflowProvenance' (workflow-provenance-json candidate)]
       ['mode' s+mode.candidate]
       ['generation' (numb:enjs:format generation.candidate)]
       ['currentGeneration' (numb:enjs:format (current-generation repo.candidate))]
@@ -6034,7 +6316,8 @@
   |=  c=candidate:ci
   ^-  json
   =/  common=(list [@t json])
-    :~  ['actor' s+(scot %p actor.c)]
+    :~  ['workflowAuthority' s+?:((tagged-run c) 'tagged-revision' 'promoted-baseline')]
+        ['actor' s+(scot %p actor.c)]
         ['ref' s+ref.c]
         ['source' s+(oid-text:git-codec head.c)]
         ['revision' ?~(baseline.c ~ s+(oid-text:git-codec u.baseline.c))]
@@ -6253,6 +6536,10 @@
       ['at' (numb:enjs:format (unix-seconds at.e))]
       ['received' (numb:enjs:format (unix-seconds received.e))]
       ['outcome' s+outcome.e]
+      :-  'workflowProvenance'
+      ?~  runs.e  ~
+      =/  run=(unit candidate:ci)  (~(get by candidates) (rear runs.e))
+      ?~(run ~ (workflow-provenance-json u.run))
       ['selection' (selection-json selected.e)]
       ['runs' [%a (turn runs.e |=(id=candidate-id:ci s+(scot %uv id)))]]
   ==
@@ -6622,8 +6909,8 @@
     (emit (give-error eyre-id 404 'no such attempt'))
   ?.  (attempt-authorized req u.found)
     (emit (give-error eyre-id 401 'attempt authentication required'))
-  ?.  =(%running status.u.found)
-    (emit (give-error eyre-id 409 'attempt is closed'))
+  ?.  (active:ci-resolve state u.found)
+    (emit (give-error eyre-id 409 'attempt is closed or has no live tag consumer'))
   ?.  ?=(%resolve kind.u.found)
     (emit (give-error eyre-id 409 'attempt is not a resolve attempt'))
   =/  jon=(unit json)  (body-json req)
@@ -6775,6 +7062,8 @@
     %-  pairs:enjs:format
     ~[['error' s+p.verdict] ['attempt' (attempt-json (~(got by attempts) id.u.found))]]
   =.  locks  (~(put by locks) digest.p.verdict p.verdict)
+  =.  state  (complete-tag-resolve id.u.found p.verdict)
+  =.  clear  (weld clear (tag-resolve-releases id.u.found))
   =.  audit
     %:  record-audit
       our.bowl
@@ -7947,6 +8236,7 @@
     ?:  =(%trial mode.candidate)  oid
     (fall baseline.candidate oid)
   =/  wf-repo=@t
+    ?:  (tagged-run candidate)  repo.candidate
     =/  base=(unit baseline:ci)  (~(get by baselines) [repo.candidate ref.candidate])
     ?~  base  repo.candidate
     ?:(=(%trial mode.candidate) repo.candidate (fall policy-repo.u.base repo.candidate))

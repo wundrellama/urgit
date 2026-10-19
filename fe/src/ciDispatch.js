@@ -209,6 +209,7 @@ export function eventRows(candidate) {
     branch: branchLabel(event.ref),
     source: String(event.source || ''),
     revision: String(event.revision || ''),
+    workflowAuthority: String(event.workflowAuthority || 'promoted-baseline'),
     workflow: String(event.workflow || ''),
     workflowName: String(event.workflowName || event.workflow || ''),
     request: String(event.request || ''),

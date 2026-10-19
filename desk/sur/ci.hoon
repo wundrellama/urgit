@@ -940,6 +940,57 @@
       schedules=(map schedule-key schedule-entry)
   ==
 ::
++$  state-6
+  $:  %6
+      candidates=(map candidate-id candidate)
+      daemons=(map daemon-id daemon)
+      assignments=(map assignment-id assignment)
+      attempts=(map attempt-id attempt)
+      ci-protected=(set [repo=@t ref=@t])
+      policies=(map @t untrusted-policy)
+      credentials=(map [repo=@t name=@t] credential)
+      signing=(unit signing)
+      ship-keys=(unit ship-keys)
+      ::  P4
+      incarnations=(map @t @uv)
+      generations=(map @t @ud)
+      baselines=(map [repo=@t ref=@t] baseline)
+      locks=(map @ux lock)
+      roles=(map @t (list binding))
+      environments=(map [repo=@t name=@t] environment)
+      approvals=(map @uv approval)
+      overrides=(map @uv override)
+      network-policies=(map @t (list network-policy))
+      read-capabilities=(map @ read-capability)
+      shadows=(map @uv shadow)
+      comparisons=(map @uv comparison)
+      audit=(list audit-entry)
+      sandbox-requirements=(map @t sandbox-need)
+      ::  the write tokens a resolve attempt's mirrors hold until it closes
+      mirror-tokens=(map attempt-id (set @t))
+      ::  the operator's explicit import mappings of a resolve (rider 03),
+      ::  by the synthetic resolve candidate: [from to] prefixes
+      resolve-mappings=(map candidate-id (list [from=@t to=@t]))
+      ::  a repository's harness paths (D5): what a promotion records on
+      ::  the baseline it creates; ~ means the default, .github/
+      harness-paths=(map @t (list @t))
+      ::  the legacy recovery (legacy-recovery UI ruling 01): each
+      ::  runner's latest retention report, and the operator's recovery
+      ::  commands by id, never pruned
+      recovery-reports=(map daemon-id recovery-report)
+      recovery-commands=(map @uv recovery-command)
+      ::  state-5 (Delivery 1C): the forge events recorded per repository
+      ::  (newest kept), the ids of every event admitted (the replay
+      ::  guard, newest kept), and the armed schedules
+      forge-events=(map @uv forge-event)
+      event-ids=(map @uv @da)
+      schedules=(map schedule-key schedule-entry)
+      ::  Tagged-revision runs and their exact resolver attempts. A null
+      ::  attempt waits for a resolver. Completed runs keep this provenance.
+      tag-runs=(map candidate-id (unit attempt-id))
+  ==
+
+::
 ::  the event envelope: one `act --json` line after validation
 ::
 +$  command

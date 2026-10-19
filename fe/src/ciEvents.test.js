@@ -49,7 +49,7 @@ test('a required run with an excluded workflow is blocked: its evidence is absen
 
 test('recorded source events: what moved, how it arrived, what the selection decided and the runs it made', () => {
   const rows = forgeEventRows(eventsAnswer)
-  assert.deepEqual(rows.map((r) => r.kindText), ['push', 'new branch', 'deletion', 'PR #7 opened', 'PR #7 closed (merged)', 'default branch'])
+  assert.deepEqual(rows.map((r) => r.kindText), ['push', 'new branch', 'tag deletion', 'PR #7 opened', 'PR #7 closed (merged)', 'default branch'])
   assert.deepEqual(rows.map((r) => r.tone), ['good', 'quiet', 'quiet', 'good', 'bad', 'quiet'])
   const [push, created] = rows
   assert.equal(push.branch, 'main')

@@ -4,7 +4,7 @@ import { approveHint, attemptRows, candidateRow, candidateStatusLabel, ciActions
 import { attemptReason, renderAttemptReason, renderJobDetails, renderWaitingJobs, waitingRows } from '../ciJobs'
 import { eventRows } from '../ciDispatch'
 import { pullHref, selectionModel } from '../ciEvents'
-import { renderSelection } from '../ciEventsView'
+import { renderSelection, renderTagProvenance } from '../ciEventsView'
 import { applyCandidateFactToPage, feedPip, mergeCandidateFact, mergeRunnerCount } from '../ciLive'
 import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
@@ -162,15 +162,16 @@ function LogView({ attempt, onClose }) {
 // identifiers in details. Text only. An automatic run (Delivery 1C) adds
 // its activity, how it arrived, its tips, its native pull request (opened
 // by number in the Pull requests tab) or its occurrence.
-function EventFacts({ candidate, repo, onOpenPull }) {
+export function EventFacts({ candidate, repo, onOpenPull }) {
   const e = eventRows(candidate)
   if (!e) return null
   return (
     <div className="ci-event" data-part="event">
+      {renderTagProvenance(createElement, candidate.workflowProvenance)}
       <dl className="ci-facts">
         <div><dt>Event</dt><dd><strong>{e.label}</strong> <small className="quiet">{e.name}{e.activity ? ` · ${e.activity}` : ''}</small></dd></div>
         {e.workflow && <div><dt>Workflow</dt><dd>{e.workflowName} <small className="quiet">{e.workflow}{e.revision ? ` at ${shortOid(e.revision)}` : ''}</small></dd></div>}
-        {!e.workflow && e.revision && <div><dt>Workflows</dt><dd><small className="quiet">from the promoted baseline at <code>{shortOid(e.revision)}</code></small></dd></div>}
+        {!e.workflow && e.revision && e.workflowAuthority !== 'tagged-revision' && <div><dt>Workflows</dt><dd><small className="quiet">from the promoted baseline at <code>{shortOid(e.revision)}</code></small></dd></div>}
         <div><dt>Triggered by</dt><dd>{e.triggeredBy || e.actor}{e.route && <small className="quiet"> · {e.route}</small>}</dd></div>
         <div><dt>Source</dt><dd>{e.branch} <code>{shortOid(e.source)}</code></dd></div>
         {e.kind === 'push' && <div><dt>Moved</dt><dd><code>{e.before ? shortOid(e.before) : 'new ref'}</code> → <code>{shortOid(e.after)}</code></dd></div>}

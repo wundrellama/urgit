@@ -157,7 +157,7 @@ Evidence levels are kept apart: **done (code)** is implemented with Go/frontend 
 | Source-correct changed paths (two-dot, new ref, merge-base three-dot with union, rename, mode, file↔directory, bounds) | static | `lib/ci-changes.hoon`; `gen/ci-changes-vector.hoon` over real canonical objects (UNRUN) |
 | Every persisted write reported once; replay one id, repeated updates distinct; scratch refs and mirrors never events | static + source contract | `lib/ci-forge.hoon`; `gen/ci-forge-vector.hoon` (UNRUN); `fe/src/ciAdmission.test.js`, `protectedRefs.test.js` census (run, green) |
 | Native PR `synchronize` (local source branch move; the opening peer's new head) | static + source contract | `follow-source-branches`/`open-pull-from` (lib/ci-forge), the three %urgit wrappers, `finish-pull`; vector cases and `ciAdmission.test.js` |
-| Resolution and policy maintenance never start a run (resolver record never planned/reset/re-run) | static + source contract | `resolver-record` in `schedule`, `bump-generation`, `rerun-candidate`; mutants M6/M9 killed |
+| Resolver records never execute workflows or get planned/reset/re-run. Tagged resolution completion resumes an already admitted event run | static + source contract | `resolver-record` in `schedule`, `bump-generation`, `rerun-candidate`; mutants M6/M9 killed |
 | A filtered required workflow is absent evidence: blocked, never a pass | static | `settle` (absent-evidence); native mutant H7 is for the live recipe |
 | Cron grammar, five-minute minimum, day rule, leap day; IANA zones from pinned Go 1.27.1 tzdata over 2020–2040; DST skipped/repeated rules | done (code); static on the ship | `plan/cron_test.go` (minute oracle, hand DST cases), `zone_test.go` (pinned SHA, Go's engine as oracle); the ship's calendar on the same pinned tables and Go-computed occurrences (`gen/ci-cron-vector`, UNRUN) |
 | Durable, replay-safe due admission; late once, missed intervals, no backlog; re-validation at due; re-arm on load | static | `lib/ci-cron.hoon on-wake`; `schedule-wake`; cron vector wake cases (UNRUN); live scenario in PARENT-ACCEPTANCE (UNRUN) |
@@ -167,3 +167,20 @@ Evidence levels are kept apart: **done (code)** is implemented with Go/frontend 
 
 Native limits disclosed: no `pull_request_target`; activity types beyond opened/closed/reopened/synchronize have no native source and run nothing; a deletion runs no workflow (`delete` is not implemented); a repeated local time runs at its first instance; schedules beyond 2040-01-01 refuse until re-resolved with a newer compiler; event runs never land and never satisfy required checks; changed-path evidence beyond the bounds selects, labelled.
 
+## Tagged-revision workflows
+
+| Behavior | Source and private checks | Remaining qualification |
+|---|---|---|
+| Ordinary tags use their own commit's YAML without promotion. Lightweight and bounded annotated commit targets reach the real forge admission path | `ci-changes`, `ci-tag`, `urgit-ci`, source regression checks and authored `ci-tag-vector` | Native tag creation and annotated-tag cases |
+| Missing catalogs start automatic resolution; external inputs refuse until automatic input policy is defined. Exact attempt, revision and lock remain bound across deferral and replay | Controller source checks, real Go resolver/compiler fixture, signed assignment tamper checks | Native delayed success/failure, ref movement, duplicate event/completion and restart |
+| Tag/path filter behavior, advisory event mode, no credentials, no landing or required-check credit | Existing selectors and privilege guards, source checks, Hoon vectors and Go wire tests | Native positive and refusal cases, VM execution |
+| Visible tagged authority, pending/resolved/refused provenance and named selections | Frontend fixtures and real JSX/React server rendering | Browser acceptance |
+| State-5 preserves all fields into state-6. Old tag runs keep promoted authority | Exact frozen mold hash, populated preservation and reload vectors, semantic analysis | Native vectors and populated live upgrade |
+
+These are source-only results. No new ship, VM, browser or deployed upgrade acceptance is claimed. Required, branch, pull request, manual and schedule workflow authority remains promoted. Keep numbered release tags fixed and use a moving branch for latest. Each admitted run retains its exact revision.
+
+| Correction | Implemented boundary | Qualification still required |
+|---|---|---|
+| F1 automatic resolver fetch authority | Signed `resolve-tag` purpose in domain 6; old runners reject it. All external fetch consumers refuse without an automatic input grant. Confined metadata and sanitized controller checkout. Explicit imports and exact-revision cached locks preserved. | Automatic destination/input policy is unresolved. Real transport and emitted Hoon/Go interoperability; no general automatic external-dependency support is claimed. |
+| F2 resolver reoffer | Shared production transitions preserve the synthetic record, source, exclusions, current binding and approved twins; late completion refuses. | Native two-runner revoke/unfetched and delayed replacement transitions (`ci-resolve-vector` plus real API). |
+| F3 orphan cancellation | Shared live-consumer guards and retirement remove new delivery/capabilities and bookkeeping, retaining history/tombstones and live twins. | Native cancellation/late inventory and lock requests; already delivered operations and previously issued URLs are not recalled. |

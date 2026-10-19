@@ -16,6 +16,19 @@ import (
 // A verifier of another version fails closed; there is no shim.
 const ManifestVersion = 5
 
+// AutomaticResolveVersion is a distinct authorization domain for the newly
+// unprivileged resolver. Older runners reject it before dispatch instead of
+// interpreting the new purpose with their unrestricted version-5 fetcher.
+// Existing jobs and explicit import obligations keep version 5 unchanged.
+const AutomaticResolveVersion = 6
+
+func ManifestVersionFor(m Manifest) int {
+	if m.Mode == "resolve-tag" {
+		return AutomaticResolveVersion
+	}
+	return ManifestVersion
+}
+
 // Manifest is the execution manifest the ship binds an authorization to
 // (specs/ci-execution-contract.md §5): everything the attempt may act on.
 type Manifest struct {
@@ -31,7 +44,7 @@ type Manifest struct {
 	Job          string `json:"job"`
 	Trust        string `json:"trust"`
 	Sandbox      string `json:"sandbox"` // vm / container
-	Mode         string `json:"mode"`    // required / trial / manual / shadow / plan / resolve
+	Mode         string `json:"mode"`    // required / trial / manual / shadow / plan / resolve / resolve-tag
 	Network      string `json:"network"` // locked or a profile name
 	NetworkScope string `json:"network-scope"`
 	// the event the run's jobs receive (Delivery 1A): push, or
@@ -129,7 +142,7 @@ func (m ManifestMessage) Noun() (*Noun, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Tuple(Atom(big.NewInt(ManifestVersion)), Atom(recipient), Atom(attempt), Cord(m.Operation), Atom(big.NewInt(m.Expiry)), Atom(nonce), mn), nil
+	return Tuple(Atom(big.NewInt(int64(ManifestVersionFor(m.Manifest)))), Atom(recipient), Atom(attempt), Cord(m.Operation), Atom(big.NewInt(m.Expiry)), Atom(nonce), mn), nil
 }
 
 // Bytes is what is signed: the little-endian bytes of the jam.

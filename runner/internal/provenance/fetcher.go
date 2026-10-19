@@ -25,6 +25,9 @@ import (
 // is the resolver's working set, never an execution input: execution
 // reads the ship's mirrors.
 type GitFetcher struct {
+	// Purpose comes from the verified assignment, never from YAML or an
+	// unsigned flag. Its zero value has no import authority.
+	Purpose FetchPurpose
 	Cache   string
 	Timeout time.Duration
 	// Log receives one line per fetch (the record of what the import
@@ -32,6 +35,28 @@ type GitFetcher struct {
 	Log func(string)
 	// images memoizes the archives this import already copied, by digest
 	images map[string]Image
+}
+
+type FetchPurpose string
+
+const (
+	PolicyImport FetchPurpose = "policy-import"
+	AutomaticTag FetchPurpose = "automatic-tag"
+)
+
+// The current policy model authorizes explicit ci-policy imports and
+// per-job network profiles. It has no automatic-resolver destination/input
+// grant. Refuse before DNS, redirects, subprocesses, caches or ambient helpers.
+// Do not interpret public addressing, resolver=true or a job profile as one.
+func (g *GitFetcher) importAllowed() error {
+	switch g.Purpose {
+	case PolicyImport:
+		return nil
+	case AutomaticTag:
+		return errors.New("automatic tag resolution has no external-input policy; this dependency cannot be fetched automatically")
+	default:
+		return errors.New("missing or unsupported authenticated resolver purpose")
+	}
 }
 
 var safeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
@@ -85,6 +110,9 @@ var shaRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // is listed on the remote and fetched shallowly; a full sha is fetched
 // directly. Both go through the cache so the same commit is fetched once.
 func (g *GitFetcher) Resolve(origin, ref string) (Resolved, error) {
+	if err := g.importAllowed(); err != nil {
+		return Resolved{}, err
+	}
 	dir, err := g.ensureRepo(origin)
 	if err != nil {
 		return Resolved{}, err
@@ -135,6 +163,9 @@ func (g *GitFetcher) Resolve(origin, ref string) (Resolved, error) {
 
 // ReadFile reads one file at a commit from the cache.
 func (g *GitFetcher) ReadFile(origin, commit, path string) ([]byte, error) {
+	if err := g.importAllowed(); err != nil {
+		return nil, err
+	}
 	dir := g.repoDir(origin)
 	ctx, cancel := context.WithTimeout(context.Background(), g.timeout())
 	defer cancel()
@@ -156,6 +187,9 @@ func (g *GitFetcher) ReadFile(origin, commit, path string) ([]byte, error) {
 // (the sha256 of the config blob, what Docker reports as .Id after the
 // load) is measured from the archive here and verified by the runner.
 func (g *GitFetcher) Image(ref string) (Image, error) {
+	if err := g.importAllowed(); err != nil {
+		return Image{}, err
+	}
 	if _, err := exec.LookPath("skopeo"); err != nil {
 		return Image{}, errors.New("skopeo is not installed on the resolver")
 	}
@@ -323,6 +357,9 @@ func ArchiveIdentity(archive string) (string, []string, error) {
 // Download fetches a URL into the content-addressed cache and reports
 // its sha256 and size; the bytes stay at DownloadPath for mirroring.
 func (g *GitFetcher) Download(url string) (Downloaded, error) {
+	if err := g.importAllowed(); err != nil {
+		return Downloaded{}, err
+	}
 	g.logf("download %s", url)
 	if err := os.MkdirAll(filepath.Join(g.Cache, "downloads"), 0o755); err != nil {
 		return Downloaded{}, err
@@ -366,6 +403,9 @@ func (g *GitFetcher) DownloadPath(sha string) string {
 // committer and date, so the same tree always mirrors to the same
 // commit id. It is created in the origin's cache repository.
 func (g *GitFetcher) MirrorCommit(origin, ref, commit, tree string) (string, error) {
+	if err := g.importAllowed(); err != nil {
+		return "", err
+	}
 	dir := g.repoDir(origin)
 	ctx, cancel := context.WithTimeout(context.Background(), g.timeout())
 	defer cancel()
@@ -390,6 +430,9 @@ func (g *GitFetcher) MirrorCommit(origin, ref, commit, tree string) (string, err
 // non-shallow repository that borrows the cache's objects (alternates):
 // a self-contained pack, no shallow lines.
 func (g *GitFetcher) PushMirror(origin, mirrorCommit, shipURL, repo, token string) (string, error) {
+	if err := g.importAllowed(); err != nil {
+		return "", err
+	}
 	dir := g.repoDir(origin)
 	stage, err := os.MkdirTemp(g.Cache, "mirror-stage-")
 	if err != nil {

@@ -24,17 +24,17 @@
 ::      never evaluated (~), none becomes an event run; a lock keeps its
 ::      inventory and its trigger catalog is unknown (~, not empty); no
 ::      forge event, event id or schedule is invented.
-::  The current state (state-5) reloads unchanged.  An unknown version, an
+::  The current state (state-6) reloads unchanged.  An unknown version, an
 ::  atom, a malformed %0, a corrupt %0, %1, %2, %3, %4 or %5, a state-1
 ::  tagged %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4, a
-::  state-4 tagged %3 or %5 and a state-5 tagged %4 are refused, and so is
+::  state-4 tagged %3 or %5 and a state-6 tagged %4 are refused, and so is
 ::  an ambiguous classification.  Every case names the verdict it expects;
 ::  the intentionally FALSE cases are refusals.  Prints `passed=N of=M`
 ::  and ends in a loobean.
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -277,7 +277,9 @@
 =/  s4-plain=state-4:ci-state-4  (from-state-3:ci-migrate planned-state)
 =/  s4=state-4:ci-state-4
   %=  s4-plain
-    candidates  (~(put by candidates.s4-plain) id.manual-cand (candidate-from-3:ci-migrate manual-cand))
+    candidates  %+  ~(put by candidates.s4-plain)
+                  id.manual-cand
+                (candidate-from-3:ci-migrate manual-cand)
   ==
 =/  f  (load:ci-migrate s4)
 =/  f-plain  (load:ci-migrate s4-plain)
@@ -385,11 +387,11 @@
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %5 once converted' %.y =(%5 -.new.s)]
+    ['state-1 is tagged %6 once converted' %.y =(%6 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %5 once converted' %.y =(%5 -.new.t)]
+    ['state-2 is tagged %6 once converted' %.y =(%6 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
@@ -400,7 +402,7 @@
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
     ::  state-3
     ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
-    ['state-3 is tagged %5 once converted' %.y =(%5 -.new.m)]
+    ['state-3 is tagged %6 once converted' %.y =(%6 -.new.m)]
     ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
     ::  the old candidate's every field after its id, against the new one's
     ::  same fields by name (+as-4); its added selection is checked in .added
@@ -415,10 +417,47 @@
     ['a running attempt stays running with no decision, needs context or resolved outputs' %.y &(=(%running status.p-running) =(~ decision.p-running) =(~ needs.p-running) =(~ job-outputs.p-running))]
     ['every other field of the attempt is kept' %.y =(running-3 (attempt-as-3 p-running))]
   ==
+::  Populated state5: keep its event run, catalog, source event, replay id
+::  and armed schedule, plus every field inherited from the older fixture.
+=/  historical=candidate:ci-state-5
+  %=  f-cand
+    mode  %event
+    trigger  [%event [0v91 %push 'refs/tags/v1' ~ `0xa1 ~ ~ ~zod 'tag API' ~2026.10.17 '{}']]
+    selected  `['historical promoted catalog' ~[['old.yml' 'Old' %selected 'selected']] ~]
+  ==
+=/  event5=forge-event:ci-state-5
+  [0v91 'erpit' %push 'refs/tags/v1' ~ `0xa1 ~ ~zod 'tag API' ~2026.10.17 ~2026.10.17 'selected' selected.historical ~[id.historical]]
+=/  sched5=schedule-entry:ci-state-5
+  =/  seed  *schedule-entry:ci-state-5
+  %=  seed
+    name  'Nightly'
+    ref  'refs/heads/master'
+    baseline  0xb1
+    lock  0x88
+    incarnation  0v9
+    promoter  ~zod
+    armed  `~2026.10.18
+    admitted  ~[0v92]
+    stale-wakes  2
+    last-admitted  `[~2026.10.16 ~2026.10.16 0v93 %.n]
+  ==
+=/  s5=state-5:ci-state-5
+  =/  seed  (from-state-4:ci-migrate s4)
+  %=  seed
+    candidates  (~(put by candidates.seed) id.historical historical)
+    locks  (~(put by locks.seed) 0x88 f-lock(triggers `*trigger-catalog:ci))
+    forge-events  (my ~[[0v91 event5]])
+    event-ids  (my ~[[0v91 ~2026.10.17]])
+    schedules  (my ~[[['erpit' 'nightly.yml' 0] sched5]])
+  ==
+=/  fifth  (load:ci-migrate s5)
+=/  s6=state-6:ci
+  new.fifth(tag-runs (my ~[[id.historical `0v7.aaaaa] [0v94 ~]]))
+=/  sixth  (load:ci-migrate s6)
 =/  late=(list [name=@t expect=? got=?])
   :~  ::  state-4 (Delivery 1C)
     ['state-4 loads as its own shape' %.y =(%state-4 shape.f)]
-    ['state-4 is tagged %5 once converted' %.y =(%5 -.new.f)]
+    ['state-4 is tagged %6 once converted' %.y =(%6 -.new.f)]
     ['a state-4 required run keeps every field' %.y =((~(got by candidates.s4) 0v3.ppppp) (as-4 f-cand))]
     ['a state-4 required run\'s workflow selection was never evaluated' %.y =(~ selected.f-cand)]
     ['a state-4 manual run keeps every field and its dispatch' %.y &(=((~(got by candidates.s4) id.manual-cand) (as-4 f-manual)) ?=(%dispatch -.trigger.f-manual))]
@@ -430,10 +469,17 @@
     ['no forge event, event id or schedule is invented' %.y &(=(~ forge-events.new.f) =(~ event-ids.new.f) =(~ schedules.new.f))]
     ['every other state-4 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:s4 [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.f)]
     ['state-4 converts as the state-3 it came from does' %.y =(new.p new.f-plain)]
+    ['state5 is recognized as its own frozen shape' %.y =(%state-5 shape.fifth)]
+    ['state5 copies every field without changing any noun' %.y =([candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:s5 [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:new.fifth)]
+    ['historical event runs gain no tagged authority' %.y =(~ tag-runs.new.fifth)]
+    ['state6 keeps pending and exact resolver bindings on load' %.y &(=(%current shape.sixth) =(s6 new.sixth))]
+    ['truncated state6 is refused' %.y (refused [%6 +.s5])]
+    ['state6 relabelled as state5 is refused' %.y (refused [%5 +.s6])]
+    ['corrupt tag bindings are refused' %.y (refused s6(tag-runs [5 ~]))]
     ::  the current state
-    ['state-5 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
+    ['state-6 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%6 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%7 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]
@@ -443,9 +489,9 @@
     ['a state-3 tagged %4 is refused' %.y (refused [%4 +.planned-state])]
     ['a state-4 tagged %3 is refused' %.y (refused [%3 +.s4])]
     ['a state-4 tagged %5 is refused' %.y (refused [%5 +.s4])]
-    ['a state-5 tagged %4 is refused' %.y (refused [%4 +.new.p])]
+    ['a state-6 tagged %4 is refused' %.y (refused [%4 +.new.p])]
     ['a %4 state with a corrupt candidates map is refused' %.y (refused [%4 5 +>.s4])]
-    ['a %5 state with a corrupt attempts map is refused' %.y (refused new.p(attempts [5 ~]))]
+    ['a %6 state with a corrupt attempts map is refused' %.y (refused new.p(attempts [5 ~]))]
     ['an atom is refused' %.y (refused 0)]
     ['a malformed %0 is refused' %.y (refused [%0 1 2 3])]
     ['a %0 state with a corrupt candidates map is refused' %.y (refused [%0 5 +>.q11-state])]
