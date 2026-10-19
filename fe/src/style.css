@@ -822,3 +822,12 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .ci-schedule-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
   .ci-schedule-row.table-head { display: none; }
 }
+
+/* Long input URLs and immutable identities stay readable in narrow panels. */
+.ci-automatic-inputs, .ci-input-provenance { min-width: 0; overflow-wrap: anywhere; }
+.ci-automatic-inputs code, .ci-input-provenance code { white-space: normal; overflow-wrap: anywhere; }
+.ci-input-list { padding-inline-start: 1.2rem; }
+.ci-input-list li { margin-block: .7rem; }
+.ci-input-add { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.ci-input-add input { width: 100%; min-width: 0; box-sizing: border-box; }
+.ci-input-add .button { align-self: flex-start; }

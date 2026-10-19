@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"urgit/runner/internal/inputpolicy"
 	"urgit/runner/internal/sig"
 )
 
@@ -47,8 +48,9 @@ type Client struct {
 	Labels []string
 	// Profiles are the network profile names this daemon supports
 	// (`x-ci-profiles`, rider 03); Resolver says it may run imports.
-	Profiles []string
-	Resolver bool
+	Profiles        []string
+	Resolver        bool
+	AutomaticInputs []string
 	// Recovery says this daemon carries out the operator's recovery
 	// commands (`x-ci-recovery`): only then does the ship hand one over on
 	// its poll (INTEGRATION.md §11.12)
@@ -86,23 +88,24 @@ type Grant struct {
 // (rider 03) and the attempt-bound read capability for private mirrors
 // (A06). None of it enters the guest.
 type Assignment struct {
-	ID              string     `json:"id"`
-	Attempt         string     `json:"attempt"`
-	Candidate       string     `json:"candidate"`
-	Repo            string     `json:"repo"`
-	Ref             string     `json:"ref"`
-	OID             string     `json:"oid"`
-	Head            string     `json:"head"`
-	Base            string     `json:"base"`
-	Trust           string     `json:"trust"`
-	ScratchRef      string     `json:"scratch-ref"`
-	Kind            string     `json:"kind"`
-	Workflow        string     `json:"workflow"`
-	Job             string     `json:"job"`
-	DeadlineSeconds int        `json:"deadline-seconds"`
-	Assigned        string     `json:"assigned"`
-	Grants          []Grant    `json:"grants"`
-	Sig             *Signature `json:"sig"`
+	AutomaticInputs *inputpolicy.Policy `json:"automatic-inputs"`
+	ID              string              `json:"id"`
+	Attempt         string              `json:"attempt"`
+	Candidate       string              `json:"candidate"`
+	Repo            string              `json:"repo"`
+	Ref             string              `json:"ref"`
+	OID             string              `json:"oid"`
+	Head            string              `json:"head"`
+	Base            string              `json:"base"`
+	Trust           string              `json:"trust"`
+	ScratchRef      string              `json:"scratch-ref"`
+	Kind            string              `json:"kind"`
+	Workflow        string              `json:"workflow"`
+	Job             string              `json:"job"`
+	DeadlineSeconds int                 `json:"deadline-seconds"`
+	Assigned        string              `json:"assigned"`
+	Grants          []Grant             `json:"grants"`
+	Sig             *Signature          `json:"sig"`
 	// P4
 	Manifest     *sig.Manifest `json:"manifest"`
 	HarnessPaths []string      `json:"harness-paths"`
@@ -270,6 +273,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (Resp
 	}
 	if c.Resolver {
 		req.Header.Set("x-ci-resolver", "1")
+		req.Header.Set("x-ci-automatic-inputs", strings.Join(c.AutomaticInputs, ","))
 	}
 	if c.Recovery {
 		req.Header.Set("x-ci-recovery", "1")

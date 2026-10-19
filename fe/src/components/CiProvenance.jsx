@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { makeAutomaticInputs } from '../automaticInputsComponent'
+import { inputProvenanceText } from '../automaticInputs'
 import { ci } from '../api'
 import { approvalRows, auditRows, backendTable, lockDiff, modeLabel, nodeIdentity, overrideConfirmation, overrideRows, waitRows, parseMappings, parsePaths, parseShips, provenanceActions, refusalMessage, waitExplanation } from '../ciProvenance'
 import { exactTime } from '../format'
@@ -12,6 +14,8 @@ import { exactTime } from '../format'
 // baseline and lock identities, the sandbox need, environment approvals,
 // the override confirmation, and the guidance a waiting candidate
 // shows. Every displayed string is printed as text.
+
+const AutomaticInputs = makeAutomaticInputs(React, ci)
 
 const short = (s, n = 12) => (s ? String(s).slice(0, n) : '—')
 
@@ -34,6 +38,8 @@ function LockView({ repo, digest, other }) {
   return (
     <div className="ci-lock">
       <small className="quiet">Lock <code>{short(lock.digest, 16)}</code> · revision <code>{short(lock.revision)}</code> · resolved {exactTime(lock.resolved)} by <code>{short(lock.resolver, 10)}</code> · {lock.nodes.length} nodes · {lock.bytes} bytes of metadata</small>
+      <p className="ci-input-provenance">{lock.automaticInputEvidence ? `Automatic resolution policy ${lock.automaticInputEvidence.policyId}; runner ceiling ${lock.automaticInputEvidence.ceilingId}. These identities belong to this resolution; reuse performs no new external acquisition.` : 'Prior import or resolution: no automatic acquisition evidence recorded. Reusing this exact lock does not authorize a new external fetch.'}</p>
+      {lock.automaticInputEvidence?.acquisitions?.map((a, i) => <p className="ci-input-provenance" key={i}><code>{a.url}</code> → <code>{a.resolvedUrl}</code> · SHA-256 <code>{a.sha256}</code> · {a.size} bytes</p>)}
       {diff && !diff.same && <div className="ci-lock-diff">
         <strong>Changes from the baseline's lock</strong>
         {diff.changed.map((c) => <div key={c.uses}><code>{c.uses}</code>: {c.from} → {c.to}</div>)}
@@ -92,6 +98,7 @@ export function CiPolicySection({ repo, policy, onChanged }) {
     <div className="subsection ci-policy">
       <div className="section-title"><div><h3>CI policy</h3><p>Required checks run the promoted baseline's harness with its resolved lock; the candidate's own YAML is not evidence. Every change here is an audited action and moves the policy generation (generation <strong>{policy?.generation ?? '—'}</strong>, incarnation <code>{short(policy?.incarnation, 10)}</code>).</p></div></div>
       {error && <small className="field-error">{error}</small>}
+      <AutomaticInputs repo={repoName} policy={policy} onChanged={onChanged} />
       <div className="ci-policy-block">
         <strong>Sandbox requirement</strong>
         <div className="ci-radio">
@@ -113,7 +120,7 @@ export function CiPolicySection({ repo, policy, onChanged }) {
       </div>
       <div className="ci-policy-block">
         <strong>Import (resolve) and promote</strong>
-        <small className="quiet">Explicit imports walk the revision's workflows and mirror dependencies into this ship. Ordinary tags use their tagged YAML without promotion. Automatic resolution currently refuses external inputs because no automatic fetch policy is defined; dependency-free workflows and an existing lock for the exact revision are supported. Promotion adopts a revision and its lock as a branch baseline.</small>
+        <small className="quiet">Explicit imports walk the revision's workflows and mirror dependencies into this ship. Ordinary tags use their tagged YAML without promotion. Automatic HTTPS downloads require both the repository allowlist and the runner owner's ceiling. Git/action and registry acquisition remain unsupported automatically; dependency-free workflows and an existing lock for the exact revision are supported. Promotion adopts a revision and its lock as a branch baseline.</small>
         <label><span>Revision (40 hex)</span><input value={revision} onChange={(e) => setRevision(e.target.value.trim())} placeholder="a6d15edd…" /></label>
         <label><span>Explicit mappings (optional, one per line: from -&gt; http(s)://to)</span><textarea rows={2} value={mappings} onChange={(e) => setMappings(e.target.value)} /></label>
         {parsedMappings.error && <small className="field-error">{parsedMappings.error}</small>}
@@ -209,6 +216,7 @@ export function CandidateProvenance({ data, tip, onAct, busy, confirm }) {
         <div><dt>Sandbox</dt><dd>{c.sandbox === 'vm' ? 'VM (Firecracker)' : 'container compatibility'}{c.harnessDiffers && <small className="quiet"> · the candidate's harness differs from the baseline's (a trial twin runs it)</small>}</dd></div>
         <div><dt>Bindings</dt><dd>{c.workflowAuthority === 'tagged-revision' ? 'captured at tag admission' : c.bindingsCurrent ? 'current' : <span className="field-error">not current</span>} · {c.landable ? 'landable' : 'not landable'}</dd></div>
       </dl>
+      {c.workflowProvenance && <div className="ci-input-provenance" data-part="input-provenance"><p>{inputProvenanceText(c.workflowProvenance)}</p>{c.workflowProvenance.inputPolicy?.sources?.map((s) => <p key={s}><code>{s}</code></p>)}{c.workflowProvenance.inputEvidence?.acquisitions?.map((a, i) => <p key={i}><code>{a.url}</code> → <code>{a.resolvedUrl}</code> · SHA-256 <code>{a.sha256}</code> · {a.size} bytes</p>)}</div>}
       {explanation && <div className="empty ci-first-run">{explanation}</div>}
       {waitRows(c).length > 0 && (
         <ul className="ci-waits">

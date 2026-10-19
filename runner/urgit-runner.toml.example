@@ -77,6 +77,10 @@ labels = []
 # Imports may fetch from the origins named in the workflows and the
 # operator's mappings; execution never does.
 resolver = false
+# Independent owner ceiling for automatic HTTPS inputs. Empty is default deny.
+# Repository Settings -> CI policy must also grant each exact URL. No entries
+# are enabled here. Git/action and registry acquisition remain unsupported.
+automatic_inputs = []
 
 # checkouts, projections and act streams; one directory per attempt
 work_dir = "/var/lib/urgit-runner/work"

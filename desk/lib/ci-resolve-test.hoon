@@ -1,10 +1,10 @@
 ::  Executable vectors over the same transitions/guards the controller uses.
 ::  Fixture creation supplies records, never a second implementation of policy.
 /-  ci, git
-/+  ci-provenance, ci-resolve, ci-tag, ci-trigger
+/+  ci-input, ci-provenance, ci-resolve, ci-tag, ci-trigger
 |%
 ++  fixture
-  ^-  [s=state-6:ci c=candidate:ci r=candidate:ci a=attempt:ci b=daemon:ci]
+  ^-  [s=state-7:ci c=candidate:ci r=candidate:ci a=attempt:ci b=daemon:ci]
   =/  c=candidate:ci  *candidate:ci
   =.  c
     %=  c
@@ -57,7 +57,7 @@
   =/  b=daemon:ci  d(id 0v3, running ~)
   =/  asg=assignment:ci  *assignment:ci
   =.  asg  asg(id 0v11, candidate id.r, daemon id.d, attempt id.a, kind %resolve)
-  =/  s=state-6:ci  *state-6:ci
+  =/  s=state-7:ci  *state-7:ci
   =.  s
     %=  s
       candidates  (my ~[[id.c c] [id.r r]])
@@ -65,6 +65,8 @@
       assignments  (my ~[[id.asg asg]])
       daemons  (my ~[[id.d d] [id.b b]])
       tag-runs  (my ~[[id.c `id.a]])
+      input-snapshots  %-  my
+                       ~[[id.c ~['https://inputs.example/tool']] [id.r ~['https://inputs.example/tool']]]
       read-capabilities  (my ~[[0x11 [id.a (silt ~['demo']) ~2026.10.18]]])
       mirror-tokens  (my ~[[id.a (silt ~['ci-mirror-fixture'])]])
       generations  (my ~[['demo' 1]])
@@ -77,7 +79,7 @@
   =+  fixture
   =/  now=@da  ~2026.10.17..00.01.00
   ::  Revoke/unfetched uses this exact reoffer transition, not a state model.
-  =/  given=state-6:ci  (reoffer:ci-resolve s a 'daemon revoked; re-offered' now)
+  =/  given=state-7:ci  (reoffer:ci-resolve s a 'daemon revoked; re-offered' now)
   =/  next  (next:ci-resolve given c)
   ?>  ?=(%offer -.next)
   =/  absent=(map daemon-id:ci daemon:ci)
@@ -87,7 +89,7 @@
   ::  Generic create-attempt supplies the replacement. bind-attempt is the
   ::  actual controller transition that updates every live dependent run.
   =/  replacement=attempt:ci  a(id 0v4, daemon id.b, assignment 0v12, started now)
-  =/  replaced=state-6:ci
+  =/  replaced=state-7:ci
     %=  given
       attempts  (~(put by attempts.given) id.replacement replacement)
       candidates  (~(put by candidates.given) id.r r(attempts [id.replacement attempts.r]))
@@ -99,7 +101,7 @@
   =/  failed=attempt:ci  a(status %failed, reason `'bad catalog', finished `now)
   =/  unknown=attempt:ci  a(status %infrastructure-error, finished `now)
   ::  Cancellation after policy generation changes, before delivery.
-  =/  cancelled=state-6:ci
+  =/  cancelled=state-7:ci
     (cancel:ci-resolve s c 'cancelled: policy generation 2' now)
   =.  generations.cancelled  (~(put by generations.cancelled) repo.c 2)
   =/  retired  (sweep:ci-resolve cancelled now)
@@ -109,15 +111,15 @@
   =/  fresh=candidate:ci
     c(id (sham [%ci-event-approved id.c]), trust %trusted, attempts ~)
   =/  twin=candidate:ci  (twin:ci-resolve c fresh)
-  =/  approved=state-6:ci  (approve:ci-resolve s c twin now)
+  =/  approved=state-7:ci  (approve:ci-resolve s c twin now)
   =/  held  (sweep:ci-resolve approved now)
-  =/  reoffered-twin=state-6:ci  (reoffer:ci-resolve approved a 'unfetched; re-offered' now)
+  =/  reoffered-twin=state-7:ci  (reoffer:ci-resolve approved a 'unfetched; re-offered' now)
   =.  attempts.reoffered-twin
     (~(put by attempts.reoffered-twin) id.replacement replacement)
   =.  candidates.reoffered-twin
     (~(put by candidates.reoffered-twin) id.r r(attempts [id.replacement attempts.r]))
-  =/  rebound-twin=state-6:ci  (bind-attempt:ci-resolve reoffered-twin twin id.replacement)
-  =/  cancelled-twin=state-6:ci  (cancel:ci-resolve approved twin 'policy generation 2' now)
+  =/  rebound-twin=state-7:ci  (bind-attempt:ci-resolve reoffered-twin twin id.replacement)
+  =/  cancelled-twin=state-7:ci  (cancel:ci-resolve approved twin 'policy generation 2' now)
   =/  retired-twin  (sweep:ci-resolve cancelled-twin now)
   ::  A successful captured lock selects once; no ref lookup is performed.
   =/  catalog=trigger-catalog:ci
@@ -127,13 +129,22 @@
   ?>  ?=(%& -.bound)
   =/  selected=candidate:ci  p.bound
   ?>  ?=(^ selected.selected)
-  =/  selected-state=state-6:ci
+  =/  selected-state=state-7:ci
     replaced(candidates (~(put by candidates.replaced) id.c selected))
   ::  Supported state5 explicit records retain their established purpose.
   =/  explicit=candidate:ci  r(id (sham [%ci-resolve repo.r head.r]), trigger [%push ~])
   =/  import=attempt:ci  a(candidate id.explicit)
-  =/  explicit-state=state-6:ci
+  =/  explicit-state=state-7:ci
     s(candidates (my ~[[id.explicit explicit]]), attempts (my ~[[id.a import]]), tag-runs ~)
+  ::  Cancellation of a stale owner must not cancel its approved twin's
+  ::  shared resolver even when the owner's history lists that attempt.
+  =/  shared-cancel=state-7:ci
+    (cancel:ci-resolve approved c(attempts ~[id.a]) 'superseded owner cancelled' now)
+  =/  shared-sweep  (sweep:ci-resolve shared-cancel now)
+  =/  changed=state-7:ci
+    approved(generations (~(put by generations.approved) repo.c 2))
+  =/  cancelled-import=state-7:ci
+    (cancel:ci-resolve explicit-state explicit 'explicit obligation cancelled' now)
   =/  manifest=manifest:ci-provenance  *manifest:ci-provenance
   :~  ['automatic signed domain rejects older runners' =(6 (manifest-version-for:ci-provenance manifest(mode 'resolve-tag')))]
       ['explicit signed domain stays compatible' =(5 (manifest-version-for:ci-provenance manifest(mode 'resolve')))]
@@ -143,6 +154,7 @@
       ['unknown synthetic identity refuses' =(%invalid (purpose:ci-resolve r(id 0v99)))]
       ['legacy explicit purpose preserved' =(%import (purpose:ci-resolve explicit))]
       ['legacy explicit obligation needs no tag consumer' (active:ci-resolve explicit-state import)]
+      ['explicit cancellation does not gain shared automatic immunity' =(%cancelled status:(~(got by attempts.cancelled-import) id.a))]
       ['live automatic delivery/inventory/lock allowed' (active:ci-resolve s a)]
       ['captured lock consumer allowed' (accepts:ci-resolve s id.c id.a)]
       ['initial absent resolver is an offer' ?=([%offer *] (next:ci-resolve s(tag-runs (my ~[[id.c ~]])) c))]
@@ -186,6 +198,11 @@
       ['approval preserves captured inputs' =([candidate baseline lock trigger generation incarnation]:c [candidate baseline lock trigger generation incarnation]:twin)]
       ['superseded original keeps tombstone' =(`id.a (~(got by tag-runs.approved) id.c))]
       ['approved twin shares live resolver' =(`id.a (~(got by tag-runs.approved) id.twin))]
+      ['approval copies immutable input policy' =((captured:ci-input s id.c) (captured:ci-input approved id.twin))]
+      ['cancelling one owner preserves live twin resolver' (active:ci-resolve shared-cancel a)]
+      ['cancelling one owner preserves runner slot' (~(has in running:(~(got by daemons.shared-cancel) daemon.a)) id.a)]
+      ['cancelling one owner preserves source retention' =(~ release.shared-sweep)]
+      ['policy generation change immediately refuses obsolete completion' !(accepts:ci-resolve changed id.twin id.a)]
       ['approved twin permits delivery and inventory' (active:ci-resolve state.held a)]
       ['approved twin prevents source/capability retirement' =([~ ~ ~] [release mirrors stop]:held)]
       ['approved twin binds replacement' =(`id.replacement (~(got by tag-runs.rebound-twin) id.twin))]

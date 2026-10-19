@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"urgit/runner/internal/inputpolicy"
 	"urgit/runner/internal/ship"
 	"urgit/runner/internal/sig"
 )
@@ -20,13 +21,20 @@ func resolverManifest(mode string) sig.Manifest {
 	m := wireManifest("", "", "")
 	m.Mode, m.Workflow, m.Event, m.Context, m.Trigger = mode, "", "", "", ""
 	m.Sandbox = "container"
+	if mode == "resolve-tag" {
+		m.NetworkScope = inputpolicy.Prefix
+	}
 	return m
 }
 
 func testResolverAssignment(mode, repo, oid string) *ship.Assignment {
 	m := resolverManifest(mode)
 	m.Repo, m.OID = repo, oid
-	return &ship.Assignment{ID: "0v1.asg", Attempt: wireAttempt, Candidate: wireCandidate, Repo: repo, Ref: m.Ref, OID: oid, WorkflowsOID: oid, Trust: m.Trust, ScratchRef: "refs/ci/run/" + wireCandidate, Kind: "resolve", DeadlineSeconds: 60, Manifest: &m}
+	var policy *inputpolicy.Policy
+	if mode == "resolve-tag" {
+		policy = &inputpolicy.Policy{Version: 1, Sources: []string{}}
+	}
+	return &ship.Assignment{AutomaticInputs: policy, ID: "0v1.asg", Attempt: wireAttempt, Candidate: wireCandidate, Repo: repo, Ref: m.Ref, OID: oid, WorkflowsOID: oid, Trust: m.Trust, ScratchRef: "refs/ci/run/" + wireCandidate, Kind: "resolve", DeadlineSeconds: 60, Manifest: &m}
 }
 
 func TestResolverPurposeIsAuthenticated(t *testing.T) {
@@ -37,6 +45,9 @@ func TestResolverPurposeIsAuthenticated(t *testing.T) {
 		a := b["assignment"].(map[string]any)
 		a["kind"], a["event-payload"] = "resolve", ""
 		a["scratch-ref"] = "refs/ci/run/" + wireCandidate
+		if mode == "resolve-tag" {
+			a["automatic-inputs"] = &inputpolicy.Policy{Version: 1, Sources: []string{}}
+		}
 		return b
 	}
 	for _, mode := range []string{"resolve", "resolve-tag"} {
@@ -113,7 +124,7 @@ func TestAutomaticResolverRefusesHostFetchBeforeTransport(t *testing.T) {
 					return os.WriteFile(filepath.Join(p, "release.yml"), []byte(fmt.Sprintf("on:\n  push:\n    tags: ['%s']\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: curl -fL %s\n", tag, target)), 0600)
 				}
 				m := resolverManifest("resolve-tag")
-				a := &ship.Assignment{ID: "0v1.asg", Attempt: wireAttempt, Candidate: wireCandidate, Repo: m.Repo, Ref: m.Ref, OID: wireOID, WorkflowsOID: wireOID, Trust: m.Trust, ScratchRef: "refs/ci/run/" + wireCandidate, Kind: "resolve", DeadlineSeconds: 60, Manifest: &m}
+				a := &ship.Assignment{AutomaticInputs: &inputpolicy.Policy{Version: 1, Sources: []string{}}, ID: "0v1.asg", Attempt: wireAttempt, Candidate: wireCandidate, Repo: m.Repo, Ref: m.Ref, OID: wireOID, WorkflowsOID: wireOID, Trust: m.Trust, ScratchRef: "refs/ci/run/" + wireCandidate, Kind: "resolve", DeadlineSeconds: 60, Manifest: &m}
 				d.handle(context.Background(), a)
 				if calls != 0 {
 					t.Errorf("automatic tagged YAML reached HTTP transport %d times", calls)
@@ -188,5 +199,73 @@ func TestAutomaticResolverRefusesRemoteActionAndRegistry(t *testing.T) {
 				t.Fatal("sibling fetch touched cache", err)
 			}
 		})
+	}
+}
+
+// Authored wire fixture (native capture has its own required acceptance test).
+func TestAutomaticSignedInputBinding(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	d := wireDaemonUnder(pub)
+	policy := &inputpolicy.Policy{Version: 1, Sources: []string{"https://inputs.example/tool"}}
+	m := resolverManifest("resolve-tag")
+	m.NetworkScope, _ = policy.Scope()
+	body := wireBody(t, priv, m, "")
+	outer := body["assignment"].(map[string]any)
+	outer["kind"], outer["event-payload"], outer["scratch-ref"], outer["automatic-inputs"] = "resolve", "", "refs/ci/run/"+wireCandidate, policy
+	a := pollWire(t, body)
+	if err := d.verifyAssignment(a); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*ship.Assignment){
+		"missing": func(a *ship.Assignment) { a.AutomaticInputs = nil },
+		"empty":   func(a *ship.Assignment) { a.AutomaticInputs = &inputpolicy.Policy{Version: 1, Sources: []string{}} },
+		"null":    func(a *ship.Assignment) { a.AutomaticInputs = &inputpolicy.Policy{Version: 1} },
+		"version": func(a *ship.Assignment) { a.AutomaticInputs = &inputpolicy.Policy{Version: 2, Sources: policy.Sources} },
+		"scope":   func(a *ship.Assignment) { m := *a.Manifest; m.NetworkScope = inputpolicy.Prefix; a.Manifest = &m },
+		"legacy unsigned automatic": func(a *ship.Assignment) {
+			m := *a.Manifest
+			m.NetworkScope = ""
+			a.Manifest = &m
+			a.AutomaticInputs = nil
+		},
+		"downgrade": func(a *ship.Assignment) { m := *a.Manifest; m.Mode = "resolve"; a.Manifest = &m },
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := *a
+			mutate(&b)
+			if err := d.verifyAssignment(&b); err == nil {
+				t.Fatal("policy binding bypass")
+			}
+		})
+	}
+}
+
+func TestAutomaticLegacySignedObligationKeepsZeroFetchAuthority(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	d := wireDaemonUnder(pub)
+	m := resolverManifest("resolve-tag")
+	m.NetworkScope = ""
+	body := wireBody(t, priv, m, "")
+	outer := body["assignment"].(map[string]any)
+	outer["kind"], outer["event-payload"], outer["scratch-ref"] = "resolve", "", "refs/ci/run/"+wireCandidate
+	a := pollWire(t, body)
+	if err := d.verifyAssignment(a); err != nil {
+		t.Fatal("persisted zero-authority obligation:", err)
+	}
+	// A newly configured runner ceiling cannot become a repository grant.
+	sh, box := &fakeShip{}, &fakeBox{}
+	runner := newTestDaemon(t, box, sh, 1)
+	runner.cfg.Resolver = true
+	runner.cfg.AutomaticInputs = []string{"https://inputs.example/tool"}
+	runner.checkout = func(_ context.Context, _ *ship.Assignment, dir string) error {
+		p := filepath.Join(dir, ".github", "workflows")
+		if err := os.MkdirAll(p, 0700); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(p, "release.yml"), []byte("on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: curl https://inputs.example/tool\n"), 0600)
+	}
+	runner.handle(context.Background(), a)
+	if len(sh.locks) != 2 || !strings.Contains(sh.locks[1], "no external-input policy") {
+		t.Fatalf("legacy gained grant: %v", sh.locks)
 	}
 }

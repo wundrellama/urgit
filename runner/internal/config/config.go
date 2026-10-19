@@ -22,6 +22,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"urgit/runner/internal/inputpolicy"
 	"urgit/runner/internal/netname"
 )
 
@@ -81,6 +82,9 @@ type Config struct {
 	// dependencies during an explicit import (rider 03: import may fetch;
 	// execution never does). Default false.
 	Resolver bool `toml:"resolver"`
+	// AutomaticInputs is the runner-owner ceiling, independent of job profiles
+	// and explicit imports. Empty denies every automatic external acquisition.
+	AutomaticInputs []string `toml:"automatic_inputs"`
 	// DockerEgressUnrestrictedAck is the docker-rootless operator's
 	// explicit acknowledgement that a network profile in the compatibility
 	// profile is NAT egress as a whole: the destinations are declared and
@@ -252,6 +256,12 @@ func Load(path string) (*Config, error) {
 				add("network profile %q: %v", p.Name, err)
 			}
 		}
+	}
+	if err := inputpolicy.Validate(c.AutomaticInputs); err != nil {
+		add("automatic_inputs: %v", err)
+	}
+	if len(c.AutomaticInputs) > 0 && !c.Resolver {
+		add("automatic_inputs requires resolver = true")
 	}
 	if len(problems) > 0 {
 		return nil, errors.Join(problems...)

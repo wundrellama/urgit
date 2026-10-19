@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"urgit/runner/internal/inputpolicy"
 	"urgit/runner/internal/plan"
 	"urgit/runner/internal/provenance"
 	"urgit/runner/internal/ship"
@@ -41,7 +42,14 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		return
 	}
 	cache := filepath.Join(d.cfg.WorkDir, "resolver-cache")
-	fetcher := &provenance.GitFetcher{Purpose: purpose, Cache: cache, Log: func(line string) { logf("fetch: %s", line) }}
+	policy := a.AutomaticInputs
+	// Persisted pre-allowlist domain6 obligations signed an empty scope. That
+	// signature authorizes only the original zero-fetch behavior, never today's
+	// repository policy or runner ceiling.
+	if purpose == provenance.AutomaticTag && policy == nil {
+		policy = &inputpolicy.Policy{Version: 1, Sources: []string{}}
+	}
+	fetcher := &provenance.GitFetcher{Purpose: purpose, Context: ctx, AutomaticPolicy: policy, AutomaticCeiling: d.cfg.AutomaticInputs, Cache: cache, Log: func(line string) { logf("fetch: %s", line) }}
 	bounds := provenance.Bounds{MaxNodes: 256, MaxDepth: 16, MaxBytes: 1 << 20}
 	var mappings []provenance.Mapping
 	for _, m := range a.Mappings {
@@ -90,7 +98,24 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		Downloads map[string]storePut    `json:"downloads"` // by sha256
 		Error     string                 `json:"error"`
 	}
+	var evidence string
+	if purpose == provenance.AutomaticTag {
+		measured, err := fetcher.InputEvidence()
+		if err != nil {
+			d.fail(ctx, a, err.Error(), logf)
+			return
+		}
+		data, err := json.Marshal(measured)
+		if err != nil {
+			d.fail(ctx, a, err.Error(), logf)
+			return
+		}
+		evidence = string(data)
+	}
 	body := map[string]any{"phase": "inventory", "nodes": inv.Nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices}
+	if purpose == provenance.AutomaticTag {
+		body["input-evidence"] = evidence
+	}
 	resp, err := d.client.PostLock(ctx, a.Attempt, body)
 	if err != nil {
 		logf("inventory POST failed: %v", err)
@@ -161,6 +186,9 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		}
 	}
 	lock := map[string]any{"phase": "lock", "nodes": nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices, "digest": provenance.Digest(nodes), "dispatch": dispatch, "triggers": triggers}
+	if purpose == provenance.AutomaticTag {
+		lock["input-evidence"] = evidence
+	}
 	// the resolver's own record of what it walked and fetched, for the
 	// import preview and the record (rider 03: native replacements and
 	// mappings appear in evidence)
@@ -186,13 +214,25 @@ func resolverPurpose(a *ship.Assignment) (provenance.FetchPurpose, error) {
 	if m.Ref != "refs/ci/resolve" || a.Ref != m.Ref || m.OID != a.OID ||
 		m.Workflow != "" || m.Job != "" || m.Event != "" || m.Context != "" ||
 		m.Needs != "" || m.Prerequisites != "" || m.Trigger != "" ||
-		m.Network != "locked" || m.NetworkScope != "" || len(a.Grants) != 0 {
+		m.Network != "locked" || len(a.Grants) != 0 {
 		return "", errors.New("resolver purpose has inconsistent source, event, credentials or network policy")
 	}
 	switch m.Mode {
 	case "resolve":
+		if m.NetworkScope != "" || a.AutomaticInputs != nil {
+			return "", errors.New("explicit import carries automatic policy or resolver network scope")
+		}
 		return provenance.PolicyImport, nil
 	case "resolve-tag":
+		if m.NetworkScope != "" || a.AutomaticInputs != nil {
+			scope, err := a.AutomaticInputs.Scope()
+			if err != nil {
+				return "", err
+			}
+			if scope != m.NetworkScope {
+				return "", errors.New("automatic input policy disagrees with signed network-scope")
+			}
+		} // else: signed legacy domain6, zero fetch authority only
 		if len(a.Mappings) != 0 || a.WorkflowsOID != m.OID || a.Trust != m.Trust ||
 			a.ScratchRef != "refs/ci/run/"+uvKey(m.Candidate) || a.BaselineRef != "" ||
 			m.Baseline != "" || m.Lock != "" || a.Lock != nil || len(a.Downloads) != 0 {
@@ -287,7 +327,11 @@ func uploadToStore(ctx context.Context, path string, size int64, url string, hea
 	if req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/octet-stream")
 	}
-	resp, err := (&http.Client{Timeout: 30 * time.Minute}).Do(req)
+	// A signed store PUT is an exact scoped output capability. Never follow
+	// a redirect with its headers or inherit a host proxy.
+	transport := &http.Transport{Proxy: nil}
+	defer transport.CloseIdleConnections()
+	resp, err := (&http.Client{Timeout: 30 * time.Minute, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("scoped store upload refuses redirects") }}).Do(req)
 	if err != nil {
 		return err
 	}

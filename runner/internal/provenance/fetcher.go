@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"urgit/runner/internal/inputpolicy"
 )
 
 // GitFetcher is the import-time Fetcher (rider 03: an explicit import may
@@ -27,9 +29,14 @@ import (
 type GitFetcher struct {
 	// Purpose comes from the verified assignment, never from YAML or an
 	// unsigned flag. Its zero value has no import authority.
-	Purpose FetchPurpose
-	Cache   string
-	Timeout time.Duration
+	Purpose             FetchPurpose
+	Context             context.Context
+	AutomaticPolicy     *inputpolicy.Policy
+	AutomaticCeiling    []string
+	automaticConnection *automaticConnection
+	acquisitions        []Acquisition
+	Cache               string
+	Timeout             time.Duration
 	// Log receives one line per fetch (the record of what the import
 	// touched; P05's tripwire compares it with the deny log)
 	Log func(string)
@@ -53,7 +60,10 @@ func (g *GitFetcher) importAllowed() error {
 	case PolicyImport:
 		return nil
 	case AutomaticTag:
-		return errors.New("automatic tag resolution has no external-input policy; this dependency cannot be fetched automatically")
+		if g.AutomaticPolicy == nil || len(g.AutomaticPolicy.Sources) == 0 {
+			return errors.New("automatic tag resolution has no external-input policy; this dependency cannot be fetched automatically")
+		}
+		return errors.New("automatic Git/action and registry/image acquisition is unsupported: these helper transports cannot enforce the public HTTPS input boundary")
 	default:
 		return errors.New("missing or unsupported authenticated resolver purpose")
 	}
@@ -357,9 +367,17 @@ func ArchiveIdentity(archive string) (string, []string, error) {
 // Download fetches a URL into the content-addressed cache and reports
 // its sha256 and size; the bytes stay at DownloadPath for mirroring.
 func (g *GitFetcher) Download(url string) (Downloaded, error) {
-	if err := g.importAllowed(); err != nil {
+	client := &http.Client{Timeout: g.timeout()}
+	if g.Purpose == AutomaticTag {
+		var err error
+		client, err = g.automaticClient(url)
+		if err != nil {
+			return Downloaded{}, err
+		}
+	} else if err := g.importAllowed(); err != nil {
 		return Downloaded{}, err
 	}
+	defer client.CloseIdleConnections()
 	g.logf("download %s", url)
 	if err := os.MkdirAll(filepath.Join(g.Cache, "downloads"), 0o755); err != nil {
 		return Downloaded{}, err
@@ -369,8 +387,16 @@ func (g *GitFetcher) Download(url string) (Downloaded, error) {
 		return Downloaded{}, err
 	}
 	defer os.Remove(tmp.Name())
-	client := &http.Client{Timeout: g.timeout()}
-	resp, err := client.Get(url)
+	ctx := g.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		tmp.Close()
+		return Downloaded{}, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		tmp.Close()
 		return Downloaded{}, err
@@ -381,14 +407,20 @@ func (g *GitFetcher) Download(url string) (Downloaded, error) {
 		return Downloaded{}, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, 2<<30))
+	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, (2<<30)+1))
 	tmp.Close()
 	if err != nil {
 		return Downloaded{}, err
 	}
+	if n > 2<<30 {
+		return Downloaded{}, errors.New("download exceeds 2 GiB limit")
+	}
 	sum := hex.EncodeToString(h.Sum(nil))
 	if err := os.Rename(tmp.Name(), g.DownloadPath(sum)); err != nil {
 		return Downloaded{}, err
+	}
+	if g.Purpose == AutomaticTag {
+		g.acquisitions = append(g.acquisitions, Acquisition{url, resp.Request.URL.String(), sum, n})
 	}
 	return Downloaded{SHA256: sum, Size: n}, nil
 }

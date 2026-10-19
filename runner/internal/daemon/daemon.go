@@ -238,6 +238,7 @@ func New(ctx context.Context, cfg *config.Config, logger *log.Logger) (d *Daemon
 	d.client.Labels = cfg.Labels
 	d.client.Profiles = cfg.ProfileNames()
 	d.client.Resolver = cfg.Resolver
+	d.client.AutomaticInputs = append([]string(nil), cfg.AutomaticInputs...)
 	// this daemon carries out the operator's recovery commands from Urgit
 	// (INTEGRATION.md §11.12): the ship hands them over on its poll
 	d.client.Recovery = true

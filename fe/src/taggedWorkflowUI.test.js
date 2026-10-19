@@ -109,3 +109,20 @@ test('the real candidate components render pending, resolved and refused tagged 
     rmSync(cacheDir, { recursive: true, force: true })
   }
 })
+
+test('real candidate panel shows immutable admission, resolution and input receipts', async () => {
+  const cacheDir = mkdtempSync(join(tmpdir(), 'urgit-input-ui-'))
+  const server = await createServer({ root: fileURLToPath(new URL('../', import.meta.url)), configLoader: 'native', cacheDir,
+    server: { middlewareMode: true, ws: false, hmr: false, watch: null }, appType: 'custom' })
+  try {
+    const { CandidateProvenance } = await server.ssrLoadModule('/src/components/CiProvenance.jsx')
+    const c = { ...candidate, workflowProvenance: {
+      acquisition: 'cached prior resolution; no new external fetch authorized', inputPolicyId: 'admission-identity', inputPolicyRecorded: true,
+      inputPolicy: { version: 1, sources: ['https://inputs.example/tool'] },
+      inputEvidence: { policyId: 'resolution-identity', ceilingId: 'owner-identity', acquisitions: [{ url: 'https://inputs.example/tool', resolvedUrl: 'https://cdn.example/tool', sha256: 'f'.repeat(64), size: 15 }] },
+    } }
+    const shown = renderToStaticMarkup(React.createElement(CandidateProvenance, { data: { candidate: c }, busy: '' }))
+    for (const value of ['cached prior resolution', 'admission-identity', 'resolution-identity', 'owner-identity', 'https://cdn.example/tool', 'f'.repeat(64), '15']) assert.ok(shown.includes(value), value)
+    assert.match(shown, /never satisfies protected required checks/)
+  } finally { await server.close(); rmSync(cacheDir, { recursive: true, force: true }) }
+})

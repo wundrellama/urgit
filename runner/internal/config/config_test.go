@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,5 +143,33 @@ func TestLabelsStillValidated(t *testing.T) {
 	c, err := Load(write(t, base+"labels = [\"networked\", \"networked\", \" big-mem \"]\n"))
 	if err != nil || len(c.Labels) != 2 {
 		t.Fatalf("labels: %v %+v", err, c.Labels)
+	}
+}
+
+func TestAutomaticInputCeilingIsIndependent(t *testing.T) {
+	for _, sources := range []string{`["https://inputs.example/tool"]`, `[]`} {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		body := fmt.Sprintf("ship_url = 'https://controller.example'\nsandbox = 'docker-rootless'\ndocker_host = 'unix:///fixture'\nwork_dir = %q\nstate_file = %q\nresolver = true\nautomatic_inputs = %s\n", t.TempDir(), filepath.Join(t.TempDir(), "state.json"), sources)
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(c.NetworkProfiles) != 0 {
+			t.Fatal("input permission became job network authority")
+		}
+		for _, bad := range []string{strings.Replace(body, "resolver = true", "resolver = false", 1), strings.Replace(body, sources, `["http://private.example/tool"]`, 1), strings.Replace(body, sources, `["https://inputs.example/tool", "https://inputs.example/tool"]`, 1)} {
+			if sources == "[]" && strings.Contains(bad, "resolver = false") {
+				continue
+			}
+			if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Fatal("malformed/unauthorized automatic ceiling accepted")
+			}
+		}
 	}
 }

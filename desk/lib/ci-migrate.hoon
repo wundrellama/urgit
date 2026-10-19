@@ -28,11 +28,11 @@
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -52,8 +52,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %7
+    ?:  !=(~ (mole |.(;;(state-7:ci old))))  &+%current
+    |+'a %7 state that is not exactly state-7: partial or corrupt'
+  ::
       %6
-    ?:  !=(~ (mole |.(;;(state-6:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-6:ci-state-6 old))))  &+%state-6
     |+'a %6 state that is not exactly state-6: partial or corrupt'
   ::
       %5
@@ -91,17 +95,20 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-6:ci]
+  ^-  [=shape new=state-7:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
-  ?:  =(%current p.found)  ;;(state-6:ci old)
+  ?:  =(%current p.found)  ;;(state-7:ci old)
+  %-  from-state-6
+  ?:  =(%state-6 p.found)  ;;(state-6:ci-state-6 old)
   %-  from-state-5
   ?-  p.found
     %current  !!
+    %state-6  !!
     %state-5  ;;(state-5:ci-state-5 old)
     %state-4  (from-state-4 ;;(state-4:ci-state-4 old))
     %state-3  (from-state-4 (from-state-3 ;;(state-3:ci-state-3 old)))
@@ -119,11 +126,55 @@
     (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
   ==
 ::
+::  State6 is frozen whole, including all nested molds. Preserve every
+::  old noun and outstanding obligation; no historical source gains a grant.
+++  from-state-6
+  |=  o=state-6:ci-state-6
+  ^-  state-7:ci
+  :*  %7
+      candidates.o
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      locks.o
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      forge-events.o
+      event-ids.o
+      schedules.o
+      tag-runs.o
+      ~
+      ~
+      ~
+      ~
+  ==
+::
 ::  State5 is frozen in sur/ci-state-5, including every nested mold.
 ::  Copy all fields. No historical run gains tagged-revision authority.
 ++  from-state-5
   |=  o=state-5:ci-state-5
-  ^-  state-6:ci
+  ^-  state-6:ci-state-6
   :*  %6
       candidates.o
       daemons.o

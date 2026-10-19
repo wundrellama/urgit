@@ -75,14 +75,14 @@
 ::    automatically. Promoted branch, PR and schedule authority stays
 ::    unchanged. A tag run remains advisory and receives no credentials.
 ::
-::    persisted state is state-6 (contract §8c; state-migration ruling
+::    persisted state is state-7 (contract §8c; state-migration ruling
 ::    01): every earlier shape — state-5, state-4, state-3, state-2, state-1, and
 ::    the three tagged %0 — is converted to it explicitly on load by
 ::    lib/ci-migrate, or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-input, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -132,7 +132,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-6:ci
+=|  state-7:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -165,7 +165,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-6, or converted to it explicitly, or refused with its
+    ::  current state-7, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::  every active schedule's armed wake is set again (Delivery 1C): a
     ::  timer that survived is then set twice, and the armed-due and
@@ -179,7 +179,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-6")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-7")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
@@ -1725,6 +1725,9 @@
     ::
     =.  incarnations  (~(del by incarnations) repository.act)
     =.  generations  (~(del by generations) repository.act)
+    =.  automatic-inputs  (~(del by automatic-inputs) repository.act)
+    =.  input-snapshots
+      (malt (skip ~(tap by input-snapshots) |=([id=candidate-id:ci *] (~(has in gone) id))))
     =.  baselines
       %-  malt
       %+  skip  ~(tap by baselines)
@@ -1733,6 +1736,8 @@
       %-  malt
       %+  skip  ~(tap by locks)
       |=([* l=lock:ci] =(repository.act repo.l))
+    =.  input-evidence
+      (malt (skim ~(tap by input-evidence) |=([id=@ux *] (~(has by locks) id))))
     =.  roles  (~(del by roles) repository.act)
     =.  environments
       %-  malt
@@ -2159,6 +2164,21 @@
       ::  a standing network policy (rider 03): this job of this workflow
       ::  may use a runner profile toward these destinations
       ::
+      %set-automatic-inputs
+    =/  changed=(each state-7:ci @t)
+      %:  edit:ci-input  state  repo.act  sources.act  expected.act
+        (authorized repo.act %ci-policy ~ actor.act)
+      ==
+    ?:  ?=(%| -.changed)  ~|(p.changed !!)
+    =.  state  p.changed
+    =^  restores  state
+      %+  bump-generation
+        repo.act
+      'automatic input allowlist changed; in-flight effects may already have occurred'
+    =.  audit
+      (record-audit actor.act 'set-automatic-inputs' repo.act (scope:ci-input sources.act))
+    (emit restores)
+  ::
       %set-network-policy
     =+  (require-authority repo.act %ci-policy ~ actor.act)
     ?:  |(=('' workflow.act) =('' job.act) =('' profile.act))
@@ -2343,6 +2363,7 @@
                 %set-harness-paths  %set-sandbox-requirement
                 %set-environment  %delete-environment  %approve-environment
                 %record-override  %set-network-policy  %clear-network-policy
+                %set-automatic-inputs
                 %stage-shadow  %compare-shadow  %cancel-attempt
             ==
         -.p.parsed
@@ -2937,15 +2958,17 @@
       ?-(sandbox.a %vm 'vm', %container 'container')
       ?-  kind.a
         %plan  'plan'
-        %resolve
-          ?-  (purpose:ci-resolve c)
-            %import  'resolve'
-            %tag  'resolve-tag'
-            %invalid  'resolve-invalid'
-          ==
+          %resolve
+        ?-  (purpose:ci-resolve c)
+          %import  'resolve'
+          %tag  'resolve-tag'
+          %invalid  'resolve-invalid'
+        ==
         %job  `@t`mode.c
       ==
       profile.net
+      ?:  &(=(%resolve kind.a) =(%tag (purpose:ci-resolve c)))
+        ?:((~(has by input-snapshots) id.c) (scope:ci-input (captured:ci-input state id.c)) '')
       (scope-text:ci-provenance destinations.net)
       ::  the event the run is for (Delivery 1A) and its payload's digest;
       ::  a resolve runs none
@@ -4124,6 +4147,7 @@
       ::  every signed field (Delivery 1B correction 01): the shared
       ::  serializer, so the object always carries what the signature binds
       ['manifest' (manifest-json:ci-provenance manifest)]
+      ['automatic-inputs' ?:(&(=('resolve-tag' mode.manifest) (~(has by input-snapshots) id.candidate)) (envelope:ci-input (captured:ci-input state id.candidate)) ~)]
       ['harness-paths' [%a ?~(base ~ (turn harness-paths.u.base |=(p=@t s+p)))]]
       ::  An automatic resolver has a captured source, not a promoted baseline.
       :-  'workflows-oid'
@@ -4159,6 +4183,7 @@
       ['resolver' s+(scot %uv resolver.l)]
       ['bytes' (numb:enjs:format bytes.l)]
       ['notices' [%a (turn notices.l |=(n=@t s+n))]]
+      ['automaticInputEvidence' ?~(e=(~(get by input-evidence) digest.l) ~ (fall (de:json:html u.e) ~))]
       :-  'nodes'
       :-  %a
       %+  turn  nodes.l
@@ -4754,6 +4779,8 @@
     run(baseline `p.peeled, lock ~, selected ~, verdict-reason `'pending: resolving tagged revision workflows')
   =.  candidates  (~(put by candidates) id run)
   =.  tag-runs  (~(put by tag-runs) id ~)
+  =.  input-snapshots
+    (~(put by input-snapshots) id (~(gut by automatic-inputs) repo.e ~))
   =.  forge-events
     (record-forge-event e(outcome 'pending: resolving tagged revision workflows', runs ~[id]))
   =/  cached=(unit lock:ci)  (cached-lock:ci-tag locks repo.e p.peeled)
@@ -4883,6 +4910,8 @@
       incarnation  incarnation.c
     ==
   =.  candidates  (~(put by candidates) rid record)
+  =.  input-snapshots
+    (~(put by input-snapshots) rid (captured:ci-input state id.c))
   =^  made  state  (create-attempt rid u.chosen %resolve ~ ~ resolve-deadline ~)
   =.  state  (bind-attempt:ci-resolve state c -.made)
   =/  restores=(list card)
@@ -5625,6 +5654,10 @@
     =/  runner=daemon:ci  (~(got by daemons) id.u.found)
     ?:  =(profiles.runner reported)  daemons
     (~(put by daemons) id.u.found runner(profiles reported))
+  =.  resolver-inputs
+    =/  header=(unit @t)  (get-header:http 'x-ci-automatic-inputs' header-list.request.req)
+    =/  reported=(list @t)  ?~(header ~ (sort ~(tap in (parse-labels u.header)) aor))
+    (~(put by resolver-inputs) id.u.found ?:((valid:ci-input reported) reported ~))
   =/  scheduled=out  schedule
   =.  state  state.scheduled
   =.  polls  polls.scheduled
@@ -6178,6 +6211,19 @@
       ['lock' ?~(lock.c ~ s+(hex-bytes:ci-provenance u.lock.c 32))]
       ['resolution' s+resolution]
       ['resolverAttempt' ?~(resolver ~ s+(scot %uv u.resolver))]
+      ['inputPolicyId' s+(context-digest:ci-dispatch (scope:ci-input (captured:ci-input state id.c)))]
+      ['inputPolicy' (envelope:ci-input (captured:ci-input state id.c))]
+      ['inputPolicyRecorded' b+(~(has by input-snapshots) id.c)]
+      :-  'acquisition'
+      :-  %s
+      ?~  resolver
+        ?^  lock.c  'cached prior resolution; no new external fetch authorized'
+        'awaiting resolution; no external acquisition recorded'
+      'captured automatic resolver'
+      :-  'inputEvidence'
+      ?~  lock.c  ~
+      =/  e=(unit @t)  (~(get by input-evidence) u.lock.c)
+      ?~(e ~ (fall (de:json:html u.e) ~))
   ==
 ::
 ++  candidate-json
@@ -6729,6 +6775,24 @@
   %-  pairs:enjs:format
   :~  ['repo' s+repo]
       ['untrusted' s+(~(gut by policies) repo %approval)]
+      ['canEditAutomaticInputs' b+(authorized repo %ci-policy ~ our.bowl)]
+      ['automaticInputs' (envelope:ci-input (~(gut by automatic-inputs) repo ~))]
+      ['automaticPolicyId' s+(context-digest:ci-dispatch (scope:ci-input (~(gut by automatic-inputs) repo ~)))]
+      :-  'automaticResolvers'
+      :-  %a
+      %+  murn  ~(val by daemons)
+      |=  d=daemon:ci
+      ^-  (unit json)
+      ?.  resolver.d  ~
+      ?.  ?~(repos.d %.y (~(has in u.repos.d) repo))  ~
+      :-  ~
+      %-  pairs:enjs:format
+      :~  ['id' s+(scot %uv id.d)]
+          ['name' s+(rap 3 ~[sandbox.d ' resolver ' (join:ci-plan (sort ~(tap in labels.d) aor) ', ')])]
+          ['live' b+(live-daemon d)]
+          ['reported' b+(~(has by resolver-inputs) id.d)]
+          ['sources' [%a (turn (~(gut by resolver-inputs) id.d ~) |=(v=@t s+v))]]
+      ==
       :-  'ciProtected'
       :-  %a
       %+  murn  ~(tap in ci-protected)
@@ -6918,6 +6982,25 @@
     (emit (give-error eyre-id 400 'valid JSON body required'))
   =/  =candidate:ci  (~(got by candidates) candidate.u.found)
   =/  refused=(unit @t)  (string-at 'error' u.jon)
+  =/  automatic=?  =(%tag (purpose:ci-resolve candidate))
+  =/  legacy=?  &(automatic !(~(has by input-snapshots) id.candidate))
+  =/  evidence=(unit @t)  (string-at 'input-evidence' u.jon)
+  =/  evidence-ok=?
+    ?.  automatic  %.y
+    =/  parsed  (parse-lock u.jon)
+    ?:  ?=(%| -.parsed)  %.n
+    ?~  evidence
+      ?.  legacy  %.n
+      ::  Persisted state6 obligations can finish their already-supported
+      ::  dependency-free/local walk, with no invented acquisition evidence.
+      (levy nodes.p.parsed |=(n=dep-node:ci ?=(?(%local %reusable) kind.n)))
+    (evidence-valid:ci-input u.evidence (captured:ci-input state id.candidate) nodes.p.parsed)
+  ?:  &(automatic !evidence-ok ?=(~ refused))
+    %-  emit
+    %^  give-error
+      eyre-id
+      422
+    'automatic input evidence is missing or does not bind the captured policy and measured inputs'
   ::  phase 1 (inventory): the resolver names what it found; the ship
   ::  creates the private mirror repositories the lock will point at and
   ::  hands back a write token per repository, valid for this resolve
@@ -7043,6 +7126,8 @@
       %:  lock-digest-full:ci-provenance
         repo.candidate  revision  nodes.p.parsed  p.inventory  p.triggers
       ==
+    =?  digest  &(automatic ?=(^ evidence))
+      (shax (jam [%automatic-input-v1 digest (fall evidence '')]))
     :*  %&  digest  repo.candidate  revision  nodes.p.parsed  now.bowl  daemon.u.found
         bytes.p.parsed  notices.p.parsed  p.inventory  p.triggers
     ==
@@ -7061,6 +7146,8 @@
       422
     %-  pairs:enjs:format
     ~[['error' s+p.verdict] ['attempt' (attempt-json (~(got by attempts) id.u.found))]]
+  =?  input-evidence  &(automatic ?=(^ evidence))
+    (~(put by input-evidence) digest.p.verdict (fall evidence ''))
   =.  locks  (~(put by locks) digest.p.verdict p.verdict)
   =.  state  (complete-tag-resolve id.u.found p.verdict)
   =.  clear  (weld clear (tag-resolve-releases id.u.found))
@@ -7562,6 +7649,14 @@
     ?:  |(?=(~ repo) ?=(~ ref) ?=(~ id) ?=(~ oid) ?=(~ expected) ?=(~ reason))
       [%| 'repo, ref, id (candidate), oid, expected (40 hex each) and reason are required']
     [%& [%record-override u.repo u.ref u.id u.oid u.expected u.reason actor]]
+  ::
+      %set-automatic-inputs
+    =/  sources=(unit (list @t))  (string-list-at 'sources' jon)
+    =/  expected=(unit (unit @ud))  (number-at 'generation' jon)
+    ?:  |(?=(~ repo) ?=(~ sources) ?=(~ expected))
+      [%| 'repo, sources (a list) and generation are required']
+    ?~  u.expected  [%| 'generation is required']
+    [%& [%set-automatic-inputs u.repo u.sources u.u.expected actor]]
   ::
       %set-network-policy
     =/  workflow=(unit @t)  (string-at 'workflow' jon)

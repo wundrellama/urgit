@@ -87,6 +87,9 @@ export function waitRows(candidate = {}) {
 export function waitExplanation(reason = '') {
   const r = String(reason)
   if (!r) return ''
+  if (/runner owner automatic input ceiling/.test(r)) return 'The repository permission exceeds this runner’s owner-configured automatic_inputs ceiling. A job network profile cannot widen it.'
+  if (/automatic Git\/action and registry\/image acquisition is unsupported/.test(r)) return 'Automatic Git/action and registry acquisition cannot yet enforce the input boundary. This transport is refused before external acquisition; HTTPS downloads are supported.'
+  if (/automatic input (DNS|redirect|.*requires)/.test(r)) return 'The automatic input boundary refused this address or redirect. Every input and redirect needs an exact public HTTPS permission and runner ceiling.'
   if (/automatic tag resolution has no external-input policy/.test(r)) return 'Automatic dependency fetching has no approved input policy. This dependency was refused without fetching; the captured source revision is unchanged. A job network profile does not authorize resolver fetches.'
   if (/^pending:.*tagged revision.*re-offered/.test(r)) return 'Resolution is waiting for another eligible resolver. It will resume automatically at the same captured revision; the previous attempt cannot complete this run.'
   if (/^pending:.*tagged revision/.test(r)) return 'Dependency resolution resumes automatically on a resolver-capable runner, using the same revision captured at admission. See Settings → Runners.'
