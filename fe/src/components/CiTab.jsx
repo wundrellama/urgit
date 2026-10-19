@@ -121,11 +121,11 @@ function CandidateList({ feed, onOpen }) {
       {rows.map((row) => (
         <button type="button" className="ci-row ci-candidate" key={row.id} onClick={() => onOpen(row.id)}>
           <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}{row.event && <small className="quiet ci-manual-tag" title="An automatic run: advisory, it never lands"> · {row.event}</small>}{row.evidenceAbsent && <small className="ci-evidence-tag" title="A required workflow was not selected: the branch stays blocked until an override"> · required evidence absent</small>}</span>
-          <code>{row.head}</code>
-          <span>{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
+          <code data-label="Head">{row.head}</code>
+          <span data-label="Actor">{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
           <span className={`status ${statusClass(row.status)}`} title={row.reason}>{row.statusText}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
-          <span title={row.reason}>{relativeTime(Date.now() / 1000 - row.ageSeconds)}</span>
-          <Pips pips={row.pips} />
+          <span title={row.reason} data-label="Age">{relativeTime(Date.now() / 1000 - row.ageSeconds)}</span>
+          <span data-label="Jobs"><Pips pips={row.pips} /></span>
         </button>
       ))}
       {more && <div className="form-actions"><button className="text-button" onClick={() => load(cursor)}>Older candidates</button></div>}
@@ -183,7 +183,7 @@ export function EventFacts({ candidate, repo, onOpenPull }) {
       {e.inputs.length > 0 && (
         <div className="ci-list ci-inputs-table">
           <div className="table-head ci-input-row"><span>Input</span><span>Type</span><span>Value</span><span>Decided by</span></div>
-          {e.inputs.map((i) => <div className="ci-input-row" key={i.id}><code>{i.id}</code><span>{i.type}</span><code>{i.text}</code><span className="quiet">{i.sourceLabel}</span></div>)}
+          {e.inputs.map((i) => <div className="ci-input-row" key={i.id}><code>{i.id}</code><span data-label="Type">{i.type}</span><code data-label="Value">{i.text}</code><span className="quiet" data-label="Decided by">{i.sourceLabel}</span></div>)}
         </div>
       )}
       {(e.name === 'workflow_dispatch' || e.payload) && (
@@ -214,11 +214,11 @@ export function AttemptRow({ row, onLog }) {
     <Fragment>
       <div className={`ci-attempt-row${row.pinned.length ? ' has-pins' : ''}`}>
         <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
-        <code>{row.daemon}</code>
+        <code data-label="Daemon">{row.daemon}</code>
         <span className={`status ${statusClass(row.status)}`}>{row.statusText}</span>
-        <span>{row.started ? exactTime(row.started) : '—'}</span>
-        <span>{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
-        <span>{row.hasLog ? <button className="text-button" onClick={() => onLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
+        <span data-label="Started">{row.started ? exactTime(row.started) : '—'}</span>
+        <span data-label="Finished">{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
+        <span data-label="Log">{row.hasLog ? <button className="text-button" onClick={() => onLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
       </div>
       {row.pinned.length > 0 && (
         <div className="ci-attempt-pins" title={pinnedNote}>

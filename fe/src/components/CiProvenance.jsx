@@ -52,10 +52,10 @@ function LockView({ repo, digest, other }) {
         {lock.nodes.map((n, i) => (
           <div className={`ci-lock-row${n.refusal ? ' bad' : ''}`} key={`${n.uses}-${i}`} title={n.refusal || ''}>
             <span><code>{n.uses}</code><small className="quiet"> {n.workflow}/{n.job} step {n.step}</small>{n.refusal && <small className="field-error"> refused: {n.refusal}</small>}</span>
-            <span>{n.kind}</span>
-            <span><code>{nodeIdentity(n) || '—'}</code></span>
-            <span>{n.mirror ? <code>{n.mirror}{n['mirror-commit'] ? `@${short(n['mirror-commit'], 8)}` : ''}</code> : <small className="quiet">—</small>}</span>
-            <span>{n.license || <small className="quiet">none read</small>}</span>
+            <span data-label="Kind">{n.kind}</span>
+            <span data-label="Identity"><code>{nodeIdentity(n) || '—'}</code></span>
+            <span data-label="Mirror">{n.mirror ? <code>{n.mirror}{n['mirror-commit'] ? `@${short(n['mirror-commit'], 8)}` : ''}</code> : <small className="quiet">—</small>}</span>
+            <span data-label="License">{n.license || <small className="quiet">none read</small>}</span>
           </div>
         ))}
       </div>
@@ -177,7 +177,7 @@ export function CiPolicySection({ repo, policy, onChanged }) {
         <strong>Backends</strong>
         <div className="ci-list">
           <div className="table-head ci-backend-row"><span>Backend</span><span>Boundary</span><span>Required work</span><span>Network</span><span>Note</span></div>
-          {backendTable.map((r) => <div className="ci-backend-row" key={r.backend}><span>{r.backend}</span><span>{r.boundary}</span><span>{r.required}</span><span>{r.network}</span><span>{r.note}</span></div>)}
+          {backendTable.map((r) => <div className="ci-backend-row" key={r.backend}><span>{r.backend}</span><span data-label="Boundary">{r.boundary}</span><span data-label="Required work">{r.required}</span><span data-label="Network">{r.network}</span><span data-label="Note">{r.note}</span></div>)}
         </div>
         <small className="quiet">Labels are placement, not containment: a label picks which enrolled runner may take a job; only the runner's sandbox backend and the ship's sandbox requirement decide what contains it.</small>
       </div>

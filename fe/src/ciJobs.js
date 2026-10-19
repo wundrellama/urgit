@@ -250,5 +250,5 @@ export function renderWaitingJobs(h, rows) {
   return h('div', { className: 'ci-list ci-waiting-jobs', 'data-part': 'waiting-jobs' },
     h('div', { className: 'table-head ci-waiting-row' }, h('span', null, 'Job'), h('span', null, 'State'), h('span', null, 'Why')),
     rows.map((r) => h('div', { key: `${r.workflow}/${r.id}`, className: 'ci-waiting-row', 'data-part': 'waiting-job' },
-      h('strong', null, r.id), ' ', h('span', null, r.label), ' ', h('small', { className: 'quiet' }, r.reason))))
+      h('strong', null, r.id), ' ', h('span', { 'data-label': 'State' }, r.label), ' ', h('small', { className: 'quiet', 'data-label': 'Why' }, r.reason))))
 }

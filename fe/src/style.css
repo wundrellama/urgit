@@ -48,6 +48,9 @@ button { color: inherit; }
 .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-empty { padding: 8px 10px; }
 .repo-search { height: 32px !important; margin: 2px 5px 8px; background: var(--panel) !important; font-size: 12px; }
+/* the sidebar's filters stretch inside their side margins; the inputs'
+   width: 100% plus those margins was 10px wider than the sidebar */
+.sidebar .repo-search { width: auto; align-self: stretch; }
 .publish-desk-button { min-height: 34px; margin: 0 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--text); text-align: left; padding: 0 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .publish-desk-button:hover { background: var(--panel); }
 .publish-desk-button span { display: inline-block; margin-right: 7px; color: var(--accent); }
@@ -187,8 +190,8 @@ h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-size: 30px; line-height: 1.15; letter-spacing: -.035em; }
 h2 { margin-bottom: 5px; font-size: 15px; letter-spacing: -.015em; }
 p { color: var(--muted); line-height: 1.55; }
-.clone-box { max-width: 54%; height: 38px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; display: flex; align-items: center; padding-left: 12px; }
-.clone-box code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.clone-box { max-width: 54%; min-width: 0; height: 38px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; display: flex; align-items: center; padding-left: 12px; }
+.clone-box code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .repo-meta { display: flex; align-items: center; gap: 20px; margin-top: 24px; color: var(--muted); font-size: 12px; }
 .repo-meta b { color: var(--text); font-weight: 600; }
 .clay-chip { padding: 5px 8px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); }
@@ -327,9 +330,15 @@ p { color: var(--muted); line-height: 1.55; }
 .change-status { font-size: 10px; text-transform: capitalize; }
 .change-status.added { color: #1a7f37; }.change-status.deleted { color: var(--danger); }.change-status.modified { color: #9a6700; }
 .commit-dot { width: 8px; height: 8px; border: 2px solid var(--accent); border-radius: 50%; }
-.settings-grid { display: grid; gap: 16px; }
+/* one track no wider than the page: an implicit auto track grows to its
+   widest panel's content and pushes every panel past a narrow viewport */
+.settings-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.settings-grid > * { min-width: 0; }
 .panel { padding: 22px; overflow: visible; }
-.section-title { display: flex; justify-content: space-between; gap: 16px; }
+/* the title's text keeps a readable measure; its tools wrap below it
+   rather than squeezing it into a one-word column */
+.section-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+.section-title > div:first-child { flex: 1 1 18rem; min-width: 0; }
 .section-title p, .danger-zone p { margin-bottom: 20px; font-size: 13px; }
 .status { align-self: flex-start; padding: 4px 7px; border-radius: 5px; background: var(--soft); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .status.good { color: #178342; background: #e6f5ea; }
@@ -357,7 +366,7 @@ p { color: var(--muted); line-height: 1.55; }
 .bridge-footer { margin-top: 12px; }
 @media (max-width: 620px) { .bridge-state { align-items: flex-start; flex-direction: column; } .bridge-actions { grid-template-columns: 1fr; } }
 label { display: grid; gap: 7px; margin-top: 14px; color: var(--muted); font-size: 12px; font-weight: 600; }
-input[type="text"], input[type="password"], input:not([type]), select { width: 100%; height: 39px; border: 1px solid var(--line); border-radius: 7px; padding: 0 11px; background: var(--bg); color: var(--text); outline: none; }
+input[type="text"], input[type="password"], input[type="url"], input:not([type]), select { width: 100%; height: 39px; border: 1px solid var(--line); border-radius: 7px; padding: 0 11px; background: var(--bg); color: var(--text); outline: none; }
 input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
 .field-error { display: block; margin-top: 6px; color: var(--danger); }
 .field-note { display: block; margin-top: 6px; color: var(--muted); }
@@ -652,7 +661,10 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
   .blame-origin { width: 68px; }
   .blame-origin span { display: none; }
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; width: 100%; height: auto; max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  /* the capped sidebar scrolls as a whole: its sections keep their own
+     height instead of the repository list shrinking to nothing */
+  .sidebar { position: static; width: 100%; height: auto; max-height: 38vh; overflow-y: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidebar > * { flex-shrink: 0; }
   .topbar { top: 0; }
   .content { padding: 34px 20px 60px; }
   .repo-header { align-items: stretch; flex-direction: column; }
@@ -702,7 +714,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-pip.good { background: #2e8b57; }
 .ci-pip.bad { background: #c0392b; }
 .ci-pip.warn { background: #d4a017; }
-.ci-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.5rem 1.5rem; margin: 0.75rem 0; }
+.ci-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: 0.5rem 1.5rem; margin: 0.75rem 0; }
 .ci-facts div { display: flex; gap: 0.5rem; }
 .ci-facts dt { font-weight: 600; min-width: 5.5rem; }
 .ci-facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -719,7 +731,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .copy-field { display: block; margin: 0.75rem 0; }
 .ci-repo-picker { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0; }
 .ci-repo-list { display: flex; flex-direction: column; gap: 0.2rem; margin-left: 1.5rem; max-height: 12rem; overflow: auto; }
-.ci-tab-tools { display: flex; align-items: center; gap: 0.75rem; }
+.ci-tab-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .ci-feed { font-size: 0.85rem; color: var(--muted); display: inline-flex; align-items: center; gap: 0.3rem; }
 .ci-first-run { border: 1px solid var(--border, #e2e2e2); border-radius: 6px; margin-bottom: 0.75rem; }
 .ci-guide { width: min(900px, 100%); }
@@ -821,6 +833,21 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 @container ci-schedule-list (max-width: 45.75rem) {
   .ci-schedule-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
   .ci-schedule-row.table-head { display: none; }
+}
+
+/* CI tables in a narrow panel (UI-N3): a cell may shrink below its longest
+   identifier, which wraps instead of pushing its row out of the panel; and a
+   list narrower than its row's columns stacks each row's cells, every value
+   under its own label (data-label, set by the row's markup: never inferred
+   from a cell's position). The status badge names itself and has no label.
+   The schedules list keeps its own container (correction 05) */
+.ci-list:not(.ci-schedule-list) { container: ci-list / inline-size; }
+.ci-row > *, .ci-attempt-row > *, .ci-selection-row > *, .ci-input-row > *, .ci-event-row > *, .ci-waiting-row > *, .ci-runner-row > *, .ci-lock-row > *, .ci-backend-row > * { min-width: 0; overflow-wrap: anywhere; }
+@container ci-list (max-width: 36rem) {
+  .ci-list > .table-head { display: none; }
+  .ci-row, .ci-attempt-row, .ci-selection-row, .ci-input-row, .ci-event-row, .ci-waiting-row, .ci-runner-row, .ci-lock-row, .ci-backend-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.3rem; align-items: start; }
+  .ci-row > .status, .ci-attempt-row > .status, .ci-selection-row > .status, .ci-runner-row > .status { justify-self: start; }
+  [data-label]::before { content: attr(data-label); display: block; margin-bottom: 1px; color: var(--muted); font: 600 11px/1.3 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: normal; text-transform: none; }
 }
 
 /* Long input URLs and immutable identities stay readable in narrow panels. */

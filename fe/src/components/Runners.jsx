@@ -178,11 +178,11 @@ export default function RunnersSection() {
         {rows.map((row) => (
           <div className="ci-runner-row" key={row.id}>
             <span><code title={row.id}>{row.shortId}</code><small className="quiet"> · cap {row.capacity}{row.sandbox ? ` · ${row.sandbox}` : ''}</small></span>
-            <span className="quiet" title={row.labels.join(', ')}>{row.labelsText}</span>
-            <span>{row.reposText} {row.state !== 'revoked' && <button type="button" className="text-button" disabled={busy !== ''} onClick={() => setBinding(row)}>edit</button>}</span>
-            <span>{row.enrolled ? relativeTime(row.enrolled, now) : '—'}</span>
-            <span>{row.lastSeen ? relativeTime(row.lastSeen, now) : '—'}</span>
-            <span>{row.running}</span>
+            <span className="quiet" title={row.labels.join(', ')} data-label="Labels">{row.labelsText}</span>
+            <span data-label="Repositories">{row.reposText} {row.state !== 'revoked' && <button type="button" className="text-button" disabled={busy !== ''} onClick={() => setBinding(row)}>edit</button>}</span>
+            <span data-label="Enrolled">{row.enrolled ? relativeTime(row.enrolled, now) : '—'}</span>
+            <span data-label="Last seen">{row.lastSeen ? relativeTime(row.lastSeen, now) : '—'}</span>
+            <span data-label="Running">{row.running}</span>
             <span className={`status ${stateClass(row.state)}`} title={row.refused || stateHint[row.state]}><span className={`ci-pip ${stateClass(row.state)}`} /> {stateLabel[row.state]}{row.refused && <small className="quiet"> · {row.refused}</small>}{row.history?.paused && <small className="status bad" title="What it ran before its execution ledger is not known: it advertises no capacity and runs nothing until its transition is confirmed."> · execution paused</small>}</span>
             <span>
               {row.history?.paused && <button type="button" className="text-button danger-text" title="Inspect its history and confirm its transition" disabled={busy !== ''} onClick={() => setRecovering(row)}>Transition…</button>}

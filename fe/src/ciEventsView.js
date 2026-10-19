@@ -24,7 +24,7 @@ export function renderSelection(h, model) {
       model.rows.map((r) => h('div', { className: 'ci-selection-row', key: r.workflow, 'data-part': 'selection-row' },
         h('span', { className: 'ci-job-cell' }, h('strong', null, r.name), h('small', { className: 'quiet ci-job-meta' }, r.workflow)),
         h('span', { className: `status ${r.tone}`, 'data-part': 'selection-verdict' }, r.verdictText),
-        h('small', { className: 'quiet ci-selection-reason' }, r.reason))),
+        h('small', { className: 'quiet ci-selection-reason', 'data-label': 'Reason' }, r.reason))),
       !model.rows.length && h('div', { className: 'empty' }, 'No workflow in this revision declares this event.')))
 }
 
@@ -49,10 +49,10 @@ function eventRow(h, row, repo, actions) {
     h('span', { className: 'ci-job-cell' },
       h('strong', null, row.kindText),
       h('small', { className: 'quiet ci-job-meta' }, row.branch, row.move ? ` · ${row.move}` : '')),
-    h('span', { className: 'ci-job-cell' },
+    h('span', { className: 'ci-job-cell', 'data-label': 'Actor · route' },
       h('span', null, row.actor),
       h('small', { className: 'quiet ci-job-meta' }, row.route)),
-    h('span', { className: 'ci-event-outcome-cell' },
+    h('span', { className: 'ci-event-outcome-cell', 'data-label': 'Outcome' },
       h('span', { className: `status ${row.tone}` }, row.outcome),
       row.pull && h('small', { className: 'ci-event-pull' },
         h('a', { href: pullHref(repo, row.pull.number), 'data-part': 'open-pull', onClick: (event) => { event?.preventDefault?.(); actions.openPull(row.pull.number) } }, `#${row.pull.number}`), ' ',
@@ -61,7 +61,7 @@ function eventRow(h, row, repo, actions) {
       row.runs.map((id) => h('button', { type: 'button', className: 'text-button', key: id, 'data-part': 'open-run', onClick: () => actions.openRun(id) }, `open run ${id}`)),
       renderTagProvenance(h, row.workflowProvenance),
       row.selection && selectionDetails(h, row.selection)),
-    h('span', { title: 'recorded by the ship' }, exactTime(row.received)))
+    h('span', { title: 'recorded by the ship', 'data-label': 'Recorded' }, exactTime(row.received)))
 }
 
 // the recorded source events: every write the forge persisted on a
