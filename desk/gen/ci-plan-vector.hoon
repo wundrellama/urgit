@@ -59,6 +59,10 @@
 =/  key-b=key:ci-plan  ['chain.yml' 'b']
 =/  key-pass=key:ci-plan  ['pass.yml' 'pass']
 =/  job-b=job:ci  (snag 1 chain-plan)
+=/  job-pass=job:ci  (snag 2 chain-plan)
+=/  sibling-plan=(list job:ci)
+  ~[(snag 0 chain-plan) job-b job-pass(workflow 'chain.yml')]
+=/  key-sibling=key:ci-plan  ['chain.yml' 'pass']
 =/  decide-b
   |=  [standings=(map key:ci-plan standing:ci-plan) outputs=(map key:ci-plan (map @t @t))]
   ^-  decision:ci-plan
@@ -286,9 +290,45 @@
       :-  'verdict: passed when every job passed or skipped by if'
       =([%passed ~] (verdict:ci-plan chain-plan (st ~[[key-a %passed] [key-b %skipped] [key-pass %passed]])))
     ::
-      :-  'verdict: failed on the first failed job'
+      :-  'verdict: failed sibling leaves running work pending'
+      .=  [%pending ~]
+      %+  verdict:ci-plan  chain-plan
+      (st ~[[key-a %passed] [key-b %running] [key-pass %failed]])
+    ::
+      :-  'verdict: failed sibling leaves an unstarted job pending'
+      .=  [%pending ~]
+      (verdict:ci-plan sibling-plan (st ~[[key-a %passed] [key-sibling %failed]]))
+    ::
+      :-  'evaluate: an unrelated failure does not suppress a ready job'
+      =/  ready=decision:ci-plan
+        %+  decide-b
+          (st ~[[key-a %passed] [key-sibling %failed]])
+        (ou ~[[key-a (malt ~[['go' 'true']])]])
+      ?=(%run -.ready)
+    ::
+      :-  'verdict: terminal failure remains failed after other jobs finish'
       .=  [%failed `'job pass in pass.yml failed']
-      (verdict:ci-plan chain-plan (st ~[[key-a %passed] [key-b %running] [key-pass %failed]]))
+      %+  verdict:ci-plan  chain-plan
+      (st ~[[key-a %passed] [key-b %passed] [key-pass %failed]])
+    ::
+      :-  'verdict: failure and skipped dependent never pass'
+      .=  [%failed `'job a in chain.yml failed']
+      %+  verdict:ci-plan  chain-plan
+      (st ~[[key-a %failed] [key-b %skipped] [key-pass %passed]])
+    ::
+      :-  'verdict: infrastructure error leaves running work pending'
+      .=  [%pending ~]
+      %+  verdict:ci-plan  chain-plan
+      (st ~[[key-a %unknown] [key-b %skipped] [key-pass %running]])
+    ::
+      :-  'verdict: infrastructure error leaves an unstarted job pending'
+      .=  [%pending ~]
+      (verdict:ci-plan chain-plan (st ~[[key-a %unknown] [key-b %skipped]]))
+    ::
+      :-  'verdict: terminal failure takes precedence over infrastructure error'
+      .=  [%failed `'job pass in pass.yml failed']
+      %+  verdict:ci-plan  chain-plan
+      (st ~[[key-a %unknown] [key-b %skipped] [key-pass %failed]])
     ::
       :-  'verdict: unknown on an infrastructure error with no failure'
       .=  [%unknown `'job a in chain.yml had an infrastructure error']

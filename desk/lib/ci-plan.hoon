@@ -322,7 +322,7 @@
 ::  what to do with a job whose own attempt has not been recorded: run it,
 ::  skip it with a reason, or wait.  every job in `needs` must stand
 ::  terminal first.  a failed or unfinished need skips the dependent with
-::  the reason (the candidate is already failed or unknown by then); a
+::  the reason.  other independent jobs can still run.  a
 ::  skipped need skips it too, as on GitHub.  an output-eq condition reads
 ::  the need's recorded outputs: an output never set is a skip with the
 ::  reason, never a crash and never true.
@@ -365,15 +365,21 @@
     (rap 3 ~['if false: ' reference ' is ' (quote u.value) ', not ' (quote literal.u.cond.job)])
   ==
 ::
-::  the candidate's verdict over its plan: failed on the first failed job,
-::  else unknown on the first infrastructure error, else passed once every
-::  job is passed or skipped, else pending.  a skip does not fail the
-::  candidate: an `if` that is false is GitHub's skip, and ERPit's plan
-::  gates depend on it.
+::  keep the candidate pending while any job is open, so the scheduler
+::  can finish independent jobs after a failure.  pending never permits
+::  landing.  once all jobs are terminal, failure takes precedence over
+::  infrastructure error.  otherwise every job passed or skipped.  an `if`
+::  that is false is GitHub's skip, and ERPit's plan gates depend on it.
 ::
 ++  verdict
   |=  [plan=(list job:ci) standings=(map key standing)]
   ^-  [status=candidate-status:ci reason=(unit @t)]
+  =/  open=?
+    %+  lien  plan
+    |=  =job:ci
+    =/  standing=standing  (~(gut by standings) [workflow.job id.job] %pending)
+    ?=(?(%pending %running) standing)
+  ?:  open  [%pending ~]
   =/  failed=(unit job:ci)
     (find-job plan standings %failed)
   ?^  failed
@@ -382,12 +388,6 @@
     (find-job plan standings %unknown)
   ?^  unknown
     [%unknown `(rap 3 ~[(job-name id.u.unknown workflow.u.unknown) ' had an infrastructure error'])]
-  =/  open=?
-    %+  lien  plan
-    |=  =job:ci
-    =/  standing=standing  (~(gut by standings) [workflow.job id.job] %pending)
-    ?=(?(%pending %running) standing)
-  ?:  open  [%pending ~]
   [%passed ~]
 ::
 ++  find-job
