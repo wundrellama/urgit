@@ -4,13 +4,39 @@ Your ship runs the CI. It stages every push to a protected branch as a candidate
 
 This guide is the whole setup, in order. Every step is either a click in the ship's web interface or a command on the runner host. There is no dojo step.
 
+The repository's **CI** tab shows a checklist of these steps, each ticked from the ship's own state, and **Set up with an agent** downloads a version of this guide filled in for your ship and repository, for a coding agent to follow. That file never contains the enrollment token.
+
+0. [Prepare your repository](#prepare-your-repository)
 1. [Object store](#1-object-store)
 2. [Mint a token](#2-mint-a-token)
-3. [Install the daemon](#3-install-the-daemon)
-4. [Protect a branch](#4-protect-a-branch)
+3. [Install the runner](#3-install-the-runner)
+4. [Approve the workflows and require CI](#4-approve-the-workflows-and-require-ci)
 5. [Watch](#5-watch)
 6. [Runners](#6-runners)
 7. [Limitations in this release](#7-limitations-in-this-release)
+
+## Prepare your repository
+
+CI runs the GitHub Actions workflows in the repository's `.github/workflows/` directory. Most workflows written for GitHub run unchanged; check yours against this list.
+
+**Supported**
+
+- `runs-on: ubuntu-latest`, `ubuntu-22.04`, `ubuntu-24.04`, `self-hosted`, `linux`, `x64`, or a label a runner declares.
+- `needs`, job outputs, job and step `if` (including `always()`, `failure()` and `needs.<job>.result`), and the common expression functions.
+- Events: `push` (branches and tags), `pull_request` (`opened`, `synchronize`, `closed`, `reopened`), `workflow_dispatch` with typed inputs, and `schedule`; with branch, tag and path filters.
+- `uses:` actions. They are fetched once, when you resolve dependencies (step 4), pinned in a lock and served to every job from your ship. Pin each action to a full commit SHA where you can.
+- Secrets, set in **Settings → Credentials**; a job reads them as `${{ secrets.NAME }}`.
+
+**Not supported yet** (a workflow that uses one is refused with the reason, never run wrong)
+
+- `strategy.matrix`, `concurrency`, reusable workflows (`uses:` at job level), and artifacts passed between jobs.
+- `pull_request_target` and other events not listed above.
+- `GITHUB_TOKEN` and the GitHub API. urgit is not GitHub; a step that calls GitHub's API fails.
+- Windows and macOS runners.
+
+**Network.** Every job runs with no network unless you allow it. A job that downloads (`apt-get`, `curl`, a pinned binary, a package registry) needs a rule in **Settings → CI policy → Network policies**: the workflow file, the job id, a profile name and its `proto:host:port` destinations, for example `tcp:archive.ubuntu.com:80`. The runner and the launcher must allow the same destinations (step 3). Read your workflows and list the hosts each job reaches; a job that is refused network fails with the destination it tried.
+
+**Size.** Any repository size works. A job fetches only its own commit, its history and the revision it is compared with, not every branch and tag.
 
 ## 1. Object store
 
@@ -27,67 +53,75 @@ On a NativePlanet box, GroundSeg fills the `%storage` settings in for you when y
 
 ## 2. Mint a token
 
-In the ship's web interface open the repository, then **Settings → Runners → Mint token**.
+In the ship's web interface open the repository, then **Settings → Runners → Mint token**. The token is shown once: paste it into the runner's config file yourself, and do not give it to anyone or to an agent.
 
 The dialog shows the enrollment token once, beside the three config lines the daemon needs:
 
 ```toml
 ship_url = "http://your-ship.example:8080"
 enroll_token = "0v…"
-sandbox = "docker-rootless"
+sandbox = "microvm"
 ```
 
 Copy them now. The ship keeps only a hash of the token; closing the dialog is the last time it is readable. If you lose it, **Expire** the row and mint another. A minted token that no daemon has used yet shows as `minted` in the Runners table.
 
-The dialog also offers **Repositories this runner may take**. Leave it at *any* for a runner that takes every job (the pool), or pick repositories to make this runner run only their code. You can change this later from the table.
+The dialog also offers **Repositories this runner may take**. Leave it at *any* for a runner that takes every job (the pool), or pick repositories to make this runner run only their code. You can change this later with the **Repositories…** button on the runner's row.
 
-## 3. Install the daemon
+## 3. Install the runner
 
-The daemon is one static Go binary. Build it on any machine with Go 1.22 or later:
+The runner has two parts:
 
-```text
-cd runner && CGO_ENABLED=0 go build -o urgit-runner ./cmd/urgit-runner
-```
+- **`urgit-runner`**, an unprivileged daemon that polls your ship for jobs.
+- **`urgit-vm-launcher`**, a small root service that starts one throwaway Firecracker microVM per job, under Firecracker's jailer, as the unprivileged user `urgit-vm`. It is the only part that runs as root.
 
-(`zig build -Drunner` from the repository root does the same when Go is on the PATH.)
+There is no prebuilt download in this release: build both from the urgit source that matches the desk your ship runs.
 
-On the runner host you need:
+**The host.** Linux x86_64 with KVM (`/dev/kvm`), cgroup v2 (`stat -fc %T /sys/fs/cgroup` prints `cgroup2fs`), systemd, Git, outbound HTTP(S) to the ship, Go 1.27 or later to build, and about 25 GiB of disk per concurrent job. It may be the ship's own host.
 
-- Any Linux host with outbound HTTP to the ship. It may be the ship's own host or another machine.
-- A rootless Docker daemon owned by the user the runner runs as. Check with `docker --host unix://<socket> info --format '{{.SecurityOptions}}'`; the output must contain `name=rootless`.
-- The runner image `catthehacker/ubuntu:act-latest` loaded into that rootless daemon.
-- A statically linked `act` 0.2.89 (the release tarball from `nektos/act`; a Homebrew `act` links against Homebrew's libc and cannot run inside the container).
-
-Then, on the runner host:
+**Build.**
 
 ```text
-install -m 0755 urgit-runner /usr/local/bin/urgit-runner
-install -m 0600 urgit-runner.toml /etc/urgit-runner.toml
-systemctl enable --now urgit-runner
+cd runner
+CGO_ENABLED=0 go build -trimpath -o urgit-runner ./cmd/urgit-runner
+CGO_ENABLED=0 go build -trimpath -o urgit-vm-launcher ./cmd/urgit-vm-launcher
 ```
 
-`urgit-runner.toml` starts from `urgit-runner.toml.example` with the three lines the dialog gave you pasted in. The other keys:
+The guest image (the kernel and root filesystem every job VM boots) is built by `guest/build.sh` from the recipes under [`guest`](guest). The launcher verifies the image's digests before every boot.
+
+**Install the launcher (as root).**
+
+1. Create the system user `urgit-vm`.
+2. Create the launcher's protected root, owned by root, with `bin/`, `images/`, `jail/` and `state/` inside it.
+3. Put `urgit-vm-launcher`, and Firecracker and jailer v1.17.0, in `bin/`. The launcher checks the two Firecracker binaries against the SHA-256 pins in its config at start. Put the guest image in `images/<manifest sha256>/`.
+4. Write the launcher's config, mode 0600, from [`launcher/urgit-vm-launcher.toml.example`](launcher/urgit-vm-launcher.toml.example). `socket`, `socket_group` and `runner_uids` name the user the runner runs as. `ceiling` lists every network destination any job may ever reach; empty means no job gets network.
+5. Install [`launcher/urgit-vm-launcher.service`](launcher/urgit-vm-launcher.service) with your paths and start it. It is not enabled at boot by default; start it after a reboot, or enable it.
+
+**Configure and start the runner.** Copy [`urgit-runner.toml.example`](urgit-runner.toml.example) to `/etc/urgit-runner.toml`, mode 0600, and set:
 
 | Key | Meaning |
 |---|---|
-| `ship_url` | The ship's HTTP origin, from the dialog. |
-| `enroll_token` | From the dialog. Consumed on the first start; remove it from the file afterwards. |
-| `sandbox` | `docker-rootless`, the one backend in this release. |
-| `docker_host` | The rootless daemon's socket, as `unix:///run/user/<uid>/docker.sock`. |
-| `act_binary` | Path to the static `act` 0.2.89 the daemon copies into each sandbox. |
-| `act_image` | The image `act` maps `ubuntu-latest` to. |
-| `capacity` | Concurrent jobs this daemon offers the ship. Default 1. Changing it takes effect at the first poll after a restart. |
-| `labels` | The labels this runner declares, matched against a job's `runs-on` (see [Runners](#6-runners)). Default none. |
-| `work_dir` | Checkouts, projections and saved `act` streams, one directory per attempt. |
-| `state_file` | Where the daemon writes its identity, bearer and the ship's CI public key after enrolling. Mode 0600. |
+| `ship_url` | The ship's HTTP origin, from the mint dialog. |
+| `enroll_token` | From the mint dialog. Consumed on the first start; remove it from the file afterwards. |
+| `sandbox` | `microvm`, the default. (`docker-rootless` is a trusted-compatibility profile, a container rather than a VM; see §7.) |
+| `launcher_socket` | The launcher's `socket`. |
+| `image_path` | The guest image directory. |
+| `resolver` | `true` lets this runner resolve dependencies (step 4). |
+| `capacity` | Concurrent jobs this runner offers. Default 1. |
+| `cpus`, `memory_mib`, `disk_mib` | Each job VM's size. Defaults 2, 4096, 20480. |
+| `budget_cpus`, `budget_memory_mib` | This runner's total, refused if the host cannot honour it. |
+| `labels` | Labels matched against a job's `runs-on` (§6). Default none. |
+| `[[network_profiles]]` | For each profile name your network policies use, the destinations this runner allows. |
+| `work_dir`, `state_file` | Where checkouts and the runner's identity live. |
 
-`urgit-runner.service` is a `Type=simple` unit with `Restart=on-failure`, running as the unprivileged user `urgit-runner`; create that user and give it the rootless Docker daemon.
+[`urgit-runner.service`](urgit-runner.service) is a `Type=simple` unit running as an unprivileged user that can reach the launcher's socket. On its first start the runner enrolls with the token, writes its identity to `state_file`, and forgets the token; its row in **Settings → Runners** flips from `minted` to `healthy` with no page refresh, and its log prints `sandbox: microvm`. Then choose **Repositories…** on its row if it should take only some repositories.
 
-On its first start the daemon enrolls with the token, writes its identity to `state_file`, and forgets the token. Its row in the Runners table flips from `minted` to `healthy` as it does — with no page refresh. A later start with the state file present polls at once and never re-enrolls.
+## 4. Approve the workflows and require CI
 
-## 4. Protect a branch
+**Approve the workflows.** Required checks run the workflow files of a revision you approved, not whatever a push brings. In **Settings → CI policy**, enter the branch tip's commit and click **Resolve dependencies**: a runner fetches the actions and downloads the workflows use and records them in a lock. When the lock appears, click **Promote as baseline** for the branch. A branch with no promoted baseline waits with that reason. Change the workflows later by pushing, then resolving and promoting the new revision.
 
-Open the repository's **Settings → Protected branches** and turn on **CI required** for the branch.
+**Try it.** **CI tab → Run workflow** runs a workflow with `workflow_dispatch` by hand. A manual run never lands anything; check every job passes before you require CI.
+
+**Require CI.** In **Settings → CI-required branches**, click **Add branch** and pick the branch. Protect it from force-pushes too, in **Settings → Protected branches**.
 
 From then on a push or a web merge to that branch is never applied directly. The ship stages the pushed head as a candidate — the push answers `staged as ci candidate <id>` — plans its workflows, runs every job, and advances the branch to the candidate's exact commit only when every job passes. A candidate whose branch moved meanwhile is refused with `destination moved; rebase and push again`. A revision from a ship that cannot write the repository (a fork pull request) is untrusted: it waits for a writer's approval on the CI tab, or runs as a restricted check with no credentials if you choose that policy in Settings → Untrusted revisions.
 
@@ -99,7 +133,7 @@ The repository's **CI** tab lists candidates newest first and updates as the shi
 
 Open a candidate for its jobs: each row shows the job, its `runs-on`, the runner that ran it, timing, and a **log** link once the log is in the store. **Approve and run trusted** appears on an untrusted candidate (the tooltip names the repository's policy); **Re-run** stages the same head again.
 
-A repository with CI required and no runner shows *No runner is enrolled. Mint a token in Settings → Runners and install the daemon* with a link to this guide.
+Until CI is set up the CI tab shows the setup checklist, each step ticked from the ship's state, with this guide and the agent file one click away. Once every step is done it folds to one line.
 
 ## 6. Runners
 
@@ -179,10 +213,10 @@ Nothing at the launcher is touched. A record of the attempt there refuses the re
 - The promoted baseline's workflow and harness bytes are the required evidence, not the candidate's own. A candidate whose harness differs runs a trial beside the required run — unprivileged and never landable — and a branch with no promoted baseline waits with that reason.
 - The web interface's **Approve** button is the owner's. A listed writer on another ship approves through the peer protocol from their own ship (`POST /peer/ci-approve` with the owner ship, the repository and the candidate id; the answer arrives as a forge request of kind `candidate`); the owner's ship admits exactly the ships that can write the repository. No button for it yet.
 - Retrying or releasing a quarantined slot needs the daemon stopped, and for a VM the launcher's `serve` stopped for its own retry and release first (§6), which tears down every VM that launcher runs: there is no live administration channel. The one exception is a legacy retention, released from Urgit through the daemon's own poll (§6). No host listener is added for it.
-- The checkout clones anonymously. A private repository refuses the clone and the plan fails with the clone's error.
+- The checkout authenticates with a read capability the ship issues for that attempt alone, so private repositories work; the runner never stores it.
 - A credential value is at least eight characters and may span lines (a PEM key pastes as is). `act` masks a secret only where the whole value appears on one output line, so the runner and the ship scrub every released value whole and every line of it of at least eight characters from the relayed stream, the saved log and the recorded outputs.
 - The CI public key is pinned at enrollment. A rotated key needs a fresh enrollment (or `ci_public_key` in the config, for testing only).
-- A matrix strategy, a `runs-on` expression, and any job-level `if` other than `needs.<job>.outputs.<name> == '<literal>'` fail the plan with a diagnosed reason; a manual workflow using one is listed in Run workflow as unable to run, with that reason.
+- A matrix strategy and a `runs-on` expression fail the plan with a diagnosed reason; a manual workflow using one is listed in Run workflow as unable to run, with that reason.
 - **Automatic events** (Delivery 1C): pushes, native pull request activities (`opened`, `closed`, `reopened`, `synchronize`) and schedules run the workflows the promoted baseline's `on:` selects; a revision resolved by an earlier runner has no trigger definitions, so resolve and promote it again with this release's runner. The resolver posts the compiled catalog beside the lock (`triggers`), and the daemon runs each admitted job on its signed event: `act pull_request -j <job> -e /work/event.json …` (act derives `github.ref` as `refs/pull/<n>/merge` from the payload's number and `github.sha` from the checkout, the merge the ship built) and `act schedule -j <job> -e /work/event.json …` (`github.ref` from `repository.default_branch`). It refuses a job whose signed `trigger` does not begin with its event, a pull request payload whose number, head or target do not match, and a schedule payload whose default branch is not the signed ref. Event runs never land, receive no credentials and always run in a VM. Not supported: `pull_request_target`, other activity types and events (diagnosed, never run as a push), a deletion's `delete` event, schedules beyond 2040-01-01 (re-resolve with a newer compiler).
 - **Manual runs** (CI tab → **Run workflow**): a workflow that declares `on.workflow_dispatch` at a branch's promoted baseline runs on that branch's tip with its declared inputs (boolean, number, choice, string, environment), checked by the ship. The list is the resolver's: resolve and promote a revision with this release's runner to list its manual workflows. A manual run never lands, receives no credentials (an environment input only names an environment), is not re-run in place, and is cancelled if the policy generation moves while it is open. A job-level `if` on `inputs` is not supported yet.
 - The saved `act` stream is uploaded as `log.jsonl`. Step summaries and artifacts stay in the sandbox and are not uploaded.

@@ -179,7 +179,7 @@ export default function RunnersSection() {
           <div className="ci-runner-row" key={row.id}>
             <span><code title={row.id}>{row.shortId}</code><small className="quiet"> · cap {row.capacity}{row.sandbox ? ` · ${row.sandbox}` : ''}</small></span>
             <span className="quiet" title={row.labels.join(', ')} data-label="Labels">{row.labelsText}</span>
-            <span data-label="Repositories">{row.reposText} {row.state !== 'revoked' && <button type="button" className="text-button" disabled={busy !== ''} onClick={() => setBinding(row)}>edit</button>}</span>
+            <span data-label="Repositories" className="ci-runner-repos"><span>{row.reposText}</span>{row.state !== 'revoked' && <button type="button" className="button small" aria-label={`Choose the repositories runner ${row.shortId} may take`} disabled={busy !== ''} onClick={() => setBinding(row)}>Repositories…</button>}</span>
             <span data-label="Enrolled">{row.enrolled ? relativeTime(row.enrolled, now) : '—'}</span>
             <span data-label="Last seen">{row.lastSeen ? relativeTime(row.lastSeen, now) : '—'}</span>
             <span data-label="Running">{row.running}</span>

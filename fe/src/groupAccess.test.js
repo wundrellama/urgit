@@ -24,8 +24,11 @@ const settings = repositoryView.slice(
 )
 const groupAccess = settings.slice(
   settings.indexOf('<h3>Group access</h3>'),
-  settings.indexOf('<h3>Protected branches</h3>'),
+  // the section ends where the Runners section begins (the branch policy
+  // lists that follow are their own component, with a filter <input>)
+  settings.indexOf('<RunnersSection />'),
 )
+assert.ok(settings.indexOf('<RunnersSection />') > settings.indexOf('<h3>Group access</h3>'), 'Group access precedes Runners')
 // the %groups readers live in the helper core the agent door is composed with
 // (=>, ahead of the door) since P2's ci-can-write peek (fence touch 5); the
 // one-line wrappers on-poke's core keeps for its callers are not the bodies

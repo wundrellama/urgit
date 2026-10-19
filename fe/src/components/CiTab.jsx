@@ -10,6 +10,7 @@ import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
 import { exactTime, relativeTime } from '../format'
 import SetupGuide from './SetupGuide'
+import { CiSetupPanel } from './CiSetup'
 import { CandidateProvenance } from './CiProvenance'
 import { useConfirm } from './ConfirmDialog'
 import RunWorkflow from './RunWorkflow'
@@ -292,7 +293,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate, onOpenPull })
   )
 }
 
-export default function CiTab({ repo, onMutate, onOpenPull }) {
+export default function CiTab({ repo, onMutate, onOpenPull, onSettings }) {
   const [open, setOpen] = useState('')
   const [view, setView] = useState('candidates')
   const [guide, setGuide] = useState(false)
@@ -300,9 +301,10 @@ export default function CiTab({ repo, onMutate, onOpenPull }) {
   const [policy, setPolicy] = useState(null)
   const feed = useRepositoryFeed(repo.name)
   const probe = useStorageProbe()
+  const ship = useShip()
   const pip = feedPip(feed.status)
   useEffect(() => { setOpen(''); setRunning(false); setView('candidates') }, [repo.name])
-  useEffect(() => { let live = true; ci.policy(repo.name).then((p) => { if (live) setPolicy(p) }).catch(() => {}); return () => { live = false } }, [repo.name])
+  useEffect(() => { let live = true; setPolicy(null); ci.policy(repo.name).then((p) => { if (live) setPolicy(p) }).catch(() => {}); return () => { live = false } }, [repo.name])
   const firstRun = noRunnerMessage(policy?.ciProtected || [], feed.runners)
   const liveCandidate = open ? (feed.raw || []).find((c) => c.id === open) || null : null
   return (
@@ -318,6 +320,7 @@ export default function CiTab({ repo, onMutate, onOpenPull }) {
       </div>
       {(probe.state === 'unreachable' || probe.state === 'cors') && <div className="empty ci-first-run ci-storage-warning">{probeMessage(probe.state, probe.host)}</div>}
       {firstRun && <div className="empty ci-first-run">{firstRun} <button type="button" className="text-button" onClick={() => setGuide(true)}>Setup guide</button></div>}
+      {!open && <CiSetupPanel repo={repo} storage={probe.state} storageChecked={probe.state !== 'unknown' || Boolean(probe.error)} runners={feed.runners} policy={policy} ship={ship} onGuide={() => setGuide(true)} onSettings={onSettings} />}
       {!open && (
         <div className="ci-view-switch" role="tablist" aria-label="CI views">
           <button type="button" role="tab" data-part="ci-view-candidates" aria-selected={view === 'candidates'} className={view === 'candidates' ? 'active' : ''} onClick={() => setView('candidates')}>Candidates</button>

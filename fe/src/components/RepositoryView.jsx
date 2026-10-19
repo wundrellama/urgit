@@ -3,6 +3,7 @@ import { api, ci, waitForPeerBrowse, waitForPeerTransfer } from '../api'
 import CiTab, { useStorageProbe } from './CiTab'
 import { CiPolicySection } from './CiProvenance'
 import RunnersSection from './Runners'
+import BranchPolicyList from './BranchPolicyList'
 import { probeMessage } from '../storageProbe'
 import { ciActions, credentialFormError, parseEnvs, stagedEditNote, stagedPublishNote } from '../ci'
 import { exactBytes, formatBytes } from '../format'
@@ -1419,21 +1420,41 @@ function Settings({ repo, onMutate }) {
           <div className="form-actions split"><button className="text-button" disabled={!nextRole} onClick={() => setGroupRoles((rows) => [...rows, { role: nextRole.id, capability: 'read' }])}>Add role</button><div>{repo.groupPolicy && <button className="text-button danger-text" onClick={() => act('clear-group-policy', () => api.setGroupPolicy(repo.name, null))}>Clear</button>} <button className="button" disabled={busy || !canSaveGroupPolicy} onClick={saveGroupPolicy}>{busy === 'group-policy' ? 'Saving…' : 'Save'}</button></div></div>
         </div>
         <RunnersSection />
-        <div className="subsection">
-          <div className="section-title"><div><h3>Protected branches</h3><p>Protected branches accept fast-forward updates, but reject force-pushes and deletion.</p></div></div>
-          <div className="branch-policy-list">
-            {(repo.refs || []).filter((entry) => entry.name.startsWith('refs/heads/')).map((entry) => {
-              const protectedBranch = (repo.protectedRefs || []).includes(entry.name)
-              const ciRequired = Boolean(ciPolicy?.ciProtected?.includes(entry.name))
-              return <div className="ci-branch-policy" key={entry.name}>
-                <label className="check-row compact"><input type="checkbox" checked={protectedBranch} onChange={(event) => act(`protected-${entry.name}`, () => api.setProtected(repo.name, entry.name, event.target.checked))} /><span><strong>{entry.name.replace('refs/heads/', '')}</strong><small>{protectedBranch ? 'Fast-forward updates only.' : 'Force-push and deletion allowed.'}</small></span></label>
-                <label className="check-row compact ci-required"><input type="checkbox" checked={ciRequired} disabled={busy !== '' || !ciPolicy} onChange={(event) => ciRequiredToggle(entry.name, event.target.checked)} /><span><strong>CI required</strong><small>{ciRequired ? 'Pushes and merges are staged as candidates and land only when the checks pass.' : 'Not gated by CI.'}</small>{toggleError[entry.name] && <small className="field-error">{toggleError[entry.name]}</small>}{toggleWarning[entry.name] && <small className="field-error ci-toggle-warning">{toggleWarning[entry.name]}</small>}</span></label>
-              </div>
-            })}
-            {!(repo.refs || []).some((entry) => entry.name.startsWith('refs/heads/')) && <small className="quiet">No branches yet.</small>}
-            {ciError && <small className="field-error">CI settings unavailable: {ciError}</small>}
-          </div>
-        </div>
+        <BranchPolicyList
+          part="protected-branches"
+          title="Protected branches"
+          description="Protected branches accept fast-forward updates, but reject force-pushes and deletion."
+          chosen={repo.protectedRefs || []}
+          refs={repo.refs || []}
+          busy={busy !== ''}
+          rowNote="Fast-forward updates only."
+          emptyText="No protected branches. Force-push and deletion are allowed on every branch."
+          confirm={confirmAction}
+          removeConfirm={(label) => ({ title: 'Remove protection?', message: label, detail: 'Force-pushes and deletion of this branch will be allowed again.' })}
+          onAdd={(ref) => act(`protected-${ref}`, () => api.setProtected(repo.name, ref, true))}
+          onRemove={(ref) => act(`protected-${ref}`, () => api.setProtected(repo.name, ref, false))}
+        />
+        <BranchPolicyList
+          part="ci-required-branches"
+          title="CI-required branches"
+          description="Pushes and merges to these branches are staged as candidates and land only when the checks pass."
+          chosen={ciPolicy?.ciProtected || []}
+          refs={repo.refs || []}
+          busy={busy !== ''}
+          disabled={!ciPolicy}
+          rowNote="Lands only when the checks pass."
+          rowMessages={(ref) => [
+            toggleError[ref] && { text: toggleError[ref], className: 'field-error' },
+            toggleWarning[ref] && { text: toggleWarning[ref], className: 'field-error ci-toggle-warning' },
+          ].filter(Boolean)}
+          emptyText="No branch requires CI. Pushes land without checks."
+          confirm={confirmAction}
+          removeConfirm={(label) => ({ title: 'Stop requiring CI?', message: label, detail: 'Pushes and merges to this branch will land at once, without checks.' })}
+          onAdd={(ref) => ciRequiredToggle(ref, true)}
+          onRemove={(ref) => ciRequiredToggle(ref, false)}
+        />
+        {ciError && <small className="field-error">CI settings unavailable: {ciError}</small>}
+        {Object.entries(toggleError).filter(([ref, text]) => text && !(ciPolicy?.ciProtected || []).includes(ref)).map(([ref, text]) => <small key={ref} className="field-error" data-part="ci-add-error">Could not require CI on {ref.replace('refs/heads/', '')}: {text}</small>)}
         <div className="subsection">
           <div className="section-title"><div><h3>Untrusted revisions</h3><p>A revision from a ship that cannot write this repository, such as a fork pull request, is untrusted.</p></div></div>
           <div className="ci-radio">
@@ -1640,7 +1661,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         {tab === 'releases' && <Releases repo={repo} publicMode={publicMode} onMutate={mutate} client={client} />}
         {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} onOpenGit={(oid) => navigate({ commitOid: oid })} onCreateTag={!publicMode ? createTagFrom : null} /> : <Commits data={detail} loading={loading} loadingMore={historyLoadingMore} onLoadMore={loadMoreHistory} onSelect={openCommit} onCreateTag={!publicMode ? createTagFrom : null} />)}
         {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} initialPull={pull} onPullConsumed={() => navigate({ pull: 0 }, true)} />}
-        {tab === 'ci' && <CiTab repo={repo} onMutate={mutate} onOpenPull={(number) => navigate({ tab: 'pulls', pull: number, filePath: '', commitOid: '' })} />}
+        {tab === 'ci' && <CiTab repo={repo} onMutate={mutate} onOpenPull={(number) => navigate({ tab: 'pulls', pull: number, filePath: '', commitOid: '' })} onSettings={() => navigate({ tab: 'settings', filePath: '', commitOid: '' })} />}
         {tab === 'webhooks' && <Webhooks repo={repo} onMutate={mutate} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>
