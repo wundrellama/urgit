@@ -264,6 +264,9 @@ var jobManifest = sig.Manifest{
 	Baseline: "", Lock: "", Generation: 1, Workflow: "fixture-chain.yml", Job: "b", Trust: "trusted", Sandbox: "container", Mode: "required", Network: "locked",
 	Event: "push", Context: payloadDigest(pushPayload),
 	Needs: payloadDigest(chainNeeds), Prerequisites: "a=0v1.prod",
+	// manifest version 5 (Delivery 1C): the staged push the run is for,
+	// as the ship renders it (ci-provenance trigger-text)
+	Trigger: "push refs/heads/master 00000000000000000000000000000000000000b0..0000000000000000000000000000000000000001",
 }
 
 // job a's accepted attempt as job b's needs context: the ship renders it,

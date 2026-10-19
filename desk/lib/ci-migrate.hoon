@@ -14,20 +14,24 @@
 ::    addresses shown per run); it is frozen as sur/ci-state-2.  state-3,
 ::    tagged %3 (Delivery 1A), gave a candidate its trigger, the event it
 ::    runs for, and a lock its manual-run inventory; it is frozen as
-::    sur/ci-state-3.  the current state is state-4, tagged %4 (Delivery
-::    1B): a planned job gains its compiled condition and declared outputs,
-::    an attempt its step outputs by step, its decision, its needs context
-::    and its resolved outputs.  a %0 shape is converted to state-1,
-::    state-1 to state-2, state-2 to state-3 and state-3 to state-4.  an
+::    sur/ci-state-3.  state-4, tagged %4 (Delivery 1B), gave a planned job
+::    its compiled condition and declared outputs, an attempt its step
+::    outputs by step, its decision, its needs context and its resolved
+::    outputs; it is frozen as sur/ci-state-4.  the current state is
+::    state-5, tagged %5 (Delivery 1C): the event run mode, a candidate's
+::    event trigger and workflow selection, a lock's trigger catalog, and
+::    the forge events, their ids and the armed schedules.  a %0 shape is
+::    converted to state-1, state-1 to state-2, state-2 to state-3, state-3
+::    to state-4 and state-4 to state-5.  an
 ::    unknown, partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -47,8 +51,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %5
+    ?:  !=(~ (mole |.(;;(state-5:ci old))))  &+%current
+    |+'a %5 state that is not exactly state-5: partial or corrupt'
+  ::
       %4
-    ?:  !=(~ (mole |.(;;(state-4:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-4:ci-state-4 old))))  &+%state-4
     |+'a %4 state that is not exactly state-4: partial or corrupt'
   ::
       %3
@@ -78,7 +86,7 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-4:ci]
+  ^-  [=shape new=state-5:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
@@ -86,16 +94,152 @@
     !!
   :-  p.found
   ?-  p.found
-    %current  ;;(state-4:ci old)
-    %state-3  (from-state-3 ;;(state-3:ci-state-3 old))
-    %state-2  (from-state-3 (from-state-2 ;;(state-2:ci-state-2 old)))
-    %state-1  (from-state-3 (from-state-2 (from-state-1 ;;(state-1:ci-state-1 old))))
-    %q11  (from-state-3 (from-state-2 (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old)))))
-    %review06  (from-state-3 (from-state-2 (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old)))))
-    %base  (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
+    %current  ;;(state-5:ci old)
+    %state-4  (from-state-4 ;;(state-4:ci-state-4 old))
+    %state-3  (from-state-4 (from-state-3 ;;(state-3:ci-state-3 old)))
+    %state-2  (from-state-4 (from-state-3 (from-state-2 ;;(state-2:ci-state-2 old))))
+    %state-1  (from-state-4 (from-state-3 (from-state-2 (from-state-1 ;;(state-1:ci-state-1 old)))))
+    %q11  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old))))))
+    %review06  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old))))))
+    %base  (from-state-4 (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old))))))
   ==
 ::
-::  state-3: its twenty-eight fields as they are, under the tag %4.  a
+::  state-4: its twenty-eight fields as they are, under the tag %5, and
+::  three maps none of which existed before: no forge event was recorded,
+::  no event id admitted, no schedule armed.  a candidate keeps every
+::  field — its trigger as it was (a push or a manual dispatch), its mode
+::  (no state-4 run is an event run) — and its workflow selection was
+::  never evaluated (~).  a lock keeps every field and its trigger catalog
+::  is unknown (~: never read before state-5, which is not an empty one
+::  and authorizes nothing; its revision is resolved and promoted again to
+::  run automatic events or schedules).  an attempt keeps every field, a
+::  running one still running
+::
+++  from-state-4
+  |=  o=state-4:ci-state-4
+  ^-  state-5:ci
+  ;;  state-5:ci
+  :*  %5
+      (~(run by candidates.o) candidate-from-4)
+      daemons.o
+      assignments.o
+      (~(run by attempts.o) attempt-from-4)
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      (~(run by locks.o) lock-from-4)
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      ~
+      ~
+      ~
+  ==
+::
+++  candidate-from-4
+  |=  c=candidate:ci-state-4
+  ^-  candidate:ci
+  :*  id.c
+      repo.c
+      ref.c
+      head.c
+      base.c
+      candidate.c
+      conflict.c
+      status.c
+      attempts.c
+      plan.c
+      plan-oid.c
+      verdict-reason.c
+      actor.c
+      via.c
+      trust.c
+      pull.c
+      created.c
+      updated.c
+      mode.c
+      generation.c
+      baseline.c
+      lock.c
+      incarnation.c
+      sandbox.c
+      trial-of.c
+      harness-differs.c
+      ?-  -.trigger.c
+        %push  [%push ~]
+        %dispatch  [%dispatch workflow.trigger.c name.trigger.c inputs.trigger.c payload.trigger.c request.trigger.c]
+      ==
+      ~
+  ==
+::
+++  lock-from-4
+  |=  l=lock:ci-state-4
+  ^-  lock:ci
+  :*  digest.l
+      repo.l
+      revision.l
+      nodes.l
+      resolved.l
+      resolver.l
+      bytes.l
+      notices.l
+      inventory.l
+      ~
+  ==
+::
+++  attempt-from-4
+  |=  a=attempt:ci-state-4
+  ^-  attempt:ci
+  :*  id.a
+      candidate.a
+      assignment.a
+      daemon.a
+      trust.a
+      kind.a
+      workflow.a
+      job.a
+      status.a
+      events.a
+      step-outputs.a
+      job-result.a
+      result.a
+      reason.a
+      projection-name.a
+      log.a
+      started.a
+      finished.a
+      generation.a
+      mode.a
+      manifest.a
+      sandbox.a
+      network.a
+      approval.a
+      outcome.a
+      pinned.a
+      decision.a
+      needs.a
+      job-outputs.a
+  ==
+::
+::  state-3: its twenty-eight fields as they are, under the tag %4 (as
+::  state-4, frozen in sur/ci-state-4, holds them).  a
 ::  planned job keeps its condition with the meaning it was admitted
 ::  under — an %output-eq stays one; an %unsupported one, which no stored
 ::  plan can hold (the plan was refused), refuses its job — and its
@@ -107,8 +251,8 @@
 ::
 ++  from-state-3
   |=  o=state-3:ci-state-3
-  ^-  state-4:ci
-  ;;  state-4:ci
+  ^-  state-4:ci-state-4
+  ;;  state-4:ci-state-4
   :*  %4
       (~(run by candidates.o) candidate-from-3)
       daemons.o
@@ -145,7 +289,7 @@
 ::
 ++  candidate-from-3
   |=  c=candidate:ci-state-3
-  ^-  candidate:ci
+  ^-  candidate:ci-state-4
   :*  id.c
       repo.c
       ref.c
@@ -177,7 +321,7 @@
 ::
 ++  job-from-3
   |=  j=job:ci-state-3
-  ^-  job:ci
+  ^-  job:ci-state-4
   :*  id.j
       workflow.j
       name.j
@@ -196,7 +340,7 @@
 ::
 ++  attempt-from-3
   |=  a=attempt:ci-state-3
-  ^-  attempt:ci
+  ^-  attempt:ci-state-4
   :*  id.a
       candidate.a
       assignment.a
@@ -207,7 +351,7 @@
       job.a
       status.a
       events.a
-      (turn ~(tap by outputs.a) |=([k=@t v=@t] `step-output:ci`[~ k v %.n]))
+      (turn ~(tap by outputs.a) |=([k=@t v=@t] `step-output:ci-state-4`[~ k v %.n]))
       job-result.a
       result.a
       reason.a

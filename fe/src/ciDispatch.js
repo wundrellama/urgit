@@ -9,6 +9,7 @@
 // Nothing here fetches or renders markup.
 
 import { branchLabel } from './ci.js'
+import { instant, lateText, pullActivity } from './ciEvents.js'
 
 // a number as the ship admits it: plain decimal text, no exponent, no
 // leading zero, at most 32 characters
@@ -184,8 +185,24 @@ export function eventRows(candidate) {
   const event = candidate?.event
   if (!event || !event.name) return null
   const manual = event.name === 'workflow_dispatch'
+  // an automatic run's event (Delivery 1C): its kind, how it arrived, its
+  // tips, its pull request or its occurrence; a scheduled run is the system
+  // timer's, authorized by the promotion that armed it, never a click
+  const kind = String(event.kind || '')
+  const pull = event.pull && typeof event.pull === 'object' ? event.pull : null
+  const occurrence = event.occurrence && typeof event.occurrence === 'object' ? event.occurrence : null
   return {
-    label: manual ? 'Manual run' : event.name === 'push' ? 'Push' : String(event.name),
+    label: manual ? 'Manual run' : kind === 'pull-request' ? 'Pull request' : kind === 'schedule' ? 'Schedule' : event.name === 'push' ? 'Push' : String(event.name),
+    kind,
+    route: String(event.route || ''),
+    trigger: String(event.trigger || ''),
+    eventId: String(event.eventId || ''),
+    before: String(event.before || ''),
+    after: String(event.after || ''),
+    activity: pull ? pullActivity(pull) : '',
+    pull: pull ? { number: Number(pull.number), title: String(pull.title || ''), head: String(pull.head || ''), base: String(pull.base || ''), headBranch: branchLabel(pull.headRef), baseBranch: branchLabel(pull.baseRef), author: String(pull.sourceShip || ''), merged: Boolean(pull.merged) } : null,
+    occurrence: occurrence ? { cron: String(occurrence.cron || ''), zone: String(occurrence.timezone || 'UTC (default)'), entry: `${occurrence.workflow} #${occurrence.index}`, due: instant(occurrence.due), admitted: instant(occurrence.admitted), late: Boolean(occurrence.late), lateText: lateText(occurrence.late, occurrence.lateSeconds), promoter: String(occurrence.promoter || '') } : null,
+    triggeredBy: kind === 'schedule' ? `the system timer, authorized by ${String(occurrence?.promoter || event.actor || '')}'s promotion` : String(event.actor || ''),
     name: String(event.name),
     actor: String(event.actor || ''),
     ref: String(event.ref || ''),

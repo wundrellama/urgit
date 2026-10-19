@@ -498,6 +498,67 @@
       ?.  ?=(%& -.planned)  %.n
       =(~['a'] (turn p.planned |=(=job:ci id.job)))
   ==
+::  an event run plans the workflows its event selected (Delivery 1C):
+::  chain.yml runs on push and pull_request, pass.yml on push only,
+::  manual.yml on workflow_dispatch and schedule
+::
+=/  event-plan=wire-plan:ci-plan
+  %-  plan-3
+  %-  rap
+  :-  3
+  :~  (ev-job 'a' 'chain.yml' '[]' '["push","pull_request"]' '')  ','
+      (ev-job 'b' 'chain.yml' '["a"]' '["push","pull_request"]' '')  ','
+      (ev-job 'pass' 'pass.yml' '[]' '["push"]' '')  ','
+      (ev-job 'report' 'manual.yml' '[]' '["workflow_dispatch","schedule"]' '')
+  ==
+=/  selected-of
+  |=  [event=@t workflows=(list @t)]
+  ^-  (each (list job:ci) @t)
+  (validate-selected:ci-plan oid tree-3 event-plan event workflows)
+=/  ids
+  |=  planned=(each (list job:ci) @t)
+  ^-  (unit (list @t))
+  ?.  ?=(%& -.planned)  ~
+  `(turn p.planned |=(=job:ci id.job))
+=/  selected-results=(list [name=@t ok=?])
+  :~  :-  'selected: the selected workflow\'s jobs that trigger on the event, needs kept'
+      =/  planned  (selected-of 'pull_request' ~['chain.yml'])
+      ?.  ?=(%& -.planned)  %.n
+      ?&(=(~['a' 'b'] (turn p.planned |=(=job:ci id.job))) =(~['a'] needs:(snag 1 p.planned)))
+    ::
+      :-  'selected: a selected workflow with no job on the event refuses, naming it'
+      .=  :-  %|
+          %+  rap  3
+          :~  'the plan and the trigger catalog disagree: the catalog selects pass.yml for '
+              'pull_request, and act lists no job of it that triggers on pull_request'
+          ==
+      (selected-of 'pull_request' ~['chain.yml' 'pass.yml'])
+    ::
+      :-  'selected: an excluded workflow is not planned'
+      =(`~['pass'] (ids (selected-of 'push' ~['pass.yml'])))
+    ::
+      :-  'selected: every selected workflow of a required push'
+      =(`~['a' 'b' 'pass'] (ids (selected-of 'push' ~['chain.yml' 'pass.yml'])))
+    ::
+      :-  'selected: a schedule plans its workflow\'s scheduled jobs'
+      =(`~['report'] (ids (selected-of 'schedule' ~['manual.yml'])))
+    ::
+      :-  'selected: nothing selected plans nothing'
+      =(`~ (ids (selected-of 'push' ~)))
+    ::
+      :-  'selected: the plan must still be the candidate\'s'
+      .=  [%| (rap 3 ~['plan oid ' oid ' is not the candidate oid 0000000000000000000000000000000000000001'])]
+      %:  validate-selected:ci-plan
+        '0000000000000000000000000000000000000001'  tree-3  event-plan  'push'  ~['chain.yml']
+      ==
+    ::
+      :-  'selected: validate-for never plans an event run'
+      .=  [%| 'an event run plans the workflows its event selected, never every one']
+      %:  validate-for:ci-plan  oid  tree-3  event-plan
+        [%event [0v1 %push 'refs/heads/main' ~ `0xc1 ~ ~ ~zod 'web editor' ~2026.10.16 '{}']]
+      ==
+  ==
+=.  results  (weld results selected-results)
 =/  failures=(list @t)
   (murn results |=([name=@t ok=?] ?:(ok ~ `name)))
 ~&  [%ci-plan-vector passed=(sub (lent results) (lent failures)) of=(lent results)]

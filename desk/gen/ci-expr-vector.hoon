@@ -578,7 +578,14 @@
       ==
     ::
       :-  'outputs: a composite action\'s own step is not one of the job\'s steps'
-      =([%str 'go'] (property:ci-expr (property:ci-expr (property:ci-expr (steps-of:ci-expr recorded) %.n 'emit') %.n 'outputs') %.n 'raw'))
+      ::  correction-02: +property answers (each val @t); every read here
+      ::  must succeed, and an error is a value that is not 'go'
+      =/  read
+        |=  [v=val:ci-expr name=@t]
+        ^-  val:ci-expr
+        =/  r=(each val:ci-expr @t)  (property:ci-expr v %.n name)
+        ?:(?=(%| -.r) [%str (cat 3 'error: ' p.r)] p.r)
+      =([%str 'go'] (read (read (read (steps-of:ci-expr recorded) 'emit') 'outputs') 'raw'))
     ::
       :-  'outputs: each declared output resolves from its own step'
       .=  :~  ['verdict' &+'go']

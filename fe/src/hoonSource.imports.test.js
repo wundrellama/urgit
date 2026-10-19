@@ -46,10 +46,13 @@ test('a name the desk could also read as a hyphen-split path is ambiguous', () =
   assert.throws(() => closure('ambiguous'), /lib\/foo-bar\.hoon is ambiguous: the desk also has lib\/foo\/bar\.hoon/)
 })
 
-test("the agent's closure is exactly its 34 libraries and 3 sur files, each of which lexes", () => {
+// Delivery 1C: %urgit imports lib/ci-changes (the changed paths of its own
+// objects, for %urgit-ci's peeks) and lib/ci-forge (the report of each
+// persisted write); the closure is otherwise unchanged
+test("the agent's closure is exactly its 36 libraries and 3 sur files, each of which lexes", () => {
   const files = importClosure('app/urgit.hoon', ['lib/skeleton.hoon'])
   assert.deepEqual(files.map(([rel]) => rel).sort(), [
-    'lib/ci-candidate.hoon', 'lib/ci-writer.hoon', 'lib/dbug.hoon', 'lib/default-agent.hoon', 'lib/git-access.hoon',
+    'lib/ci-candidate.hoon', 'lib/ci-changes.hoon', 'lib/ci-forge.hoon', 'lib/ci-writer.hoon', 'lib/dbug.hoon', 'lib/default-agent.hoon', 'lib/git-access.hoon',
     'lib/git-archive.hoon', 'lib/git-blame.hoon', 'lib/git-catalog.hoon', 'lib/git-clay-history.hoon',
     'lib/git-clay-view.hoon', 'lib/git-clay.hoon', 'lib/git-codec.hoon', 'lib/git-delta.hoon', 'lib/git-format.hoon',
     'lib/git-github.hoon', 'lib/git-graph.hoon', 'lib/git-gzip.hoon', 'lib/git-http.hoon', 'lib/git-inflate.hoon',

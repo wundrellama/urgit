@@ -1,0 +1,23 @@
+# Delivery 1C: the representative workflow whose compiled trigger catalog
+# is pinned as ci.json (TestCatalogWireGolden) and decoded by the ship's
+# vector desk/gen/ci-trigger-vector.hoon.
+name: Event CI
+on:
+  push:
+    branches: [main, 'releases/**', '!releases/**-alpha']
+    paths: ['src/**', '!src/docs/**']
+  pull_request:
+    types: [opened, closed]
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  schedule:
+    - cron: '30 5 * * 1-5'
+      timezone: America/New_York
+    - cron: '*/4 * * * *'
+  workflow_dispatch:
+  issues:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build

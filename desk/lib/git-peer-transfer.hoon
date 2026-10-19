@@ -454,4 +454,32 @@
   |=  [target=ship wire=wire packet=packet:git-peer]
   ^-  card:agent:gall
   [%pass wire %agent [target %urgit] %poke %git-peer !>(packet)]
+::
+::  whose write a peer packet persisted (Delivery 1C correction-04), from
+::  the receives in flight when its event began.  a receive completes only
+::  by %snapshot or %object-fragments (+peer-finish's two callers): sent
+::  by the flight's own source, or delivered by this ship to itself, which
+::  continues a Fine page it checked came from that source.  either way
+::  the write is the receive this ship accepted: an incoming push or pull
+::  request is the offering peer's (its source, Ames-authenticated when
+::  the offer was accepted), and a fork or its refresh is this ship's,
+::  which requested it, never the peer that served the data.  any other
+::  packet, one naming no receive in flight, or one sent by a ship that
+::  is neither this one nor the flight's source, is its immediate sender's:
+::  no recorded state lends another ship's authority to it
+::
+++  receive-attribution
+  |=  [=packet:git-peer flights=(map @uv peer-receive) src=ship our=ship]
+  ^-  ship
+  =/  transfer=(unit @uv)
+    ?+  -.packet  ~
+      %snapshot  `transfer.packet
+      %object-fragments  `transfer.packet
+    ==
+  ?~  transfer  src
+  =/  flight=(unit peer-receive)  (~(get by flights) u.transfer)
+  ?~  flight  src
+  ?.  |(=(src our) =(src source.u.flight))  src
+  ?:  ?=(%fork purpose.u.flight)  our
+  source.u.flight
 --

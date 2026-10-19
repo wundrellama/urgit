@@ -125,3 +125,37 @@ test('the inventory\'s definition for a ref and workflow, or none', () => {
   assert.equal(definitionFor(inventory(), 'refs/heads/old', 'manual.yml'), null)
   assert.equal(definitionFor(null, 'refs/heads/main', 'manual.yml'), null)
 })
+
+// Delivery 1C: an automatic run's facts, as the candidate page shows them:
+// the event and its activity, how it arrived, its tips or its pull request
+// or its occurrence, and the signed trigger; a scheduled run is the system
+// timer's, authorized by a promotion, never a person's click
+test('the facts of an automatic push, a pull request activity and a scheduled occurrence', async () => {
+  const { pullRun, pushRun, scheduleRun, oid } = await import('./ciEventsFixtures.js')
+  const push = eventRows(pushRun)
+  assert.equal(push.label, 'Push')
+  assert.equal(push.route, 'smart-http push (write token)')
+  assert.equal(push.before, oid('b'))
+  assert.equal(push.after, oid('c'))
+  assert.equal(push.triggeredBy, '~zod')
+  assert.match(push.trigger, /^push refs\/heads\/main /)
+  assert.equal(push.eventId, '0v5.eeeee')
+  const pr = eventRows(pullRun)
+  assert.equal(pr.label, 'Pull request')
+  assert.equal(pr.name, 'pull_request')
+  assert.equal(pr.activity, 'opened')
+  assert.deepEqual([pr.pull.number, pr.pull.title, pr.pull.headBranch, pr.pull.baseBranch, pr.pull.author], [7, 'Add <b>x</b>', 'feature', 'main', '~nec'])
+  assert.equal(pr.pull.head, oid('d'))
+  assert.equal(pr.pull.base, oid('b'))
+  const merged = eventRows({ ...pullRun, event: { ...pullRun.event, pull: { ...pullRun.event.pull, action: 'closed', merged: true } } })
+  assert.equal(merged.activity, 'closed (merged)')
+  const sched = eventRows(scheduleRun)
+  assert.equal(sched.label, 'Schedule')
+  assert.equal(sched.triggeredBy, 'the system timer, authorized by ~zod\'s promotion')
+  assert.deepEqual([sched.occurrence.cron, sched.occurrence.zone, sched.occurrence.entry], ['30 5 * * 1-5', 'America/New_York', 'nightly.yml #0'])
+  assert.equal(sched.occurrence.due.local, '2026-10-16 05:30 UTC-04:00')
+  assert.equal(sched.occurrence.admitted.utc, '2026-10-16T09:32:05Z')
+  assert.equal(sched.occurrence.lateText, 'late by 2m 5s')
+  // a staged push and a manual run keep their facts as before
+  assert.equal(eventRows({ event: { name: 'push', actor: '~zod', ref: 'refs/heads/main', source: TIP, revision: null, workflow: null, inputs: [] } }).kind, '')
+})

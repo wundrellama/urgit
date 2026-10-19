@@ -12,10 +12,11 @@
 |%
 ::  the manifest message version (contract §5; 3 binds the run's event,
 ::  Delivery 1A; 4 binds a job's needs context and the attempts it came
-::  from, Delivery 1B).  a verifier of another version fails closed on
-::  both sides.
+::  from, Delivery 1B; 5 binds the identity of the event the run was
+::  admitted for, Delivery 1C).  a verifier of another version fails
+::  closed on both sides.
 ::
-++  manifest-version  4
+++  manifest-version  5
 ::
 ::  bounds (D4; the brief's proposed S0 bounds, adopted)
 ::
@@ -60,9 +61,13 @@
       ::  attempt of each need, `<job>=<attempt>` by job id, comma-joined
       needs=@t
       prerequisites=@t
+      ::  the event the run was admitted for (Delivery 1C): canonical text
+      ::  beginning with the event's name (lib/ci-trigger trigger-text); ''
+      ::  for a resolve
+      trigger=@t
   ==
 ::
-::  the signed noun: [4 recipient attempt operation expiry nonce manifest]
+::  the signed noun: [5 recipient attempt operation expiry nonce manifest]
 ::  — the manifest's cells continue the tuple, exactly as the daemon's
 ::  Tuple(…, manifest) nests them
 ::
@@ -105,6 +110,7 @@
       ['context' s+context.m]
       ['needs' s+needs.m]
       ['prerequisites' s+prerequisites.m]
+      ['trigger' s+trigger.m]
   ==
 ::
 ::  a candidate's manifest digest as the attempt records it: the sham of
@@ -183,6 +189,23 @@
   |=  [repo=@t revision=oid:git nodes=(list dep-node:ci) inventory=(unit (list dispatch-workflow:ci))]
   ^-  @ux
   (shax (jam [repo revision nodes inventory]))
+::
+::  a lock resolved since triggers (Delivery 1C): its identity covers the
+::  trigger catalog too, so the same nodes and inventory read with other
+::  events, filters or schedules are another lock, and no catalog (~,
+::  unknown) another than an empty one.  a lock resolved before keeps the
+::  digest it was stored under
+::
+++  lock-digest-full
+  |=  $:  repo=@t
+          revision=oid:git
+          nodes=(list dep-node:ci)
+          inventory=(unit (list dispatch-workflow:ci))
+          triggers=(unit trigger-catalog:ci)
+      ==
+  ^-  @ux
+  ?~  triggers  (lock-digest-with repo revision nodes inventory)
+  (shax (jam [repo revision nodes inventory triggers]))
 ::
 ::  lock validation (D4): bounds, well-formed identities, refusals
 ::

@@ -11,9 +11,10 @@ import (
 
 // ManifestVersion is the execution-manifest message version (P4 D5;
 // version 3, Delivery 1A, binds the run's event; version 4, Delivery 1B,
-// binds a job's needs context and the attempts it came from). A verifier
-// of another version fails closed; there is no shim.
-const ManifestVersion = 4
+// binds a job's needs context and the attempts it came from; version 5,
+// Delivery 1C, binds the identity of the event the run was admitted for).
+// A verifier of another version fails closed; there is no shim.
+const ManifestVersion = 5
 
 // Manifest is the execution manifest the ship binds an authorization to
 // (specs/ci-execution-contract.md §5): everything the attempt may act on.
@@ -46,6 +47,14 @@ type Manifest struct {
 	// `<job>=<attempt>`, by job id, comma-joined, '' with no needs
 	Needs         string `json:"needs"`
 	Prerequisites string `json:"prerequisites"`
+	// the admitted event's identity (Delivery 1C), canonical text the ship
+	// renders from the run's immutable trigger, beginning with the event's
+	// name: `push <ref> <old>..<new> event <id>`, `pull_request #<n>
+	// <action> head <sha> base <sha> event <id>`, `schedule <workflow>#<i>
+	// due <ISO-8601Z> occurrence <id>`, `workflow_dispatch <workflow>
+	// request <request>`, a staged push `push <ref> <base>..<object>`; ''
+	// for a resolve
+	Trigger string `json:"trigger"`
 }
 
 // ManifestFields is the JSON name of every field the manifest noun signs,
@@ -70,7 +79,7 @@ func ScopeText(dests []string) string {
 
 // Noun is [incarnation repo ref candidate oid baseline lock generation
 // workflow job trust sandbox mode network network-scope event context
-// needs prerequisites].
+// needs prerequisites trigger].
 func (m Manifest) Noun() (*Noun, error) {
 	inc, err := ParseUV(m.Incarnation)
 	if err != nil {
@@ -84,11 +93,12 @@ func (m Manifest) Noun() (*Noun, error) {
 		Atom(inc), Cord(m.Repo), Cord(m.Ref), Atom(cand), Cord(m.OID), Cord(m.Baseline), Cord(m.Lock),
 		Atom(new(big.Int).SetUint64(m.Generation)), Cord(m.Workflow), Cord(m.Job), Cord(m.Trust), Cord(m.Sandbox), Cord(m.Mode),
 		Cord(m.Network), Cord(m.NetworkScope), Cord(m.Event), Cord(m.Context), Cord(m.Needs), Cord(m.Prerequisites),
+		Cord(m.Trigger),
 	), nil
 }
 
 // ManifestMessage is the authorization: the v1 fields plus the manifest,
-// signed as one noun [4 recipient attempt operation expiry nonce
+// signed as one noun [5 recipient attempt operation expiry nonce
 // manifest].
 type ManifestMessage struct {
 	Recipient string

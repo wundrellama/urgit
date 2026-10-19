@@ -56,12 +56,13 @@ func wireManifest(job, needs, prerequisites string) sig.Manifest {
 		OID: wireOID, Baseline: "", Lock: "", Generation: 3, Workflow: "outputs.yml", Job: job, Trust: "trusted",
 		Sandbox: "vm", Mode: "shadow", Network: "locked", NetworkScope: "", Event: "push", Context: wirePayloadSHA256,
 		Needs: needs, Prerequisites: prerequisites,
+		Trigger: "push refs/ci/resolve " + wireOID + ".." + wireOID,
 	}
 }
 
 // wireBody is the poll's answer as the controller emits it: the assignment
 // object of assignment-json, its manifest object of manifest-json (all
-// nineteen signed fields), signed over m
+// twenty signed fields of version 5), signed over m
 func wireBody(t *testing.T, priv ed25519.PrivateKey, m sig.Manifest, needsContext string) map[string]any {
 	t.Helper()
 	expiry := time.Now().Unix() + 300
@@ -75,6 +76,7 @@ func wireBody(t *testing.T, priv ed25519.PrivateKey, m sig.Manifest, needsContex
 		"baseline": m.Baseline, "lock": m.Lock, "generation": m.Generation, "workflow": m.Workflow, "job": m.Job,
 		"trust": m.Trust, "sandbox": m.Sandbox, "mode": m.Mode, "network": m.Network, "network-scope": m.NetworkScope,
 		"event": m.Event, "context": m.Context, "needs": m.Needs, "prerequisites": m.Prerequisites,
+		"trigger": m.Trigger,
 	}
 	return map[string]any{"assignment": map[string]any{
 		"id": "0v5.m20o5.fecli.ofouk.d3pvk.9091h", "attempt": wireAttempt, "candidate": wireCandidate,

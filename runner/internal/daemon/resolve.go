@@ -60,6 +60,15 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		return
 	}
 	logf("manual workflows: %d", len(dispatch))
+	// every workflow file's compiled `on:` (Delivery 1C): the events, branch,
+	// tag and path filters and schedules the ship selects from once the
+	// revision is promoted, read by the same pinned compiler; never run here
+	triggers, err := workflowTriggers(src)
+	if err != nil {
+		d.fail(ctx, a, "trigger catalog: "+err.Error(), logf)
+		return
+	}
+	logf("trigger catalog: %d workflow(s), %d timezone table(s)", len(triggers.Workflows), len(triggers.Zones))
 	// phase 1: the inventory; the ship creates the mirrors
 	type mirrorGrant struct {
 		Repo  string `json:"repo"`
@@ -146,7 +155,7 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 			n.Mirror, n.Path = "store", put.Key
 		}
 	}
-	lock := map[string]any{"phase": "lock", "nodes": nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices, "digest": provenance.Digest(nodes), "dispatch": dispatch}
+	lock := map[string]any{"phase": "lock", "nodes": nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices, "digest": provenance.Digest(nodes), "dispatch": dispatch, "triggers": triggers}
 	// the resolver's own record of what it walked and fetched, for the
 	// import preview and the record (rider 03: native replacements and
 	// mappings appear in evidence)
@@ -183,6 +192,18 @@ func workflowDispatches(src string) ([]plan.Dispatch, error) {
 		}
 	}
 	return out, nil
+}
+
+// workflowTriggers compiles every workflow file of a checkout, in name
+// order, into the trigger catalog (Delivery 1C).
+func workflowTriggers(src string) (plan.TriggerCatalog, error) {
+	files, err := workflowFiles(src)
+	if err != nil {
+		return plan.TriggerCatalog{}, err
+	}
+	return plan.CatalogOf(files, func(file string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(src, ".github", "workflows", file))
+	})
 }
 
 func uniq(in []string) []string {

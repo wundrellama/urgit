@@ -433,6 +433,11 @@ export const ci = {
   // refusal (each refused input in `fields`)
   dispatchInventory: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/dispatch`),
   dispatch: (name, body) => ciRequest(`/repository/${encodeURIComponent(name)}/dispatch`, { method: 'POST', body: JSON.stringify(body) }),
+  // automatic events (Delivery 1C): the source events the ship recorded for
+  // a repository, newest first, with what each selected; and the schedules
+  // of its default branch with the ship's own next, last and missed times
+  events: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/events`),
+  schedules: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/schedules`),
   // the log route answers a 302 to a presigned store URL; the browser
   // follows it with no headers of its own and the text is act's jsonl
   logUrl: (attempt) => `${CI}/attempt/${encodeURIComponent(attempt)}/log`,

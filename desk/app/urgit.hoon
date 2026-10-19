@@ -1,7 +1,7 @@
 ::  Native Git object database and Smart HTTP endpoint.
 ::
 /-  ci, git, git-peer
-/+  ci-candidate, ci-writer
+/+  ci-candidate, ci-changes, ci-forge, ci-writer
 /+  git-upload, dbug, default-agent, git-access, git-archive, git-blame, git-catalog, git-clay
 /+  git-clay-history, git-codec, git-github, git-graph, git-gzip, git-migrate, git-pack
 /+  git-pack-decode, git-protocol, git-storage, git-tree, git-webhook, server
@@ -457,6 +457,68 @@
     ?.  ?=(%& -.protected)  `p.protected
     ?.  p.protected  ~
     `(rap 3 ~['ci-protected ref ' ref ' became CI-protected while its linked desk update was in progress; the desk was written, the branch was not moved'])
+  ::
+  ::  what one event persisted, for %urgit-ci (Delivery 1C; lib/ci-forge):
+  ::  every repository's ref moves, pull request transitions and default
+  ::  branch change since the event began, one %forge-events poke each,
+  ::  after the event's own cards, so %urgit-ci reads the persisted state.
+  ::  a refused or no-op write persisted nothing and reports nothing
+  ::
+  ++  forge-cards
+    |=  [before=(map @t repository:git) after=(map @t repository:git) actor=@p route=@t]
+    ^-  (list card)
+    %+  turn  (forge-actions:ci-forge before after actor route now.bowl)
+    |=  act=action:ci
+    ^-  card
+    [%pass /ci/forge-events %agent [our.bowl %urgit-ci] %poke %ci-action !>(act)]
+  ::
+  ::  the authenticated sender of a poke and the route it wrote through: a
+  ::  web request's session, or for a push the repository's owner whose
+  ::  write token write-authorized admitted (CI-TRUST-P1); a peer by Ames,
+  ::  or for a packet that completes a receive, the receive's own origin
+  ::  among the flights as the event began (+receive-attribution,
+  ::  correction-04); a local agent or the dojo; %urgit-ci's landing request
+  ::
+  ++  poke-attribution
+    |=  [=mark =vase repos=(map @t repository:git) flights=(map @uv peer-receive)]
+    ^-  [actor=@p route=@t]
+    ?+  mark  [src.bowl mark]
+        %git-peer
+      =/  got=(each packet:git-peer tang)  (mule |.(!<(packet:git-peer vase)))
+      ?.  ?=(%& -.got)  [src.bowl 'peer']
+      [(receive-attribution p.got flights src.bowl our.bowl) 'peer']
+      %git-action  [src.bowl 'git-action']
+      %ci-action  [our.bowl 'CI landing']
+    ::
+        %handle-http-request
+      =/  got=(each [@ta inbound-request:eyre] tang)
+        (mule |.(!<([@ta inbound-request:eyre] vase)))
+      ?.  ?=(%& -.got)  [src.bowl 'web request']
+      =/  req=inbound-request:eyre  +.p.got
+      =/  site=(list @t)  site:(parse-request-line:server url.request.req)
+      =/  route=@t  (http-route:ci-forge site authenticated.req)
+      ?:  authenticated.req  [our.bowl route]
+      ?.  ?=([%git @ *] site)  [src.bowl route]
+      =/  found=(unit repository:git)  (~(get by repos) (repository-name i.t.site))
+      ?~  found  [src.bowl route]
+      [owner.u.found route]
+    ==
+  ::
+  ::  an Arvo event's attribution: a parked Clay write's completion is the
+  ::  write it parked — a peer's push, a web edit, a CI landing or a Smart
+  ::  HTTP push — and anything else is this ship's, by its wire
+  ::
+  ++  arvo-attribution
+    |=  [=wire parked=(unit clay-push)]
+    ^-  [actor=@p route=@t]
+    ?.  ?=([%clay-report ~] wire)
+      [our.bowl (rap 3 ~['arvo ' ?~(wire '' i.wire)])]
+    ?~  parked  [our.bowl 'linked desk']
+    ?^  peer-response.u.parked
+      [ship.u.peer-response.u.parked 'peer push (linked desk)']
+    ?:  api-response.u.parked  [our.bowl 'web editor (linked desk)']
+    ?:  =('' eyre-id.u.parked)  [our.bowl 'CI landing (linked desk)']
+    [our.bowl 'smart-http push (linked desk)']
   --
 |_  =bowl:gall
 +*  this  .
@@ -531,6 +593,7 @@
   ^-  (quip card _this)
   =/  before=peer-ui-state
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  repos-before=(map @t repository:git)  repositories
   =/  result=(quip card _this)
     |^
       ?+  mark  (on-poke:def mark vase)
@@ -551,6 +614,9 @@
         ::
             %land-candidate
           (land-candidate id.act repo.act ref.act candidate.act expected.act pull.act)
+        ::
+            %materialize-run
+          (materialize-run id.act repo.act ref.act head.act base.act)
         ==
       ::
           %handle-http-request
@@ -978,6 +1044,34 @@
         =/  base-oid=oid:git  u.base
         ?:  =(incoming-oid base-oid)
           (peer-push-finish flight transfer %.n 'selected branches have identical tips')
+        ::  synchronize (Delivery 1C): an open pull request this ship opened
+        ::  from the same source branch onto the same target is updated, not
+        ::  opened again.  only the ship that opened it (by Ames: the flight's
+        ::  source is the offer's sender) updates it; its head and base follow
+        ::  the new tips, its number, title and comments stay; a transfer of
+        ::  the head it already has changes nothing
+        =/  prior=(unit native-pull:git)
+          %:  open-pull-from:ci-forge
+            native-pulls.u.existing  source.flight  source-repository.flight
+            selected-source-ref  target-ref.flight
+          ==
+        ?^  prior
+          ?:  =(head.u.prior incoming-oid)
+            %:  peer-push-finish  flight  transfer  %.y
+              (rap 3 ~['pull request #' (decimal number.u.prior) ' is already at that head'])
+            ==
+          =/  moved=native-pull:git  u.prior(head incoming-oid, base base-oid)
+          =/  updated=repository:git
+            %=  u.existing
+              objects  objects.flight
+              native-pulls
+                %+  turn  native-pulls.u.existing
+                |=(p=native-pull:git ?:(=(number.p number.u.prior) moved p))
+            ==
+          =.  repositories  (~(put by repositories) local-repository.flight updated)
+          %:  peer-push-finish  flight  transfer  %.y
+            (rap 3 ~['pull request #' (decimal number.u.prior) ' updated to the new head'])
+          ==
         =/  number=@ud  (add 1 (lent native-pulls.u.existing))
         =/  pull=native-pull:git
           :*  number
@@ -3600,6 +3694,43 @@
         ==
       :_  this
       ~[(reply [%candidate-ready repo-name ref head base candidate.outcome])]
+    ::
+    ::  a pull request run's integration object for %urgit-ci (Delivery
+    ::  1C): the head merged onto the target's tip as materialize-candidate
+    ::  builds it, kept reachable under the run's own scratch ref
+    ::  refs/ci/run/<id>, never one another run shares; %urgit-ci hears the
+    ::  object or the conflict.  no ref but that scratch ref moves
+    ::
+    ++  materialize-run
+      |=  [id=@uv repo-name=@t ref=@t head=oid:git base=oid:git]
+      ^-  (quip card _this)
+      =/  reply
+        |=  act=action:ci
+        ^-  card
+        [%pass /ci/materialize-run %agent [our.bowl %urgit-ci] %poke %ci-action !>(act)]
+      =/  found=(unit repository:git)  (~(get by repositories) repo-name)
+      ?~  found
+        :_  this  ~[(reply [%run-conflict id 'repository not found'])]
+      =/  outcome=outcome:ci-candidate
+        %:  materialize:ci-candidate
+          objects.u.found
+          head
+          base
+          our.bowl
+          now.bowl
+          (rap 3 ~['Merge ' (oid-text:git-codec head) ' into ' ref])
+        ==
+      ?:  ?=(%conflict -.outcome)
+        :_  this  ~[(reply [%run-conflict id reason.outcome])]
+      =/  scratch=@t  (rap 3 ~['refs/ci/run/' (scot %uv id)])
+      =.  repositories
+        %+  ~(put by repositories)  repo-name
+        %=  u.found
+          objects  objects.outcome
+          refs  (~(put by refs.u.found) scratch candidate.outcome)
+        ==
+      :_  this
+      ~[(reply [%run-ready id candidate.outcome])]
     ::
     ::  landing for %urgit-ci (CI-LAND-1): inside this one event, the
     ::  candidate's eligibility is read again from %urgit-ci under the same
@@ -8557,7 +8688,18 @@
   =/  after=peer-ui-state
     =>  +.result
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
-  [(peer-ui-notify before after -.result) +.result]
+  ::  what this event persisted goes to %urgit-ci after its own cards
+  ::  (Delivery 1C)
+  ::  a local pull request's head follows its source branch (Delivery 1C,
+  ::  lib/ci-forge follow-source-branches), in the event that moved it
+  =/  synced=_this
+    =/  next=_this  +.result
+    next(repositories (follow-source-branches:ci-forge repos-before =>(next repositories) our.bowl))
+  =/  forge=(list card)
+    =/  who=[actor=@p route=@t]
+      (poke-attribution:hc mark vase repos-before receiving.before)
+    (forge-cards:hc repos-before =>(synced repositories) actor.who route.who)
+  [(weld (peer-ui-notify before after -.result) forge) synced]
 ::
 ++  on-peek
   |=  =path
@@ -8662,6 +8804,65 @@
           ?~  found  ~
           `owner.u.found
       ::
+      ::  %urgit-ci's reads for automatic events (Delivery 1C): a
+      ::  repository's default branch; the changed paths of a push and of a
+      ::  pull request, from this ship's own objects (lib/ci-changes, bounded,
+      ::  an unavailable answer with its reason, never the capped browser
+      ::  diff); and a native pull request's record.  each answers a unit,
+      ::  never [~ ~]
+      ::
+        [%x %ci-head @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit @t)
+          ?~  found  ~
+          `head.u.found
+    ::
+        [%x %ci-push-changes @ @ @ @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  ref=@t  (ci-segment i.t.t.t.path)
+      =/  old-text=@t  (ci-segment i.t.t.t.t.path)
+      =/  new=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.t.t.path))
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit (each (list @t) @t))
+          ?~  found  ~
+          ?~  new  `[%| 'the new tip is not an object id']
+          =/  old=(unit oid:git)  ?:(=('' old-text) ~ (ci-oid old-text))
+          ?:  ?&(!=('' old-text) ?=(~ old))  `[%| 'the old tip is not an object id']
+          ::  every other branch and tag, scratch refs aside: what a new
+          ::  ref's commits are told apart from
+          =/  others=(list oid:git)
+            %+  murn  ~(tap by refs.u.found)
+            |=  [r=@t o=oid:git]
+            ^-  (unit oid:git)
+            ?:  =(r ref)  ~
+            ?.  ?|(=('refs/heads/' (end [3 11] r)) =('refs/tags/' (end [3 10] r)))  ~
+            `o
+          `(push-changes:ci-changes objects.u.found old u.new others)
+    ::
+        [%x %ci-pull-changes @ @ @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  head=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.path))
+      =/  target=(unit oid:git)  (ci-oid (ci-segment i.t.t.t.t.path))
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit (each (list @t) @t))
+          ?~  found  ~
+          ?.  ?&(?=(^ head) ?=(^ target))  `[%| 'the head or target is not an object id']
+          `(pull-changes:ci-changes objects.u.found u.head u.target)
+    ::
+        [%x %ci-pull @ @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  number=(unit @ud)  (slaw %ud i.t.t.t.path)
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit native-pull:git)
+          ?~  found  ~
+          ?~  number  ~
+          (native-pull-at u.found u.number)
+      ::
       ::  whether a repository exists (P4: %urgit-ci creates mirror
       ::  repositories for an import and must not create one twice)
       ::
@@ -8759,6 +8960,7 @@
   ^-  (quip card _this)
   =/  before=peer-ui-state
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  repos-before=(map @t repository:git)  repositories
   =/  result=(quip card _this)
     ::  the answer to a writer's cross-ship approval (P3 D9): %urgit-ci's
     ::  ack lands it, its nack carries the refusal's own words
@@ -8825,12 +9027,24 @@
   =/  after=peer-ui-state
     =>  +.result
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
-  [(peer-ui-notify before after -.result) +.result]
+  ::  a local pull request's head follows its source branch (Delivery 1C,
+  ::  lib/ci-forge follow-source-branches), in the event that moved it
+  =/  synced=_this
+    =/  next=_this  +.result
+    next(repositories (follow-source-branches:ci-forge repos-before =>(next repositories) our.bowl))
+  =/  forge=(list card)
+    =/  route=@t  (rap 3 ~['agent ' ?~(wire '' i.wire)])
+    (forge-cards:hc repos-before =>(synced repositories) our.bowl route)
+  [(weld (peer-ui-notify before after -.result) forge) synced]
 ++  on-arvo
   |=  [=wire =sign-arvo]
   ^-  (quip card _this)
   =/  before=peer-ui-state
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
+  =/  repos-before=(map @t repository:git)  repositories
+  ::  the Clay write parked when this event began: its completion is that
+  ::  write's (Delivery 1C attribution)
+  =/  parked=(unit clay-push)  pending-clay
   =/  result=(quip card _this)
     =/  error-cards
       |=  [eyre-id=@ta status=@ud message=@t]
@@ -10201,6 +10415,14 @@
   =/  after=peer-ui-state
     =>  +.result
     [peer-activities notification-activities peer-results peer-receiving peer-outgoing]
-  [(peer-ui-notify before after -.result) +.result]
+  ::  a local pull request's head follows its source branch (Delivery 1C,
+  ::  lib/ci-forge follow-source-branches), in the event that moved it
+  =/  synced=_this
+    =/  next=_this  +.result
+    next(repositories (follow-source-branches:ci-forge repos-before =>(next repositories) our.bowl))
+  =/  forge=(list card)
+    =/  who=[actor=@p route=@t]  (arvo-attribution:hc wire parked)
+    (forge-cards:hc repos-before =>(synced repositories) actor.who route.who)
+  [(weld (peer-ui-notify before after -.result) forge) synced]
 ++  on-fail  on-fail:def
 --

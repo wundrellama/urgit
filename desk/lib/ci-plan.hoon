@@ -289,6 +289,9 @@
   |=  [candidate=@t tree=(list @t) plan=wire-plan =trigger:ci]
   ^-  (each (list job:ci) @t)
   ?:  ?=(%push -.trigger)  (validate candidate tree plan)
+  ::  an event run plans what its event selected (+validate-selected)
+  ?:  ?=(%event -.trigger)
+    [%| 'an event run plans the workflows its event selected, never every one']
   =/  common=(unit @t)  (plan-problem candidate tree plan)
   ?^  common  [%| u.common]
   =/  file=@t  workflow.trigger
@@ -302,6 +305,38 @@
     ==
   ?~  selected
     [%| (rap 3 ~['workflow ' file ' does not trigger on workflow_dispatch at this revision'])]
+  =/  problem=(unit @t)  (job-problem workflows.plan selected)
+  ?^  problem  [%| u.problem]
+  [%& (turn selected to-job)]
+::
+::  validation for a run whose workflows an event selected (Delivery 1C):
+::  the jobs of exactly the selected workflows that trigger on the event,
+::  every selected workflow with at least one (else the plan and the
+::  catalog disagree, and the plan is refused), the job checks over those
+::  jobs.  no selected workflow plans no job: a required push whose every
+::  push workflow was excluded keeps its exclusions as its record
+::
+++  validate-selected
+  |=  [candidate=@t tree=(list @t) plan=wire-plan event=@t workflows=(list @t)]
+  ^-  (each (list job:ci) @t)
+  =/  common=(unit @t)  (plan-problem candidate tree plan)
+  ?^  common  [%| u.common]
+  =/  chosen=(set @t)  (silt workflows)
+  =/  selected=(list wire-job)
+    %+  skim  jobs.plan
+    |=  =wire-job
+    ?&  (~(has in chosen) workflow.wire-job)
+        (lien events.wire-job |=(e=@t =(event e)))
+    ==
+  =/  bare=(unit @t)
+    %+  find-first  workflows
+    |=(w=@t !(lien selected |=(j=wire-job =(w workflow.j))))
+  ?^  bare
+    :-  %|
+    %+  rap  3
+    :~  'the plan and the trigger catalog disagree: the catalog selects '
+        u.bare  ' for '  event  ', and act lists no job of it that triggers on '  event
+    ==
   =/  problem=(unit @t)  (job-problem workflows.plan selected)
   ?^  problem  [%| u.problem]
   [%& (turn selected to-job)]

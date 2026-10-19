@@ -21,6 +21,7 @@ var referenceManifest = ManifestMessage{
 		Generation: 7, Workflow: "suite.yml", Job: "suite", Trust: "trusted", Sandbox: "vm", Mode: "required", Network: "locked", NetworkScope: "",
 		Event: "workflow_dispatch", Context: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
 		Needs: "d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1", Prerequisites: "build=0v6.prod,lint=0v7.lint",
+		Trigger: "workflow_dispatch suite.yml request run-1",
 	},
 }
 
@@ -36,11 +37,11 @@ func vectorKey() (ed25519.PublicKey, ed25519.PrivateKey) {
 }
 
 // referenceJamHex is the jam of the reference message (manifest version
-// 4, its event and its needs context bound) as BOTH sides produce it: printed by this test, and
+// 5, its event, its needs context and its trigger bound) as BOTH sides produce it: printed by this test, and
 // by desk/gen/ci-provenance-vector on a fresh fake ship (its `%jam-hex`
 // line must be byte-identical, and its signature for the same seed
 // identical too). A drift on either side fails one of the two tests.
-const referenceJamHex = "6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c053260797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f60606060606060606060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c184d584d8e0dcecd0d8e4d4e4d188dd8cc980c590ce057ac2e8d8dac07c6cec6054eee8d8c852dcd8dae07c6eec6852dcd8d0e"
+const referenceJamHex = "e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c053260797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f60606060606060606060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c184d584d8e0dcecd0d8e4d4e4d188dd8cc980c591c805fb1ba3436b21e183b1b1738b9373216b63437ba1e18bb1b17b634373a008deedee4d6ccd8deeebec8d2e6e0c2e8c6d040e6ead2e8ca5cf2dad840e4cae2eacae6e840e4eadc5a62"
 
 func TestManifestSignatureRoundTripAndMutations(t *testing.T) {
 	pub, priv := vectorKey()
@@ -92,6 +93,12 @@ func TestManifestSignatureRoundTripAndMutations(t *testing.T) {
 		"needs-dropped":         func(m *ManifestMessage) { m.Manifest.Needs = "" },
 		"prerequisites":         func(m *ManifestMessage) { m.Manifest.Prerequisites = "build=0v8.stale,lint=0v7.lint" },
 		"prerequisites-dropped": func(m *ManifestMessage) { m.Manifest.Prerequisites = "" },
+		// manifest version 5 (Delivery 1C): the admitted event's identity
+		"trigger":         func(m *ManifestMessage) { m.Manifest.Trigger = "workflow_dispatch suite.yml request run-2" },
+		"trigger-dropped": func(m *ManifestMessage) { m.Manifest.Trigger = "" },
+		"trigger-event": func(m *ManifestMessage) {
+			m.Manifest.Trigger = "schedule suite.yml#0 due 2026-10-16T05:30:00Z occurrence 0v1"
+		},
 	}
 	for name, mutate := range mutations {
 		m := referenceManifest

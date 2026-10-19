@@ -123,6 +123,7 @@ func manualManifest() sig.Manifest {
 	m.Workflow, m.Job = "manual.yml", "report"
 	m.Event, m.Context, m.Mode, m.Sandbox = "workflow_dispatch", payloadDigest(manualPayload), "manual", "vm"
 	m.Needs, m.Prerequisites = "", ""
+	m.Trigger = "workflow_dispatch manual.yml request request-1"
 	return m
 }
 
@@ -210,15 +211,16 @@ func TestManualPayloadIsBoundBySignature(t *testing.T) {
 	}
 }
 
-// the events this runner runs: push and workflow_dispatch for a job or a
+// the events this runner runs: push and workflow_dispatch, and since
+// Delivery 1C pull_request and schedule (events_test.go), for a job or a
 // plan, none for a resolve; any other is abandoned, never run as a push
 func TestHonourableRefusesAnEventItDoesNotRun(t *testing.T) {
 	d := &Daemon{cfg: &config.Config{Sandbox: "docker-rootless"}, box: &fakeBox{}, log: log.New(io.Discard, "", 0)}
 	pr := *jobAssignment
 	m := jobManifest
-	m.Event = "pull_request"
+	m.Event = "pull_request_target"
 	pr.Manifest = &m
-	if err := d.honourable(&pr); err == nil || !strings.Contains(err.Error(), "event pull_request is not one this runner runs") {
+	if err := d.honourable(&pr); err == nil || !strings.Contains(err.Error(), "event pull_request_target is not one this runner runs") {
 		t.Fatalf("an unknown event: %v", err)
 	}
 	none := *jobAssignment

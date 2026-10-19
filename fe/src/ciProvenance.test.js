@@ -127,3 +127,12 @@ test('the backend table says what each backend is and is not', () => {
   const vm = backendTable.find((r) => r.backend.startsWith('microvm'))
   assert.match(vm.required, /default/)
 })
+
+// Delivery 1C: an automatic event's run is advisory
+test('an event run is labelled as advisory: it never lands, never satisfies a required check and holds no credentials', () => {
+  const m = modeLabel({ mode: 'event', baseline: 'e'.repeat(40) })
+  assert.equal(m.label, 'event')
+  assert.match(m.detail, /never lands/)
+  assert.match(m.detail, /never satisfies the required checks/)
+  assert.match(m.detail, /no credentials/)
+})

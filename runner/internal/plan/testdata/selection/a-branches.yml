@@ -1,0 +1,14 @@
+# ordered include with a negation and a re-inclusion, and paths with a
+# negation and a re-inclusion (the captured reference's order rules)
+name: Branches and paths
+on:
+  push:
+    branches: [main, 'releases/**', '!releases/**-alpha', 'releases/keep-alpha']
+    paths: ['src/**', '!src/docs/**', 'src/docs/keep/**']
+  pull_request:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{run: echo build}]

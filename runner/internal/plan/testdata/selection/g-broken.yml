@@ -1,0 +1,7 @@
+# an on: that cannot be read: the workflow is in error for every event
+name: Broken on
+on: [push, push]
+jobs:
+  broken:
+    runs-on: ubuntu-latest
+    steps: [{run: echo broken}]

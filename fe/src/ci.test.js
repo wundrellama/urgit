@@ -135,3 +135,22 @@ test('the CI tab labels attempt statuses and candidate statuses apart', () => {
   assert.equal((tab.match(/\{row\.statusText\}/g) || []).length, 2)
   assert.ok(!/statusLabel\[/i.test(tab.replace('candidateStatusLabel[c.status]', '')), 'a status label map is indexed outside the candidate page header')
 })
+
+// Delivery 1C: an automatic run is listed with the event it was for and
+// as advisory (it never lands); a required run whose required evidence is
+// absent is listed blocked, never as a pass
+test('a candidate row names an automatic run\'s event and an absent required evidence', async () => {
+  const { blockedRequired, pullRun, pushRun, scheduleRun } = await import('./ciEventsFixtures.js')
+  const push = candidateRow(pushRun, pushRun.created + 5)
+  assert.equal(push.event, 'push')
+  assert.equal(push.advisory, true)
+  assert.equal(push.manual, false)
+  assert.equal(candidateRow(pullRun, 0).event, 'PR #7 opened')
+  assert.equal(candidateRow(scheduleRun, 0).event, 'scheduled: nightly.yml #0')
+  const blocked = candidateRow(blockedRequired, 0)
+  assert.equal(blocked.event, '')
+  assert.equal(blocked.advisory, false)
+  assert.equal(blocked.evidenceAbsent, true)
+  assert.equal(candidateRow({ ...blockedRequired, requiredEvidence: { complete: true, evaluated: true, missing: [] } }, 0).evidenceAbsent, false)
+  assert.equal(candidateRow({ id: '0v1', status: 'passed', created: 1 }, 2).evidenceAbsent, false)
+})

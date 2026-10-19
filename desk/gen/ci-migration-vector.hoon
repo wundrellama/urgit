@@ -18,17 +18,23 @@
 ::      admitted meaning with its declared outputs not known; an attempt's
 ::      outputs by name become step outputs of no named step; a running
 ::      attempt stays running with no decision, needs context or resolved
-::      outputs.
-::  The current state (state-4) reloads unchanged.  An unknown version, an
-::  atom, a malformed %0, a corrupt %0, %1, %2, %3 or %4, a state-1 tagged
-::  %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4 and a state-4
-::  tagged %3 are refused, and so is an ambiguous classification.  Every case names the verdict it expects;
+::      outputs;
+::    - state-4 (Delivery 1C): a required run with its plan and running
+::      attempt and a manual run keep every field, their workflow selection
+::      never evaluated (~), none becomes an event run; a lock keeps its
+::      inventory and its trigger catalog is unknown (~, not empty); no
+::      forge event, event id or schedule is invented.
+::  The current state (state-5) reloads unchanged.  An unknown version, an
+::  atom, a malformed %0, a corrupt %0, %1, %2, %3, %4 or %5, a state-1
+::  tagged %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4, a
+::  state-4 tagged %3 or %5 and a state-5 tagged %4 are refused, and so is
+::  an ambiguous classification.  Every case names the verdict it expects;
 ::  the intentionally FALSE cases are refusals.  Prints `passed=N of=M`
 ::  and ends in a loobean.
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -264,8 +270,32 @@
 =/  m  (load:ci-migrate manual-state)
 =/  p  (load:ci-migrate planned-state)
 =/  p-cand  (~(got by candidates.new.p) 0v3.ppppp)
+::  state-4 (Delivery 1C): the planned required run of state-3 as state-4
+::  holds it, with the manual run beside it and the lock with its
+::  inventory
+::
+=/  s4-plain=state-4:ci-state-4  (from-state-3:ci-migrate planned-state)
+=/  s4=state-4:ci-state-4
+  %=  s4-plain
+    candidates  (~(put by candidates.s4-plain) id.manual-cand (candidate-from-3:ci-migrate manual-cand))
+  ==
+=/  f  (load:ci-migrate s4)
+=/  f-plain  (load:ci-migrate s4-plain)
+=/  f-cand  (~(got by candidates.new.f) 0v3.ppppp)
+=/  f-manual  (~(got by candidates.new.f) id.manual-cand)
+=/  f-lock  (~(got by locks.new.f) 0x88)
+::  a state-5 candidate's state-4 fields
+::
+=/  as-4
+  |=  c=candidate:ci
+  :*  id.c  repo.c  ref.c  head.c  base.c  candidate.c  conflict.c  status.c
+      attempts.c  plan.c  plan-oid.c  verdict-reason.c  actor.c  via.c  trust.c
+      pull.c  created.c  updated.c  mode.c  generation.c  baseline.c  lock.c
+      incarnation.c  sandbox.c  trial-of.c  harness-differs.c  trigger.c
+  ==
 =/  p-running  (~(got by attempts.new.p) 0v7.aaaaa)
 =/  m-cand  (~(got by candidates.new.m) id.manual-cand)
+=/  m-lock  (~(got by locks.new.m) 0x88)
 ::  a state-4 attempt as state-3 held it: its step outputs by name
 ::
 =/  attempt-as-3
@@ -314,7 +344,10 @@
   |=  old=*
   ^-  ?
   =(~ (mole |.((load:ci-migrate old))))
-=/  cases=(list [name=@t expect=? got=?])
+::  the cases, in two lists (one literal of them all is past what the
+::  pinned analyzer types in one binding)
+::
+=/  early=(list [name=@t expect=? got=?])
   :~  ::  the committed base
     ['the committed base loads as its own shape' %.y =(%base shape.b)]
     ['an enrolled daemon keeps its id, token and bearer hashes' %.y &(=(id.active id.b-active) =(token-hash.active token-hash.b-active) =(bearer-hash.active bearer-hash.b-active))]
@@ -343,17 +376,20 @@
     ['the Q11 schema loads as its own shape' %.y =(%q11 shape.q)]
     ['the Q11 daemons and assignments are kept' %.y =([daemons assignments]:q11-state [daemons assignments]:new.q)]
     ['the Q11 candidates are kept, each a push run' %.y (kept-as-push candidates.q11-state candidates.new.q)]
-    ['the Q11 fields after the attempts are kept' %.y =(+63.q11-state +63.new.q)]
+    ::  every Q11 field after the attempts, each by name (state-5 appends
+    ::  three maps after them, which a raw +63 tail would wrongly compare;
+    ::  they are checked empty on their own, in .added)
+    ['the Q11 fields after the attempts are kept' %.y =([ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:q11-state [ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.q)]
     ['a Q11 attempt is kept whole, with no pinned addresses' %.y =(want-attempts (~(run by attempts.new.q) attempt-as-3))]
     ['an open and a final recovery command are kept' %.y =(recovery-commands.q11-state recovery-commands.new.q)]
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %4 once converted' %.y =(%4 -.new.s)]
+    ['state-1 is tagged %5 once converted' %.y =(%5 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %4 once converted' %.y =(%4 -.new.t)]
+    ['state-2 is tagged %5 once converted' %.y =(%5 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
@@ -364,20 +400,40 @@
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
     ::  state-3
     ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
-    ['state-3 is tagged %4 once converted' %.y =(%4 -.new.m)]
+    ['state-3 is tagged %5 once converted' %.y =(%5 -.new.m)]
     ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
-    ['a manual run keeps every other field' %.y =(+.manual-cand +.m-cand)]
-    ['a lock keeps its manual-run inventory' %.y =(lock-3 (~(got by locks.new.m) 0x88))]
+    ::  the old candidate's every field after its id, against the new one's
+    ::  same fields by name (+as-4); its added selection is checked in .added
+    ['a manual run keeps every other field' %.y =(+.manual-cand +:(as-4 m-cand))]
+    ::  the old lock whole, against the new lock's same fields by name; its
+    ::  added trigger catalog is checked in .added
+    ['a lock keeps its manual-run inventory' %.y =(lock-3 [digest repo revision nodes resolved resolver bytes notices inventory]:m-lock)]
     ['every other state-3 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:manual-state [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.m)]
     ['a planned job keeps its output-eq gate, its declared outputs not known' %.y =(plan.p-cand `~[['a' 'chain.yml' 'chain' 0 ~ ~ ~ ~ ~ ~] ['b' 'chain.yml' 'chain' 1 ~['a'] `[%output-eq 'a' 'go' 'true'] ~ ~ `5 ~]])]
     ['a planned job gains declared outputs it never read' %.n !=(~ outputs:(snag 1 (need plan.p-cand)))]
     ['an attempt\'s outputs become step outputs of no named step, each kept' %.y =((silt step-outputs.p-running) (silt `(list step-output:ci)`~[[~ 'go' 'true' %.n] [~ 'n' '0' %.n]]))]
     ['a running attempt stays running with no decision, needs context or resolved outputs' %.y &(=(%running status.p-running) =(~ decision.p-running) =(~ needs.p-running) =(~ job-outputs.p-running))]
     ['every other field of the attempt is kept' %.y =(running-3 (attempt-as-3 p-running))]
+  ==
+=/  late=(list [name=@t expect=? got=?])
+  :~  ::  state-4 (Delivery 1C)
+    ['state-4 loads as its own shape' %.y =(%state-4 shape.f)]
+    ['state-4 is tagged %5 once converted' %.y =(%5 -.new.f)]
+    ['a state-4 required run keeps every field' %.y =((~(got by candidates.s4) 0v3.ppppp) (as-4 f-cand))]
+    ['a state-4 required run\'s workflow selection was never evaluated' %.y =(~ selected.f-cand)]
+    ['a state-4 manual run keeps every field and its dispatch' %.y &(=((~(got by candidates.s4) id.manual-cand) (as-4 f-manual)) ?=(%dispatch -.trigger.f-manual))]
+    ['a state-4 candidate becomes an event run' %.n (lien ~(val by candidates.new.f) |=(c=candidate:ci ?=(%event -.trigger.c)))]
+    ['a state-4 lock keeps every field and its inventory' %.y =((~(got by locks.s4) 0x88) [digest repo revision nodes resolved resolver bytes notices inventory]:f-lock)]
+    ['a state-4 lock\'s trigger catalog is unknown, not empty' %.y =(~ triggers.f-lock)]
+    ['a state-4 lock gains a trigger catalog' %.n !=(~ triggers.f-lock)]
+    ['a state-4 running attempt is kept whole and running' %.y &(=((~(got by attempts.s4) 0v7.aaaaa) (~(got by attempts.new.f) 0v7.aaaaa)) =(%running status:(~(got by attempts.new.f) 0v7.aaaaa)))]
+    ['no forge event, event id or schedule is invented' %.y &(=(~ forge-events.new.f) =(~ event-ids.new.f) =(~ schedules.new.f))]
+    ['every other state-4 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:s4 [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.f)]
+    ['state-4 converts as the state-3 it came from does' %.y =(new.p new.f-plain)]
     ::  the current state
-    ['state-4 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)))]
+    ['state-5 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%5 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%6 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]
@@ -385,8 +441,11 @@
     ['a %2 state with a corrupt candidates map is refused' %.y (refused [%2 5 +>.s2-state])]
     ['a %3 state with a corrupt candidates map is refused' %.y (refused [%3 5 +>.manual-state])]
     ['a state-3 tagged %4 is refused' %.y (refused [%4 +.planned-state])]
-    ['a state-4 tagged %3 is refused' %.y (refused [%3 +.new.p])]
-    ['a %4 state with a corrupt attempts map is refused' %.y (refused new.p(attempts [5 ~]))]
+    ['a state-4 tagged %3 is refused' %.y (refused [%3 +.s4])]
+    ['a state-4 tagged %5 is refused' %.y (refused [%5 +.s4])]
+    ['a state-5 tagged %4 is refused' %.y (refused [%4 +.new.p])]
+    ['a %4 state with a corrupt candidates map is refused' %.y (refused [%4 5 +>.s4])]
+    ['a %5 state with a corrupt attempts map is refused' %.y (refused new.p(attempts [5 ~]))]
     ['an atom is refused' %.y (refused 0)]
     ['a malformed %0 is refused' %.y (refused [%0 1 2 3])]
     ['a %0 state with a corrupt candidates map is refused' %.y (refused [%0 5 +>.q11-state])]
@@ -397,6 +456,16 @@
     ['no shape found is refused' %.y =(%| -:(pick:ci-migrate ~))]
     ['exactly one shape found is chosen' %.y =([%& %q11] (pick:ci-migrate ~[%q11]))]
   ==
+::  the fields state-5 adds, which the projections above set aside: each
+::  has the initial value the conversion documents (lib/ci-migrate)
+::
+=/  added=(list [name=@t expect=? got=?])
+  :~  ['a Q11 state gains no forge event, event id or schedule' %.y &(=(~ forge-events.new.q) =(~ event-ids.new.q) =(~ schedules.new.q))]
+      ['a manual run\'s workflow selection was never evaluated' %.y =(~ selected.m-cand)]
+      ['a state-3 lock\'s trigger catalog is unknown, not empty' %.y =(~ triggers.m-lock)]
+      ['a state-3 gains no forge event, event id or schedule' %.y &(=(~ forge-events.new.m) =(~ event-ids.new.m) =(~ schedules.new.m))]
+  ==
+=/  cases=(list [name=@t expect=? got=?])  :(weld early added late)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

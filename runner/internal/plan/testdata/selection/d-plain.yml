@@ -1,0 +1,7 @@
+# no filter at all: every branch and tag push, every default activity
+name: Unfiltered
+on: [push, pull_request]
+jobs:
+  plain:
+    runs-on: ubuntu-latest
+    steps: [{run: echo plain}]

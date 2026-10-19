@@ -30,7 +30,11 @@
 ::    (Delivery 1B), gives a planned job its compiled condition and its
 ::    declared outputs, and an attempt its step outputs by step, the
 ::    decision that ran or skipped it, the needs context it was given and
-::    the declared outputs resolved when it closed.
+::    the declared outputs resolved when it closed; it is frozen byte for
+::    byte as sur/ci-state-4.  state-5, tagged %5 (Delivery 1C), adds the
+::    automatic events: a run mode %event, a candidate's event trigger and
+::    its workflow selection, each lock's trigger catalog, the recorded
+::    forge events and their ids, and the armed schedules.
 ::    every earlier shape shared the tag %0 and is frozen byte for byte in
 ::    a sur file of its own — ci-state-base, ci-state-review06 and
 ::    ci-state-q11 — and every shape is converted explicitly by
@@ -67,9 +71,12 @@
 ::
 ::  a manual run (%manual, Delivery 1A) is another mode that never lands:
 ::  it runs the promoted baseline's workflow on a ref's tip because an
-::  operator dispatched it, and is no evidence for any landing
+::  operator dispatched it, and is no evidence for any landing.  an event
+::  run (%event, Delivery 1C) is the run of an automatic push, pull
+::  request or schedule: it never lands, receives no credentials and is
+::  no evidence for any landing either
 ::
-+$  mode  ?(%required %trial %manual %shadow)
++$  mode  ?(%required %trial %manual %event %shadow)
 +$  sandbox-need  ?(%container %vm)
 +$  automation  ?(%automatic %manual)
 +$  outcome  ?(%known %unknown)
@@ -141,6 +148,10 @@
       ::  ~ for a lock resolved before manual runs were read, which is
       ::  not an empty inventory (contract §5; Delivery 1A)
       inventory=(unit (list dispatch-workflow))
+      ::  state-5: every workflow's compiled `on:` (Delivery 1C); ~ for a
+      ::  lock resolved before triggers were read, which is unknown: never
+      ::  an empty catalog, never an authorization to run anything
+      triggers=(unit trigger-catalog)
   ==
 ::
 ::  the promoted baseline of one branch (D5; rider 02): the approved
@@ -440,6 +451,221 @@
           payload=@t
           request=@t
       ==
+      ::  state-5 (Delivery 1C): an automatic event's run — the event as
+      ::  the forge persisted it and the ship admitted it, fixed here
+      [%event =run-event]
+  ==
+::
+::  Delivery 1C: automatic events, their filters and schedules.  The
+::  pinned compiler (runner/internal/plan TriggersOf) compiles every
+::  workflow's `on:` at the explicit import; the ship checks the structure
+::  (lib/ci-trigger) and evaluates it, and never reads YAML, glob or cron
+::  text, which travels for display only.
+::
+::  a filter pattern's compiled token (plan glob.go): %lit a run of bytes,
+::  %class one byte of a set, %star bytes but /, %globstar any bytes, %dirs
+::  zero or more whole directories (`**/`), %opt zero or one and %many zero
+::  or more of one byte or class
+::
++$  glob-atom  $%([%lit p=@t] [%class p=@t])
++$  glob-token
+  $~  [%globstar ~]
+  $%  [%lit p=@t]
+      [%class p=@t]
+      [%star ~]
+      [%globstar ~]
+      [%dirs ~]
+      [%opt p=glob-atom]
+      [%many p=glob-atom]
+  ==
++$  pattern  [text=@t negated=? tokens=(list glob-token)]
+::
+::  an ordered include list (its ! patterns exclude again), or an -ignore
+::  list every pattern of which excludes
+::
++$  filter  [ignore=? patterns=(list pattern)]
+::
+::  one cron line's fields as sorted values; the day rule takes both day
+::  fields when either begins with * (day-star, weekday-star), else either
+::
++$  cron-spec
+  $:  minutes=(list @ud)
+      hours=(list @ud)
+      days=(list @ud)
+      months=(list @ud)
+      weekdays=(list @ud)
+      day-star=?
+      weekday-star=?
+  ==
+::
+::  one `on.schedule` entry: the text as written, the IANA zone it names
+::  (~ is the UTC default), and its fields, or why it is refused
+::
++$  schedule-def
+  $:  cron=@t
+      timezone=(unit @t)
+      refusal=(unit @t)
+      spec=(unit cron-spec)
+  ==
+::
+::  one event of a workflow's `on:`; .refusal is why it never selects
+::
++$  trigger-event
+  $:  event=@t
+      refusal=(unit @t)
+      branches=(unit filter)
+      tags=(unit filter)
+      paths=(unit filter)
+      types=(list @t)
+      types-declared=?
+      schedules=(list schedule-def)
+      line=@ud
+      col=@ud
+  ==
++$  trigger-workflow
+  $:  workflow=@t
+      name=@t
+      events=(list trigger-event)
+      refusal=(unit @t)
+  ==
+::
+::  a timezone's UTC offsets (seconds east, signed) over the compiler's
+::  fixed horizon: the offset at .start, then each transition
+::
++$  zone  [start=@da end=@da offset=@sd transitions=(list [at=@da offset=@sd])]
++$  trigger-catalog  [workflows=(list trigger-workflow) zones=(map @t zone)]
+::
+::  what an event selected: per workflow, selected, excluded by its
+::  filters, or in error (a refused trigger), with the reason; .basis says
+::  what was compared (the ref, the diff) and .note anything the whole
+::  selection must say (an unknown catalog, evidence not evaluated)
+::
++$  selection-verdict  ?(%selected %excluded %error)
++$  workflow-selection  [workflow=@t name=@t verdict=selection-verdict reason=@t]
++$  event-selection
+  $:  basis=@t
+      outcomes=(list workflow-selection)
+      note=(unit @t)
+  ==
+::
+::  a native pull request's facts as the forge persisted them: the
+::  activity, the head and the ref it came from, the target branch and the
+::  tip the run integrates onto (the pre-merge tip for a merged close)
+::
++$  pull-facts
+  $:  number=@ud
+      title=@t
+      action=@t
+      head=oid:git
+      head-ref=@t
+      base-ref=@t
+      base=oid:git
+      merged=?
+      source-ship=@p
+      source-repository=@t
+  ==
+::
+::  a due schedule occurrence: the definition it belongs to, its UTC due
+::  instant and when it was admitted, and the promotion that authorized it
+::
++$  occurrence-facts
+  $:  workflow=@t
+      index=@ud
+      cron=@t
+      timezone=(unit @t)
+      due=@da
+      admitted=@da
+      definition=@uv
+      promoter=@p
+      promoted=@da
+  ==
+::
+::  an automatic event's run, immutable: the forge event or occurrence it
+::  was admitted for, the ref, the before and after tips (a push), the pull
+::  request or the occurrence, who or what caused it and how it arrived,
+::  when, and the payload act reads (rendered once at admission)
+::
++$  run-event
+  $:  id=@uv
+      kind=?(%push %pull-request %schedule)
+      ref=@t
+      before=(unit oid:git)
+      after=(unit oid:git)
+      pull=(unit pull-facts)
+      occurrence=(unit occurrence-facts)
+      actor=@p
+      route=@t
+      at=@da
+      payload=@t
+  ==
+::
+::  a source event the forge persisted, as %urgit-ci recorded it, whether
+::  it ran anything or not: the facts, what the selection decided and the
+::  runs it created
+::
++$  forge-event
+  $:  id=@uv
+      repo=@t
+      kind=?(%push %pull-request %default-branch)
+      ref=@t
+      before=(unit oid:git)
+      after=(unit oid:git)
+      pull=(unit pull-facts)
+      actor=@p
+      route=@t
+      at=@da
+      received=@da
+      outcome=@t
+      selected=(unit event-selection)
+      runs=(list candidate-id)
+  ==
+::
+::  an armed schedule of a repository's default branch baseline: its
+::  definition and identity, what authorized it, its state, the due
+::  instant its wake is armed for, and what became of earlier ones
+::
++$  schedule-key  [repo=@t workflow=@t index=@ud]
++$  missed-interval  [first=@da last=@da count=@ud]
++$  schedule-entry
+  $:  name=@t
+      def=schedule-def
+      zone=(unit zone)
+      definition=@uv
+      ref=@t
+      baseline=oid:git
+      lock=@ux
+      incarnation=@uv
+      promoter=@p
+      promoted=@da
+      registered=@da
+      state=?(%active %refused %retired)
+      reason=(unit @t)
+      armed=(unit @da)
+      last-due=(unit @da)
+      last-admitted=(unit [due=@da at=@da run=candidate-id late=?])
+      admitted=(list @uv)
+      missed=(list missed-interval)
+      stale-wakes=@ud
+  ==
+::
+::  what %urgit reports of one persisted write (%forge-events): a ref
+::  move, or a pull request transition, each with the identity the forge
+::  gave it in the event that persisted it
+::
++$  ref-update  [id=@uv ref=@t old=(unit oid:git) new=(unit oid:git)]
++$  pull-update
+  $:  id=@uv
+      number=@ud
+      action=@t
+      head=oid:git
+      base=oid:git
+      source-ref=@t
+      target-ref=@t
+      source-ship=@p
+      source-repository=@t
+      title=@t
+      merged=?
+      target-before=(unit oid:git)
   ==
 ::
 ::  one planned job.  jobs are keyed by [workflow id], never by id alone:
@@ -510,6 +736,10 @@
       harness-differs=?
       ::  state-3: the event the run is for (Delivery 1A)
       =trigger
+      ::  state-5: which workflows the event selected and why (Delivery
+      ::  1C), from the governing catalog; ~ before it was evaluated, and
+      ::  for every run before state-5
+      selected=(unit event-selection)
   ==
 ::
 ::  a runner daemon.  a record is created when the operator mints an
@@ -663,8 +893,8 @@
 ::
 +$  pin  [name=@t addrs=(list @t)]
 ::
-+$  state-4
-  $:  %4
++$  state-5
+  $:  %5
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -702,6 +932,12 @@
       ::  commands by id, never pruned
       recovery-reports=(map daemon-id recovery-report)
       recovery-commands=(map @uv recovery-command)
+      ::  state-5 (Delivery 1C): the forge events recorded per repository
+      ::  (newest kept), the ids of every event admitted (the replay
+      ::  guard, newest kept), and the armed schedules
+      forge-events=(map @uv forge-event)
+      event-ids=(map @uv @da)
+      schedules=(map schedule-key schedule-entry)
   ==
 ::
 ::  the event envelope: one `act --json` line after validation
@@ -836,5 +1072,24 @@
           request=@t
           actor=@p
       ==
+      ::  Delivery 1C.  %urgit reports what one of its events persisted:
+      ::  every ref that moved and every pull request transition, and a
+      ::  default-branch change, with the authenticated sender of the event
+      ::  and the route; a local poke only, never the web or a peer.
+      ::  %urgit-ci asks %urgit to build a pull request run's integration
+      ::  object under the run's own scratch ref (%materialize-run), and
+      ::  hears the object or the conflict
+      $:  %forge-events
+          repo=@t
+          refs=(list ref-update)
+          pulls=(list pull-update)
+          head=(unit [old=@t new=@t])
+          actor=@p
+          route=@t
+          at=@da
+      ==
+      [%materialize-run id=candidate-id repo=@t ref=@t head=oid:git base=oid:git]
+      [%run-ready id=candidate-id candidate=oid:git]
+      [%run-conflict id=candidate-id reason=@t]
   ==
 --

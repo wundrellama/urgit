@@ -1,6 +1,7 @@
 ::  ci-provenance-vector: the cross-language manifest vector (P10; contract
 ::  §5; version 3 binds the run's event, Delivery 1A; version 4 a job's
-::  needs context and the attempts it came from, Delivery 1B).  The reference
+::  needs context and the attempts it came from, Delivery 1B; version 5
+::  the identity of the event the run was admitted for, Delivery 1C).  The reference
 ::  manifest below is the one runner/internal/sig/
 ::  manifest_test.go signs with the same fixed seed; both sides must
 ::  produce the same jam bytes, and every single-field mutation must fail
@@ -52,6 +53,7 @@
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
       'd3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1'
       'build=0v6.prod,lint=0v7.lint'
+      'workflow_dispatch suite.yml request run-1'
   ==
 =/  recipient=@uv  (parse-uv '0v1.daemon')
 =/  attempt=@uv  (parse-uv '0v2.attempt')
@@ -63,7 +65,7 @@
 ::
 =/  expected-jam=@t
   %+  rap  3
-    :~  '6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c05326'
+    :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c05326'
         '0797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959'
         '184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f6060606060606060'
         '6060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626'
@@ -73,15 +75,16 @@
         'da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8'
         'cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e'
         '58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c18'
-        '4d584d8e0dcecd0d8e4d4e4d188dd8cc980c590ce057ac2e8d8dac07c6cec6054eee8d8c852dcd8d'
-        'ae07c6eec6852dcd8d0e'
+        '4d584d8e0dcecd0d8e4d4e4d188dd8cc980c591c805fb1ba3436b21e183b1b1738b9373216b63437'
+        'ba1e18bb1b17b634373a008deedee4d6ccd8deeebec8d2e6e0c2e8c6d040e6ead2e8ca5cf2dad840'
+        'e4cae2eacae6e840e4eadc5a62'
     ==
 =/  sig=@ux  (sign-raw:ed:crypto message pub.pair sek.pair)
 =/  sig-hex=@t  (hex-bytes:ci-provenance sig 64)
 ::  the Go side's signature over the same bytes with the same seed
 ::
 =/  expected-sig=@t
-  '39443354b3ac0129a61ff3c60f80efadbbd4ecef0c319ed936871df4dd9c83106c8a756de2293474a5b1260f35b85dbee6a588977fc24a3e4ba6f85c1972e00d'
+  'f6ba9c2b29b8cbfd7b7aced72187cfd201c2e6ece86d0a0dd345ec989d45fb21f5b0c64fbeb67aac611bc6e687ed580a73b4b891dd9433c878826f8262605e0a'
 =/  sig-matches=?  =(sig-hex expected-sig)
 =/  verifies=?  (veri:ed:crypto sig message pub.pair)
 ::  every single-field mutation of the message must refuse the signature
@@ -114,6 +117,9 @@
       ['needs-dropped' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(needs ''))]
       ['prerequisites' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(prerequisites 'build=0v8.stale,lint=0v7.lint'))]
       ['prerequisites-dropped' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(prerequisites ''))]
+      ['trigger' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(trigger 'workflow_dispatch suite.yml request run-2'))]
+      ['trigger-dropped' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(trigger ''))]
+      ['trigger-event' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(trigger 'schedule suite.yml#0 due 2026-10-16T05:30:00Z occurrence 0v1'))]
   ==
 =/  refused=(list @t)
   %+  murn  mutations
@@ -145,7 +151,7 @@
 =/  epoch-jam-hex=@t  (hex-bytes:ci-provenance epoch-message (met 3 epoch-message))
 =/  expected-epoch-jam=@t
   %+  rap  3
-    :~  '6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e8001c72ebe0300000000000000'
+    :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e8001c72ebe0300000000000000'
         '000000008001792b7625033c65727069f4003cc89599cdbda0958591cdbdb485cdd195c9035ebb8a'
         '3500fa84d990c5d4949191959985e1e4e0c8d4c08899d598d9d4d8d0d0c484d5d484e1c0c8dccc98'
         'ddd4c401f00706060606060606060606060606060606060606060606060606060606060606060606'
@@ -155,8 +161,9 @@
         'ce003cdcbdc9ad99b1bddd7d91a5cdc185d18da103e0bf58d80d4e8c8d98198e194ccc985959184d'
         '0c4d0c0d0c59590d5958998c8ccc8c180ccc8c4d4cd84c8e4dcccd4d58ce98184d0c8c99994d8c99'
         '0c0c4c4c4d183900fa93cd8ce58495e190d18899d18cd59499d9c08485c990cd94d994e590e184d1'
-        '8cd588cd98c194c590c98ccd88d184d5e4d8e0dcdce0d8e4d484d188cd8cc990c5007ec5ead2d8c8'
-        '7a60ec6c5ce0e4dec858d8d2dce87a60ec6e5cd8d2dce8'
+        '8cd588cd98c194c590c98ccd88d184d5e4d8e0dcdce0d8e4d484d188cd8cc990c501f815ab4b6323'
+        'eb81b1b37181937b2363614b73a3eb81b1bb71614b73a303d0e8ee4d6ecd8cededee8b2c6d0e2e8c'
+        '6e0c0d64ae2e8daecc25af8d0d44ae2caeae6c8e0e44aecead2506'
     ==
 =/  epoch-jam-matches=?  =(epoch-jam-hex expected-epoch-jam)
 =/  epoch-sig=@ux  (sign-raw:ed:crypto epoch-message pub.pair sek.pair)
@@ -164,7 +171,7 @@
 ::  the manifest as an assignment carries it (Delivery 1B correction
 ::  01): the controller's one serializer, manifest-json, emits every signed
 ::  field; its object equals the pinned emission the runner's Go test
-::  decodes (runner/internal/sig/testdata/reference-manifest-v4.json);
+::  decodes (runner/internal/sig/testdata/reference-manifest-v5.json);
 ::  decoded here as the runner decodes it, it is the signed manifest and
 ::  the reference signature verifies.  the 1B emission, without needs and
 ::  prerequisites, decodes those as empty and the signature refuses it
@@ -172,7 +179,7 @@
 =/  signed-fields=(list @t)
   :~  'incarnation'  'repo'  'ref'  'candidate'  'oid'  'baseline'  'lock'
       'generation'  'workflow'  'job'  'trust'  'sandbox'  'mode'  'network'
-      'network-scope'  'event'  'context'  'needs'  'prerequisites'
+      'network-scope'  'event'  'context'  'needs'  'prerequisites'  'trigger'
   ==
 =/  rendered=json  (manifest-json:ci-provenance manifest)
 =/  pinned-text=@t
@@ -184,7 +191,8 @@
         'trust":"trusted","sandbox":"vm","mode":"required","network":"locked","network-sc'
         'ope":"","event":"workflow_dispatch","context":"ba7816bf8f01cfea414140de5dae2223b'
         '00361a396177a9cb410ff61f20015ad","needs":"d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e'
-        '1d2c3b4a5968778695a4b3c2d1","prerequisites":"build=0v6.prod,lint=0v7.lint"}'
+        '1d2c3b4a5968778695a4b3c2d1","prerequisites":"build=0v6.prod,lint=0v7.lint","trig'
+        'ger":"workflow_dispatch suite.yml request run-1"}'
     ==
 =/  pinned=(unit json)  (de:json:html pinned-text)
 =/  decode
@@ -223,6 +231,7 @@
       (text 'context')
       (text 'needs')
       (text 'prerequisites')
+      (text 'trigger')
   ==
 =/  emitted-keys=(set @t)
   ?.  ?=([%o *] rendered)  ~

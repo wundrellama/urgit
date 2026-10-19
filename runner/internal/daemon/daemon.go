@@ -712,12 +712,14 @@ func (d *Daemon) honourable(a *ship.Assignment) error {
 		}
 		return nil
 	}
-	// the event the run's jobs receive (Delivery 1A): a push, or a manual
-	// dispatch; any other is given back, never run as a push. its payload
-	// is bound by the signed context: a manifest that binds none would run
-	// the job on act's own defaults, so it is given back too
+	// the event the run's jobs receive (Delivery 1A; 1C adds the automatic
+	// pull_request and schedule): any other is given back, never run as a
+	// push. its payload is bound by the signed context: a manifest that
+	// binds none would run the job on act's own defaults, so it is given
+	// back too. the signed trigger (manifest version 5) names the admitted
+	// event the run is for, beginning with that event's name
 	switch a.Manifest.Event {
-	case "push", "workflow_dispatch":
+	case "push", "workflow_dispatch", "pull_request", "schedule":
 	case "":
 		return errors.New("the signed manifest names no event")
 	default:
@@ -725,6 +727,12 @@ func (d *Daemon) honourable(a *ship.Assignment) error {
 	}
 	if a.Manifest.Context == "" {
 		return fmt.Errorf("the signed manifest binds no event payload for its %s", a.Manifest.Event)
+	}
+	if a.Manifest.Trigger == "" {
+		return fmt.Errorf("the signed manifest names no trigger for its %s", a.Manifest.Event)
+	}
+	if !strings.HasPrefix(a.Manifest.Trigger, a.Manifest.Event+" ") {
+		return fmt.Errorf("the signed trigger %q names another event than the run's %s", a.Manifest.Trigger, a.Manifest.Event)
 	}
 	if a.Manifest.Sandbox == "vm" && d.box.Kind() != "microvm" {
 		return fmt.Errorf("sandbox requirement vm; this runner is %s", d.box.Kind())

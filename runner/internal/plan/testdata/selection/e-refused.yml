@@ -1,0 +1,11 @@
+# a refused push trigger: never selects, and is an error for a required run
+name: Refused push
+on:
+  push:
+    branches: [a]
+    branches-ignore: [b]
+  workflow_dispatch:
+jobs:
+  never:
+    runs-on: ubuntu-latest
+    steps: [{run: echo never}]

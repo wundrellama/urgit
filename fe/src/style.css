@@ -785,9 +785,40 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
    area under its row; the plan's jobs that have no attempt yet */
 .ci-job-details { margin: 0 0 6px 12px; padding: 4px 8px; border-left: 2px solid var(--border, #e2e2e2); }
 .ci-job-details > summary { cursor: pointer; }
+.ci-attempt-reason { margin: 0 0 6px 12px; padding: 4px 8px; border-left: 2px solid var(--border, #e2e2e2); overflow-wrap: anywhere; }
+.ci-attempt-reason-text { white-space: pre-wrap; }
 .ci-job-outcome { margin-left: 12px; }
 .ci-job-details ul { margin: 2px 0 4px 16px; padding: 0; }
 .ci-job-condition, .ci-job-section { margin: 4px 0; overflow-wrap: anywhere; }
 .ci-job-condition code, .ci-job-section code { white-space: pre-wrap; }
 .ci-waiting-jobs { margin-bottom: 8px; }
 .ci-waiting-row { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) 3fr; gap: 8px; align-items: baseline; }
+
+/* Delivery 1C: the CI tab's views, a run's selection, the recorded
+   source events and the schedules, in the tab's own grid and pill style */
+.ci-view-switch { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin: 4px 0 12px; }
+.ci-view-switch button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 7px 10px 6px; color: var(--muted); cursor: pointer; }
+.ci-view-switch button.active { color: var(--text); border-bottom-color: #fd8c73; font-weight: 600; }
+.ci-selection { margin: 8px 0 12px; }
+.ci-selection-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ci-selection-head small, .ci-selection-note { overflow-wrap: anywhere; }
+.ci-selection-row { display: grid; grid-template-columns: minmax(10rem, 1.2fr) 8rem minmax(12rem, 3fr); gap: 8px; align-items: baseline; padding: 4px 0; }
+.ci-selection-reason { overflow-wrap: anywhere; }
+.ci-required { display: block; margin: 6px 0; padding: 6px 8px; border-radius: 6px; overflow-wrap: anywhere; }
+.ci-evidence-tag { color: #b42318; white-space: nowrap; }
+.ci-event-row, .ci-schedule-row { display: grid; grid-template-columns: minmax(10rem, 1.2fr) minmax(9rem, 1fr) minmax(14rem, 2.4fr) minmax(9rem, 1fr); gap: 0.75rem; align-items: start; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border, #e2e2e2); }
+.ci-event-outcome-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.ci-event-pull { overflow-wrap: anywhere; }
+.ci-event-selection > summary { cursor: pointer; }
+.ci-event-outcome { margin-left: 12px; overflow-wrap: anywhere; }
+
+/* a schedule's last occurrence wraps instead of truncating, so its open run
+   stays in the cell (correction 05); a schedules list no wider than the row's
+   minimum (10 + 9 + 14 + 9rem tracks, three 0.75rem gaps, 0.75rem sides =
+   45.75rem) stacks each schedule's cells instead of overflowing the panel */
+.ci-schedule-last { display: block; overflow-wrap: anywhere; }
+.ci-schedule-list { container: ci-schedule-list / inline-size; }
+@container ci-schedule-list (max-width: 45.75rem) {
+  .ci-schedule-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
+  .ci-schedule-row.table-head { display: none; }
+}

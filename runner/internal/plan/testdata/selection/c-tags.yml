@@ -1,0 +1,10 @@
+# only tags filtered: no branch push runs it; paths are never read for a tag
+name: Tags only
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+', '!v0.*']
+    paths: ['never/**']
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps: [{run: echo release}]

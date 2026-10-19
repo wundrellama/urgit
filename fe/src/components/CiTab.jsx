@@ -1,8 +1,10 @@
 import { Fragment, createElement, useCallback, useEffect, useRef, useState } from 'react'
 import { ci, publicApi } from '../api'
 import { approveHint, attemptRows, candidateRow, candidateStatusLabel, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, shortOid } from '../ci'
-import { renderJobDetails, renderWaitingJobs, waitingRows } from '../ciJobs'
+import { attemptReason, renderAttemptReason, renderJobDetails, renderWaitingJobs, waitingRows } from '../ciJobs'
 import { eventRows } from '../ciDispatch'
+import { pullHref, selectionModel } from '../ciEvents'
+import { renderSelection } from '../ciEventsView'
 import { applyCandidateFactToPage, feedPip, mergeCandidateFact, mergeRunnerCount } from '../ciLive'
 import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
@@ -11,6 +13,7 @@ import SetupGuide from './SetupGuide'
 import { CandidateProvenance } from './CiProvenance'
 import { useConfirm } from './ConfirmDialog'
 import RunWorkflow from './RunWorkflow'
+import { EventLog, Schedules } from './CiEvents'
 
 // The repository page's CI tab (BRIEF-CI-P2 D6; P3 D4/D7), read-first
 // and then live: the candidate list (ref, head, actor, status, age,
@@ -117,7 +120,7 @@ function CandidateList({ feed, onOpen }) {
       <div className="table-head ci-row"><span>Ref</span><span>Head</span><span>Actor</span><span>Status</span><span>Age</span><span>Jobs</span></div>
       {rows.map((row) => (
         <button type="button" className="ci-row ci-candidate" key={row.id} onClick={() => onOpen(row.id)}>
-          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}</span>
+          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}{row.event && <small className="quiet ci-manual-tag" title="An automatic run: advisory, it never lands"> · {row.event}</small>}{row.evidenceAbsent && <small className="ci-evidence-tag" title="A required workflow was not selected: the branch stays blocked until an override"> · required evidence absent</small>}</span>
           <code>{row.head}</code>
           <span>{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
           <span className={`status ${statusClass(row.status)}`} title={row.reason}>{row.statusText}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
@@ -156,17 +159,25 @@ function LogView({ attempt, onClose }) {
 // the event a run is for, as the ship admitted it (Delivery 1A): the event,
 // who triggered it, the branch and source, the workflow and its revision,
 // and every input with its typed value and how it was decided; technical
-// identifiers in details. Text only.
-function EventFacts({ candidate }) {
+// identifiers in details. Text only. An automatic run (Delivery 1C) adds
+// its activity, how it arrived, its tips, its native pull request (opened
+// by number in the Pull requests tab) or its occurrence.
+function EventFacts({ candidate, repo, onOpenPull }) {
   const e = eventRows(candidate)
   if (!e) return null
   return (
     <div className="ci-event" data-part="event">
       <dl className="ci-facts">
-        <div><dt>Event</dt><dd><strong>{e.label}</strong> <small className="quiet">{e.name}</small></dd></div>
+        <div><dt>Event</dt><dd><strong>{e.label}</strong> <small className="quiet">{e.name}{e.activity ? ` · ${e.activity}` : ''}</small></dd></div>
         {e.workflow && <div><dt>Workflow</dt><dd>{e.workflowName} <small className="quiet">{e.workflow}{e.revision ? ` at ${shortOid(e.revision)}` : ''}</small></dd></div>}
-        <div><dt>Triggered by</dt><dd>{e.actor}</dd></div>
+        {!e.workflow && e.revision && <div><dt>Workflows</dt><dd><small className="quiet">from the promoted baseline at <code>{shortOid(e.revision)}</code></small></dd></div>}
+        <div><dt>Triggered by</dt><dd>{e.triggeredBy || e.actor}{e.route && <small className="quiet"> · {e.route}</small>}</dd></div>
         <div><dt>Source</dt><dd>{e.branch} <code>{shortOid(e.source)}</code></dd></div>
+        {e.kind === 'push' && <div><dt>Moved</dt><dd><code>{e.before ? shortOid(e.before) : 'new ref'}</code> → <code>{shortOid(e.after)}</code></dd></div>}
+        {e.pull && <div><dt>Pull request</dt><dd><a href={pullHref(repo?.name || '', e.pull.number)} onClick={(event) => { if (onOpenPull) { event.preventDefault(); onOpenPull(e.pull.number) } }}>#{e.pull.number} {e.pull.title}</a> <small className="quiet">{e.pull.headBranch} <code>{shortOid(e.pull.head)}</code> → {e.pull.baseBranch} <code>{shortOid(e.pull.base)}</code> · by {e.pull.author}</small></dd></div>}
+        {e.occurrence && <div><dt>Occurrence</dt><dd>{e.occurrence.entry} <code>{e.occurrence.cron}</code> <small className="quiet">{e.occurrence.zone}</small></dd></div>}
+        {e.occurrence && <div><dt>Due</dt><dd>{e.occurrence.due?.local} <small className="quiet">{e.occurrence.due?.utc}</small></dd></div>}
+        {e.occurrence && <div><dt>Admitted</dt><dd>{e.occurrence.admitted?.local} <small className="quiet">{e.occurrence.lateText}</small></dd></div>}
       </dl>
       {e.inputs.length > 0 && (
         <div className="ci-list ci-inputs-table">
@@ -179,6 +190,8 @@ function EventFacts({ candidate }) {
           <summary>Technical identifiers</summary>
           <dl className="ci-facts">
             {e.request && <div><dt>Request</dt><dd><code>{e.request}</code></dd></div>}
+            {e.eventId && <div><dt>Event id</dt><dd><code>{e.eventId}</code></dd></div>}
+            {e.trigger && <div><dt>Signed trigger</dt><dd><code>{e.trigger}</code></dd></div>}
             <div><dt>Source</dt><dd><code>{e.source}</code></dd></div>
             <div><dt>Revision</dt><dd><code>{e.revision || 'none'}</code></dd></div>
             <div><dt>Payload sha-256</dt><dd><code>{e.payloadSha256}</code></dd></div>
@@ -190,7 +203,39 @@ function EventFacts({ candidate }) {
   )
 }
 
-function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
+// one attempt of a candidate page: its row, the addresses pinned for it,
+// its reason and its job details. The status badge holds the status alone;
+// the reason, complete and in its own case, is under the row or in the
+// job's decision details (attemptReason, correction 03)
+export function AttemptRow({ row, onLog }) {
+  const { line, details } = attemptReason(row)
+  return (
+    <Fragment>
+      <div className={`ci-attempt-row${row.pinned.length ? ' has-pins' : ''}`}>
+        <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
+        <code>{row.daemon}</code>
+        <span className={`status ${statusClass(row.status)}`}>{row.statusText}</span>
+        <span>{row.started ? exactTime(row.started) : '—'}</span>
+        <span>{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
+        <span>{row.hasLog ? <button className="text-button" onClick={() => onLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
+      </div>
+      {row.pinned.length > 0 && (
+        <div className="ci-attempt-pins" title={pinnedNote}>
+          <small className="quiet">Pinned for this run</small>
+          {row.pinned.map((pin) => <small key={pin.name}><strong>{pin.name}</strong> → <span className="ci-pin-addrs">{pin.addrs.join(', ')}</span></small>)}
+        </div>
+      )}
+      {renderAttemptReason(createElement, line)}
+      {/* what the ship decided for the job and, apart from it, what the
+          attempt shows happened, its prerequisites and outputs (Delivery
+          1B): a details area below the row, so the job cell keeps its two
+          lines */}
+      {details && renderJobDetails(createElement, details)}
+    </Fragment>
+  )
+}
+
+function CandidatePage({ id, live, policy, repo, onBack, onMutate, onOpenPull }) {
   const confirm = useConfirm()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -226,39 +271,19 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
         {c.verdictReason && <div><dt>{c.status === 'pending' ? 'Waiting' : 'Verdict'}</dt><dd>{c.verdictReason}</dd></div>}
       </dl>
       {error && <small className="field-error">{error}</small>}
-      <EventFacts candidate={c} />
+      <EventFacts candidate={c} repo={repo} onOpenPull={onOpenPull} />
+      {renderSelection(createElement, selectionModel(c))}
       <CandidateProvenance data={data} tip={(repo?.refs || []).find((r) => r.name === c.ref)?.oid || ''} onAct={act} busy={busy} confirm={confirm} />
       <div className="form-actions">
         {c.trust === 'untrusted' && c.status !== 'skipped' && <button className="button primary" disabled={busy !== ''} title={approveHint(policy)} onClick={() => act('approve', ciActions.approve(c.id))}>{busy === 'approve' ? 'Approving…' : 'Approve and run trusted'}</button>}
-        {c.status !== 'pending' && c.mode !== 'manual' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
+        {c.status !== 'pending' && c.mode !== 'manual' && c.mode !== 'event' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
         {c.mode === 'manual' && <small className="quiet">A manual run is not re-run in place: run the workflow again from Run workflow, which admits its inputs under the policy now.</small>}
+        {c.mode === 'event' && <small className="quiet">An automatic run is fixed to its event and never re-run in place: a new push, pull request activity or occurrence admits a new run.</small>}
       </div>
       {renderWaitingJobs(createElement, waitingRows(c))}
       <div className="ci-list">
         <div className="table-head ci-attempt-row"><span>Job</span><span>Daemon</span><span>Status</span><span>Started</span><span>Finished</span><span>Log</span></div>
-        {rows.map((row) => (
-          <Fragment key={row.id}>
-          <div className={`ci-attempt-row${row.pinned.length ? ' has-pins' : ''}`} title={row.reason}>
-            <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
-            <code>{row.daemon}</code>
-            <span className={`status ${statusClass(row.status)}`}>{row.statusText}{row.reason && <small className="quiet"> · {row.reason}</small>}</span>
-            <span>{row.started ? exactTime(row.started) : '—'}</span>
-            <span>{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
-            <span>{row.hasLog ? <button className="text-button" onClick={() => setLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
-          </div>
-          {row.pinned.length > 0 && (
-            <div className="ci-attempt-pins" title={pinnedNote}>
-              <small className="quiet">Pinned for this run</small>
-              {row.pinned.map((pin) => <small key={pin.name}><strong>{pin.name}</strong> → <span className="ci-pin-addrs">{pin.addrs.join(', ')}</span></small>)}
-            </div>
-          )}
-          {/* what the ship decided for the job and, apart from it, what
-              the attempt shows happened, its prerequisites and outputs
-              (Delivery 1B): a details area below the row, so the job cell
-              keeps its two lines */}
-          {row.details && renderJobDetails(createElement, row.details)}
-          </Fragment>
-        ))}
+        {rows.map((row) => <AttemptRow key={row.id} row={row} onLog={setLog} />)}
         {!rows.length && <div className="empty">No attempts yet{c.trust === 'untrusted' ? ': an untrusted revision waits for approval unless the repository runs restricted checks.' : '.'}</div>}
       </div>
       {log && <LogView attempt={log} onClose={() => setLog('')} />}
@@ -266,33 +291,45 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
   )
 }
 
-export default function CiTab({ repo, onMutate }) {
+export default function CiTab({ repo, onMutate, onOpenPull }) {
   const [open, setOpen] = useState('')
+  const [view, setView] = useState('candidates')
   const [guide, setGuide] = useState(false)
   const [running, setRunning] = useState(false)
   const [policy, setPolicy] = useState(null)
   const feed = useRepositoryFeed(repo.name)
   const probe = useStorageProbe()
   const pip = feedPip(feed.status)
-  useEffect(() => { setOpen(''); setRunning(false) }, [repo.name])
+  useEffect(() => { setOpen(''); setRunning(false); setView('candidates') }, [repo.name])
   useEffect(() => { let live = true; ci.policy(repo.name).then((p) => { if (live) setPolicy(p) }).catch(() => {}); return () => { live = false } }, [repo.name])
   const firstRun = noRunnerMessage(policy?.ciProtected || [], feed.runners)
   const liveCandidate = open ? (feed.raw || []).find((c) => c.id === open) || null : null
   return (
     <section className="panel ci-tab">
       <div className="section-title">
-        <div><h2>CI</h2><p>Candidates staged for the CI-protected branches of this repository, newest first. A candidate lands its branch when every required job passes.</p></div>
+        <div><h2>CI</h2><p>Candidates staged for the CI-protected branches of this repository and the runs its automatic events and schedules admitted, newest first. A candidate lands its branch when every required job passes; an event run never lands.</p></div>
         <div className="ci-tab-tools">
           <StoragePip probe={probe} />
           <span className={`ci-feed ci-feed-${pip}`} title={pip === 'live' ? 'Subscribed: the ship pushes every change.' : pip === 'polling' ? 'The channel is down: the list re-reads every 10 s; Refresh reads now.' : 'Connecting to the ship.'}><span className={`ci-pip ${pip === 'live' ? 'good' : pip === 'polling' ? 'warn' : ''}`} /> {pip}</span>
-          {!open && <button className="text-button" onClick={() => { feed.load(''); probe.run() }}>Refresh</button>}
+          {!open && view === 'candidates' && <button className="text-button" onClick={() => { feed.load(''); probe.run() }}>Refresh</button>}
           {!open && !running && <button className="button" onClick={() => setRunning(true)}>Run workflow</button>}
         </div>
       </div>
       {(probe.state === 'unreachable' || probe.state === 'cors') && <div className="empty ci-first-run ci-storage-warning">{probeMessage(probe.state, probe.host)}</div>}
       {firstRun && <div className="empty ci-first-run">{firstRun} <button type="button" className="text-button" onClick={() => setGuide(true)}>Setup guide</button></div>}
+      {!open && (
+        <div className="ci-view-switch" role="tablist" aria-label="CI views">
+          <button type="button" role="tab" data-part="ci-view-candidates" aria-selected={view === 'candidates'} className={view === 'candidates' ? 'active' : ''} onClick={() => setView('candidates')}>Candidates</button>
+          <button type="button" role="tab" data-part="ci-view-events" aria-selected={view === 'events'} className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>Events</button>
+          <button type="button" role="tab" data-part="ci-view-schedules" aria-selected={view === 'schedules'} className={view === 'schedules' ? 'active' : ''} onClick={() => setView('schedules')}>Schedules</button>
+        </div>
+      )}
       {running && !open && <RunWorkflow repo={repo} onClose={() => setRunning(false)} onCreated={(id) => { setRunning(false); setOpen(id); feed.load('') }} />}
-      {open ? <CandidatePage id={open} live={liveCandidate} policy={policy?.untrusted} repo={repo} onBack={() => { setOpen(''); feed.load('') }} onMutate={onMutate} /> : <CandidateList feed={feed} onOpen={setOpen} />}
+      {open
+        ? <CandidatePage id={open} live={liveCandidate} policy={policy?.untrusted} repo={repo} onBack={() => { setOpen(''); feed.load('') }} onMutate={onMutate} onOpenPull={onOpenPull} />
+        : view === 'events' ? <EventLog repo={repo} onOpenRun={setOpen} onOpenPull={onOpenPull} />
+          : view === 'schedules' ? <Schedules repo={repo} onOpenRun={setOpen} />
+            : <CandidateList feed={feed} onOpen={setOpen} />}
       {guide && <SetupGuide onClose={() => setGuide(false)} />}
     </section>
   )

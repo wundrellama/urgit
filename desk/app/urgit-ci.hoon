@@ -61,14 +61,25 @@
 ::    inputs and the payload act reads — every attempt's signed manifest
 ::    binds.
 ::
-::    persisted state is state-4 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-3, state-2, state-1, and the three
-::    tagged %0 — is converted to it explicitly on load by lib/ci-migrate,
-::    or refused with its reason.
+::    Delivery 1C adds automatic events: %urgit reports every persisted
+::    ref move and pull request transition (%forge-events), which is
+::    verified against %urgit's own state, recorded, and selected against
+::    the governing promoted baseline's trigger catalog (lib/ci-trigger),
+::    with changed paths %urgit computes from its objects; a selected
+::    event becomes a run of mode %event, never landable, with no
+::    credentials.  a required push whose push workflow the filters
+::    exclude has absent required evidence and stays blocked.  the default
+::    branch baseline's schedules are armed as Behn timers (lib/ci-cron)
+::    and each due occurrence is admitted once, revalidated.
+::
+::    persisted state is state-5 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-4, state-3, state-2, state-1, and
+::    the three tagged %0 — is converted to it explicitly on load by
+::    lib/ci-migrate, or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, ci-trigger, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -118,7 +129,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-4:ci
+=|  state-5:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -151,8 +162,12 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-4, or converted to it explicitly, or refused with its
+    ::  current state-5, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
+    ::  every active schedule's armed wake is set again (Delivery 1C): a
+    ::  timer that survived is then set twice, and the armed-due and
+    ::  admitted-occurrence checks make the second wake nothing.  a pier
+    ::  restart calls no on-load; Behn keeps its timers across it.
     ::
     =/  loaded  (load:ci-migrate q.old)
     =.  state  new.loaded
@@ -161,10 +176,10 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-4")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-5")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
-    [~[connect-card:hc keys-card:hc] this(polls ~)]
+    [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -449,6 +464,19 @@
       =/  next  this(state state.out, polls polls.out)
       =/  live  (live-facts:~(. +>.next bowl) before announced)
       [(weld cards.live cards.out) next(announced announced.live)]
+    ::
+        ::  a schedule's armed wake (Delivery 1C): the occurrence it names
+        ::  is admitted at most once, revalidated now (lib/ci-cron
+        ::  on-wake); a wake for a replaced, revoked or already admitted
+        ::  occurrence does nothing.  a timer error is the same wake late
+        ::
+        [%schedule @ @ @ @ @ ~]
+      ?.  ?=([%behn %wake *] sign-arvo)  (on-arvo:def wire sign-arvo)
+      =/  before=snapshot:hc  snap:hc
+      =/  =out:hc  (schedule-wake:hc t.wire)
+      =/  next  this(state state.out, polls polls.out)
+      =/  live  (live-facts:~(. +>.next bowl) before announced)
+      [(weld cards.live cards.out) next(announced announced.live)]
     ==
   ::
   ++  on-fail  on-fail:def
@@ -645,7 +673,7 @@
 ++  scratch-ref
   |=  =candidate:ci
   ^-  @t
-  ?:  ?=(%dispatch -.trigger.candidate)
+  ?:  ?=(?(%dispatch %event) -.trigger.candidate)
     (rap 3 ~['refs/ci/run/' (scot %uv id.candidate)])
   (rap 3 ~['refs/ci/candidate/' (scot %uv (sham [repo ref head base]:candidate))])
 ::
@@ -660,6 +688,7 @@
   |=  c=candidate:ci
   ?&  =(repo repo.c)  =(ref ref.c)  =(head head.c)  =(base base.c)
       ?=(~ candidate.c)
+      !?=(%event -.trigger.c)
   ==
 ::
 ::  the repository's policy for untrusted revisions: approval unless set
@@ -711,6 +740,30 @@
   |=  repo=@t
   ^-  @uv
   (~(gut by incarnations) repo 0v0)
+::
+::  the synthetic record a resolve attempt binds to (resolve-dependencies:
+::  refs/ci/resolve, never a branch or a tag): dependency maintenance, not
+::  a run of the revision's workflows.  it is never planned, re-planned on
+::  a policy change or re-run; its resolve attempt and the lock it posts
+::  are its whole record.  its shadow mode is no proof of that: an
+::  explicitly admitted shadow run plans as before
+::
+++  resolver-record
+  |=  c=candidate:ci
+  ^-  ?
+  =('refs/ci/resolve' ref.c)
+::
+::  a mirror repository a resolve writes (a lock names it, or a resolve in
+::  flight holds its write token): dependency maintenance, never a source
+::  of workflow events
+::
+++  mirror-repository
+  |=  repo=@t
+  ^-  ?
+  ?|  (lien ~(val by mirror-tokens) |=(r=(set @t) (~(has in r) repo)))
+      %+  lien  ~(val by locks)
+      |=(l=lock:ci (lien nodes.l |=(n=dep-node:ci =(repo mirror.n))))
+  ==
 ::
 ++  ensure-incarnation
   |=  repo=@t
@@ -804,12 +857,15 @@
   ?.  =(repo repo.c)  [cards.acc state]
   ?.  ?=(?(%pending %running %passed) status.c)  [cards.acc state]
   ?:  =(%skipped status.c)  [cards.acc state]
+  ::  a resolve's record is no run: a policy change resets nothing of it
+  ::  (its lock is checked again when a revision is promoted)
+  ?:  (resolver-record c)  [cards.acc state]
   ::  a manual run is bound to the generation it was dispatched under
   ::  (Delivery 1A): one still open is cancelled, never re-planned under
   ::  another baseline with inputs admitted against an earlier one; one
   ::  that passed keeps its verdict, which lands nothing
   ::
-  ?:  ?=(%dispatch -.trigger.c)
+  ?:  ?=(?(%dispatch %event) -.trigger.c)
     ?:  =(%passed status.c)  [cards.acc state]
     =/  release=card
       (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.c (scratch-ref c)])
@@ -871,6 +927,8 @@
   =/  reason=@t
     %+  rap  3
     :~  'cancelled: '  why
+        ?:  ?=(%event -.trigger.c)
+          '; an event run keeps the policy it was admitted under: the next event runs under the new one'
         '; a manual run keeps the policy it was dispatched under: dispatch it again'
     ==
   =.  attempts
@@ -913,6 +971,7 @@
       status  ?:(=(%skipped status.c) status.c %pending)
       plan  ~
       plan-oid  ~
+      selected  ?:(=(%required mode.c) ~ selected.c)
       verdict-reason  `why
       generation  (current-generation repo.c)
       baseline  ?~(base ~ `revision.u.base)
@@ -1235,6 +1294,30 @@
       ==
     =/  release=card
       (urgit-git-poke /release/(scot %uv id.old) [%delete-ref repo.old (scratch-ref old)])
+    ::  an untrusted event run (a pull request from a ship that cannot
+    ::  write the repository, Delivery 1C) is approved into a trusted
+    ::  twin of the same event, selection and object, under a scratch
+    ::  ref of its own; still an event run, never landable
+    ?:  ?=(%event -.trigger.old)
+      =/  event-twin=candidate-id:ci  (sham [%ci-event-approved id.old])
+      ?:  (~(has by candidates) event-twin)  (emit ~[release])
+      =/  fresh=candidate:ci
+        %:  fresh-candidate
+          event-twin  repo.old  ref.old  head.old  base.old  actor.old
+          via.old  %trusted  pull.old  %event  ~
+        ==
+      =/  approved=candidate:ci
+        fresh(candidate candidate.old, trigger trigger.old, selected selected.old)
+      =.  candidates  (~(put by candidates) event-twin approved)
+      =.  audit  (record-audit actor.act 'approve-candidate' repo.old (scot %uv id.old))
+      =/  source=card
+        ?~  candidate.old
+          %+  urgit-poke  /materialize/(scot %uv event-twin)
+          [%materialize-run event-twin repo.old ref.old head.old base.old]
+        %+  urgit-git-poke  /scratch/(scot %uv event-twin)
+        [%set-ref repo.old (scratch-ref approved) u.candidate.old]
+      =/  scheduled=out  schedule
+      [[release source cards.scheduled] state.scheduled polls.scheduled]
     =/  twin-id=candidate-id:ci  (candidate-id repo.old ref.old head.old base.old %trusted)
     =/  twin=(unit candidate:ci)  (~(get by candidates) twin-id)
     ?^  twin
@@ -1273,6 +1356,14 @@
     ::  (Delivery 1A): it is dispatched again, never re-run in place
     ?:  ?=(%dispatch -.trigger.old)
       ~|  'a manual run is not re-run in place: dispatch it again from Run workflow, which admits its inputs under the policy now'
+      !!
+    ::  a resolve's record is no run: resolve the revision again instead
+    ?:  (resolver-record old)
+      ~|  'a dependency resolution is not a run: resolve the revision again from Settings → CI policy'
+      !!
+    ::  an event run is the run of one admitted event (Delivery 1C)
+    ?:  ?=(%event -.trigger.old)
+      ~|  'an event run is not re-run in place: the next push, pull request activity or due schedule runs again under the policy then'
       !!
     =/  new-id=candidate-id:ci  (rerun-id repo.old ref.old head.old base.old)
     =/  next=candidate:ci
@@ -1649,6 +1740,16 @@
       %+  skip  ~(tap by resolve-mappings)
       |=([id=candidate-id:ci *] (~(has in gone) id))
     =.  harness-paths  (~(del by harness-paths) repository.act)
+    ::  Delivery 1C: its recorded forge events and its schedules (a wake
+    ::  still set finds no entry and does nothing)
+    =.  forge-events
+      %-  malt
+      %+  skip  ~(tap by forge-events)
+      |=([* e=forge-event:ci] =(repository.act repo.e))
+    =.  schedules
+      %-  malt
+      %+  skip  ~(tap by schedules)
+      |=([k=schedule-key:ci *] =(repository.act repo.k))
     =.  audit
       %:  record-audit
         our.bowl
@@ -1789,10 +1890,15 @@
     =/  keep=card
       %+  urgit-git-poke  /baseline/(scot %t repo.act)
       [%set-ref policy-repo (baseline-ref repo.act ref.act) revision.act]
+    ::  the default branch's schedules (Delivery 1C) come from its promoted
+    ::  catalog: a promotion registers them again, a new definition from
+    ::  future time only
+    =^  timers  state
+      (register-schedules repo.act (rap 3 ~['baseline of ' ref.act ' promoted']))
     =/  scheduled=out  schedule
     =.  state  state.scheduled
     =.  polls  polls.scheduled
-    (emit (weld restores [keep cards.scheduled]))
+    (emit :(weld restores [keep cards.scheduled] timers))
   ::
       %revoke-baseline
     =+  (require-authority repo.act %ci-policy ~ actor.act)
@@ -1810,7 +1916,9 @@
     =/  release=card
       %+  urgit-git-poke  /baseline/(scot %t repo.act)
       [%delete-ref (fall policy-repo.u.before repo.act) (baseline-ref repo.act ref.act)]
-    (emit (snoc restores release))
+    =^  timers  state
+      (register-schedules repo.act (rap 3 ~['baseline of ' ref.act ' revoked']))
+    (emit (weld (snoc restores release) timers))
   ::
       ::  which paths of the tree are the harness (D5): trusted
       ::  orchestration taken from the baseline in a required run.  every
@@ -2381,6 +2489,21 @@
       [%set-ref repo.act (scratch-ref run) tip.act]
     =/  scheduled=out  schedule
     [[keep cards.scheduled] state.scheduled polls.scheduled]
+  ::
+      ::  what one of %urgit's events persisted (Delivery 1C; lib/ci-forge):
+      ::  each ref move and pull request transition is verified against
+      ::  %urgit's state, recorded, and selected against the governing
+      ::  catalog; a default-branch change registers the schedules again.
+      ::  the poke is local (src=our) and never a web or delegated action
+      ::
+      %forge-events  (admit-forge-events act)
+  ::
+      %materialize-run
+    ~|  '%materialize-run is a poke on %urgit, not %urgit-ci'
+    !!
+  ::
+      %run-ready  (run-ready id.act candidate.act)
+      %run-conflict  (run-conflict id.act reason.act)
   ==
 ::
 ::  the manual-run inventory of one ref (Delivery 1A): the workflows that
@@ -2560,7 +2683,7 @@
         ?~(promoted ~ `revision.u.promoted)
         ?~(promoted ~ lock.u.promoted)
         (current-incarnation repo)
-        %vm  trial-of  %.n  [%push ~]
+        %vm  trial-of  %.n  [%push ~]  ~
     ==
   c(sandbox (sandbox-for c %.n))
 ::
@@ -2807,6 +2930,9 @@
       ::  expressions read, and the attempt each need was accepted from
       ?~(needs.a '' (context-digest:ci-dispatch (needs-text:ci-expr needs.a)))
       (prerequisites-text needs.a)
+      ::  the event the run was admitted for (manifest version 5,
+      ::  Delivery 1C); a resolve runs none
+      ?:(?=(%resolve kind.a) '' (trigger-text:ci-trigger c))
   ==
 ::
 ::  `<job>=<attempt>` for each need, by job id, comma-joined
@@ -2830,6 +2956,7 @@
   ?-  -.trigger.c
     %push  ['push' (push-payload-of c)]
     %dispatch  ['workflow_dispatch' payload.trigger.c]
+    %event  [(event-name:ci-trigger trigger.c) payload.run-event.trigger.c]
   ==
 ::
 ::  a push candidate's event payload (push-payload): its ref, its base as
@@ -3070,6 +3197,8 @@
     ?&  =(%pending status.candidate)
         ?=(^ candidate.candidate)
         !conflict.candidate
+        ::  a resolve's record is no run (+resolver-record)
+        !(resolver-record candidate)
         ?|(=(%trusted trust.candidate) (restricted repo.candidate))
         ::  a required candidate runs only under a promoted baseline (P4
         ::  D5); a trial runs its own harness; a shadow like a trial
@@ -3232,7 +3361,7 @@
   ?.  =(%trusted trust.c)
     [%| (rap 3 ~['environment ' u.environment.job ': an untrusted candidate receives no deployment credentials'])]
   ?.  =(%required mode.c)
-    [%| (rap 3 ~['environment ' u.environment.job ': a ' mode.c ' run receives no deployment credentials'])]
+    [%| (rap 3 ~['environment ' u.environment.job ': ' ?:(=(%event mode.c) 'an' 'a') ' ' mode.c ' run receives no deployment credentials'])]
   ?~  candidate.c  [%| 'candidate is not materialized']
   ?~  baseline.c  [%| 'no baseline']
   ?:  =(%automatic automation.u.env)  [%& ~]
@@ -3421,12 +3550,16 @@
 ++  run-context
   |=  c=candidate:ci
   ^-  run-context:ci-plan
-  :*  ?-(-.trigger.c %push 'push', %dispatch 'workflow_dispatch')
-      ?-(-.trigger.c %push (push-payload-of c), %dispatch payload.trigger.c)
+  :*  (event-name:ci-trigger trigger.c)
+      ?-  -.trigger.c
+        %push  (push-payload-of c)
+        %dispatch  payload.trigger.c
+        %event  payload.run-event.trigger.c
+      ==
       ref.c
       (oid-hex:ci-provenance candidate.c)
       (scot %p actor.c)
-      ?-(-.trigger.c %push [%obj ~], %dispatch (inputs-of:ci-expr inputs.trigger.c))
+      ?-(-.trigger.c %push [%obj ~], %event [%obj ~], %dispatch (inputs-of:ci-expr inputs.trigger.c))
       %.n
   ==
 ::
@@ -3572,6 +3705,19 @@
       %cancelled  [%pending ~]
       %infrastructure-error  [%unknown reason.u.newest]
     ==
+  ::  a required run whose push workflow the filters excluded, or whose
+  ::  trigger is refused (Delivery 1C), has absent required evidence: it
+  ::  never passes, keeps its ref blocked with the reason, and no attempt
+  ::  stands in for the workflow; an override is the way past it
+  ::
+  =/  missing=(list workflow-selection:ci)
+    ?.  =(%required mode.candidate)  ~
+    ?~  selected.candidate  ~
+    (unselected:ci-trigger outcomes.u.selected.candidate)
+  =/  blocked=(unit @t)
+    ?.  ?&(?=(^ missing) =(%passed status.verdict))  ~
+    `(absent-evidence missing)
+  =?  verdict  ?=(^ blocked)  [%pending blocked]
   ::  a restricted check that passes is a verdict, never a landing: the
   ::  reason says so, and only approval runs the head as trusted (D3)
   ::
@@ -3584,11 +3730,15 @@
       `'passed as a shadow run: nothing lands'
     ?:  ?&(=(%passed status.verdict) =(%manual mode.candidate))
       `'passed as a manual run: nothing lands'
+    ?:  ?&(=(%passed status.verdict) =(%event mode.candidate))
+      `'passed as an event run: nothing lands, and no required check is satisfied by it'
     reason.verdict
   =/  next=candidate:ci
     %=  candidate
       status  status.verdict
-      verdict-reason  ?:(=(before status.verdict) verdict-reason.candidate reason)
+      verdict-reason
+        ?^  blocked  blocked
+        ?:(=(before status.verdict) verdict-reason.candidate reason)
       updated  now.bowl
     ==
   =.  candidates  (~(put by candidates) id next)
@@ -4000,6 +4150,27 @@
       :-  'inventory'
       ?~  inventory.l  ~
       [%a (turn u.inventory.l dispatch-workflow-json)]
+      ::  the events each workflow declares (Delivery 1C), in brief: null
+      ::  when the lock predates trigger definitions, which is unknown
+      :-  'triggers'
+      ?~  triggers.l  ~
+      %-  pairs:enjs:format
+      :~  ['zones' [%a (turn (sort ~(tap in ~(key by zones.u.triggers.l)) aor) |=(n=@t s+n))]]
+          :-  'workflows'
+          :-  %a
+          %+  turn  workflows.u.triggers.l
+          |=  w=trigger-workflow:ci
+          %-  pairs:enjs:format
+          :~  ['workflow' s+workflow.w]
+              ['name' s+name.w]
+              ['refusal' ?~(refusal.w ~ s+u.refusal.w)]
+              :-  'events'
+              :-  %a
+              %+  turn  events.w
+              |=  e=trigger-event:ci
+              (pairs:enjs:format ~[['event' s+event.e] ['refusal' ?~(refusal.e ~ s+u.refusal.e)]])
+          ==
+      ==
   ==
 ::
 ::  one workflow of a lock's manual-run inventory, as the run form and the
@@ -4215,6 +4386,683 @@
     now.bowl
   ==
 ::
+::
+::  ---- automatic events and schedules (Delivery 1C) ----
+::
+::  the forge events kept per repository, newest first, and the event ids
+::  kept as the replay guard (the oldest thousand go past the bound)
+::
+++  max-forge-events  200
+++  max-event-ids  10.000
+::
+::  %urgit's reads for events: the default branch, the changed paths of a
+::  push and of a pull request (lib/ci-changes over %urgit's own objects),
+::  and a native pull request's record.  ~ means %urgit could not be read
+::
+++  default-ref
+  |=  repo=@t
+  ^-  (unit (unit @t))
+  =/  raw=(unit *)  (urgit-peek /ci-head/(scot %t repo))
+  ?~  raw  ~
+  =/  got=(each (unit @t) tang)  (mule |.(;;((unit @t) u.raw)))
+  ?.(?=(%& -.got) ~ `p.got)
+::
+++  push-evidence
+  |=  [repo=@t ref=@t old=(unit oid:git) new=oid:git]
+  ^-  evidence:ci-trigger
+  =/  from=@t  ?~(old '' (oid-text:git-codec u.old))
+  %-  evidence-of
+  %-  urgit-peek
+  /ci-push-changes/(scot %t repo)/(scot %t ref)/(scot %t from)/(scot %t (oid-text:git-codec new))
+::
+++  pull-evidence
+  |=  [repo=@t head=oid:git target=oid:git]
+  ^-  evidence:ci-trigger
+  %-  evidence-of
+  %-  urgit-peek
+  /ci-pull-changes/(scot %t repo)/(scot %t (oid-text:git-codec head))/(scot %t (oid-text:git-codec target))
+::
+++  evidence-of
+  |=  raw=(unit *)
+  ^-  evidence:ci-trigger
+  ?~  raw  [%| '%urgit cannot be read for the changed paths']
+  =/  got=(each (unit (each (list @t) @t)) tang)
+    (mule |.(;;((unit (each (list @t) @t)) u.raw)))
+  ?.  ?=(%& -.got)  [%| '%urgit answered the changed paths in a shape this agent does not read']
+  ?~  p.got  [%| 'the repository is not in %urgit']
+  u.p.got
+::
+++  pull-record
+  |=  [repo=@t number=@ud]
+  ^-  (unit (unit native-pull:git))
+  =/  raw=(unit *)  (urgit-peek /ci-pull/(scot %t repo)/(scot %ud number))
+  ?~  raw  ~
+  =/  got=(each (unit native-pull:git) tang)  (mule |.(;;((unit native-pull:git) u.raw)))
+  ?.(?=(%& -.got) ~ `p.got)
+::
+::  the promoted baseline that governs a ref's events and its lock's
+::  catalog, or why there is none: no baseline, no workflows, a lock not
+::  on this ship, or a lock resolved before triggers (unknown: nothing runs
+::  automatically, never an empty catalog)
+::
+++  governing
+  |=  [repo=@t ref=@t]
+  ^-  (each [=baseline:ci =lock:ci catalog=trigger-catalog:ci] @t)
+  =/  base=(unit baseline:ci)  (~(get by baselines) [repo ref])
+  ?~  base
+    [%| (rap 3 ~['no promoted baseline governs ' ref ': nothing runs (promote one in Settings → CI policy)'])]
+  ?~  lock.u.base  [%| (rap 3 ~['the promoted baseline of ' ref ' has no workflows'])]
+  =/  found=(unit lock:ci)  (~(get by locks) u.lock.u.base)
+  ?~  found
+    [%| 'the baseline\'s lock is not on this ship: resolve and promote the revision again']
+  ?~  triggers.u.found
+    :-  %|
+    %+  rap  3
+    :~  'the baseline of '  ref
+        ' was resolved before trigger definitions were read: its events are unknown, '
+        'and nothing runs automatically until its revision is resolved and promoted again'
+    ==
+  [%& u.base u.found u.triggers.u.found]
+::
+::  a forge event recorded: at most max-forge-events per repository kept
+::
+++  record-forge-event
+  |=  e=forge-event:ci
+  ^-  _forge-events
+  =.  forge-events  (~(put by forge-events) id.e e)
+  =/  mine=(list forge-event:ci)
+    %+  sort
+      (skim ~(val by forge-events) |=(f=forge-event:ci =(repo.f repo.e)))
+    |=([a=forge-event:ci b=forge-event:ci] (gth received.a received.b))
+  ?:  (lte (lent mine) max-forge-events)  forge-events
+  %+  roll  (slag max-forge-events mine)
+  |=  [f=forge-event:ci acc=_forge-events]
+  (~(del by acc) id.f)
+::
+++  remember-id
+  |=  id=@uv
+  ^-  _event-ids
+  =.  event-ids  (~(put by event-ids) id now.bowl)
+  ?:  (lte ~(wyt by event-ids) max-event-ids)  event-ids
+  =/  newest=(list [@uv @da])
+    (sort ~(tap by event-ids) |=([a=[@uv @da] b=[@uv @da]] (gth +.a +.b)))
+  (malt (scag (sub max-event-ids 1.000) newest))
+::
+::  an event run's record: a fresh candidate of mode %event bound to the
+::  current policy of its ref, its object (the pushed tip, a merge's
+::  result, a schedule's tip; ~ while a pull request's integration object
+::  is built), its trigger and selection
+::
+++  event-candidate
+  |=  $:  id=candidate-id:ci  repo=@t  ref=@t  head=oid:git  base=oid:git
+          actor=@p  route=@t  =trust:ci  pull=(unit @ud)  e=run-event:ci
+          sel=event-selection:ci  object=(unit oid:git)
+      ==
+  ^-  candidate:ci
+  =/  =via:ci  ?:(=('smart-http push (write token)' route) %token %session)
+  =/  c=candidate:ci
+    (fresh-candidate id repo ref head base actor via trust pull %event ~)
+  c(candidate object, trigger [%event e], selected `sel)
+::
+::  the candidate that landed an object on a protected ref, if any
+::
+++  landed-by
+  |=  [repo=@t ref=@t object=oid:git]
+  ^-  (unit candidate-id:ci)
+  =/  hits=(list candidate:ci)
+    %+  skim  ~(val by candidates)
+    |=  c=candidate:ci
+    ?&  =(repo repo.c)  =(ref ref.c)  =(`object candidate.c)
+        =(`'landed' verdict-reason.c)
+    ==
+  ?~(hits ~ `id.i.hits)
+::
+::  what a selection that ran nothing says
+::
+++  no-run-outcome
+  |=  [event=@t outcomes=(list workflow-selection:ci)]
+  ^-  @t
+  ?~  outcomes
+    (rap 3 ~['no workflow of the governing baseline triggers on ' event])
+  (rap 3 ~['no workflow selected (' (crip (a-co:co (lent outcomes))) ' declare ' event '; see each reason)'])
+::
+::  what a push's selection compared
+::
+++  push-basis
+  |=  [ref=@t old=(unit oid:git) new=oid:git changes=(unit evidence:ci-trigger)]
+  ^-  @t
+  %+  rap  3
+  :~  'push to '  ref  ': '
+      ?~  old  (rap 3 ~['a new ref at ' (oid-text:git-codec new) ', against the commits it brought'])
+      (rap 3 ~[(oid-text:git-codec u.old) '..' (oid-text:git-codec new) ' (two-dot)'])
+      (evidence-text changes)
+  ==
+::
+++  pull-basis
+  |=  [p=pull-update:ci target=oid:git changes=(unit evidence:ci-trigger)]
+  ^-  @t
+  %+  rap  3
+  :~  'pull request #'  (crip (a-co:co number.p))  ' '  action.p  ': head '
+      (oid-text:git-codec head.p)  ' into '  target-ref.p  ' at '
+      (oid-text:git-codec target)  ' (three-dot, from the merge base)'
+      (evidence-text changes)
+  ==
+::
+++  evidence-text
+  |=  changes=(unit evidence:ci-trigger)
+  ^-  @t
+  ?~  changes  ''
+  ?:  ?=(%| -.u.changes)  (rap 3 ~['; changed paths unavailable: ' p.u.changes])
+  (rap 3 ~['; ' (crip (a-co:co (lent p.u.changes))) ' changed path(s)'])
+::
+::  the reason a blocked required run stays blocked
+::
+++  absent-evidence
+  |=  missing=(list workflow-selection:ci)
+  ^-  @t
+  %+  rap  3
+  :~  'required evidence absent: '
+      %+  join:ci-plan
+        %+  turn  missing
+        |=  o=workflow-selection:ci
+        (rap 3 ~[workflow.o ' was not selected (' reason.o ')'])
+      '; '
+      '; no attempt stands for it, the ref stays blocked, and only a recorded override lands it'
+  ==
+::
+::  a required push's selection at its plan: the baseline's catalog and the
+::  push's own changed paths, its base to the object it would land.  with
+::  no catalog (a lock resolved before triggers) every push workflow plans
+::  as before and the selection says the filters were not evaluated
+::
+++  required-push-selection
+  |=  [c=candidate:ci object=oid:git]
+  ^-  event-selection:ci
+  =/  gov  (governing repo.c ref.c)
+  ?:  ?=(%| -.gov)
+    :+  (push-basis ref.c `base.c object ~)
+      ~
+    `(rap 3 ~['filters not evaluated, every push workflow runs as before: ' p.gov])
+  =/  cat=trigger-catalog:ci  catalog.p.gov
+  =/  changes=(unit evidence:ci-trigger)
+    ?.  (push-needs-paths:ci-trigger cat ref.c)  ~
+    `(push-evidence repo.c ref.c `base.c object)
+  [(push-basis ref.c `base.c object changes) (select-push:ci-trigger cat ref.c changes) ~]
+::
+::  every report of one %urgit event
+::
+++  admit-forge-events
+  |=  act=action:ci
+  ^-  out
+  ?>  ?=(%forge-events -.act)
+  ::  a repository CI was never configured for records nothing, and a
+  ::  resolver's mirror repository is dependency maintenance, never a
+  ::  source of workflow events
+  ?.  (~(has by incarnations) repo.act)  (emit ~)
+  ?:  (mirror-repository repo.act)  (emit ~)
+  ::  each fold's product is cast to [(list card) _state]: its accumulator
+  ::  names its head (cards=), and a list that keeps that face cannot be
+  ::  welded (weld's homo reads i.b through the formal (list) faces only)
+  =^  ref-cards  state
+    ^-  [(list card) _state]
+    %+  roll  refs.act
+    |=  [u=ref-update:ci acc=[cards=(list card) =_state]]
+    =.  state  state.acc
+    =^  more  state  (admit-push repo.act u actor.act route.act at.act)
+    [(weld cards.acc more) state]
+  =^  pull-cards  state
+    ^-  [(list card) _state]
+    %+  roll  pulls.act
+    |=  [p=pull-update:ci acc=[cards=(list card) =_state]]
+    =.  state  state.acc
+    =^  more  state  (admit-pull repo.act p actor.act route.act at.act)
+    [(weld cards.acc more) state]
+  ::  a default-branch move registers the schedules again from the new
+  ::  branch's baseline, and is recorded (its id is the move's facts and
+  ::  instant, so a redelivery records it once)
+  =^  timers  state
+    ?~  head.act  [~ state]
+    =/  moved=@t  (rap 3 ~['the default branch moved from ' old.u.head.act ' to ' new.u.head.act])
+    =^  cards  state  (register-schedules repo.act moved)
+    =.  forge-events
+      %-  record-forge-event
+      :*  (sham [%ci-default-branch-event repo.act old.u.head.act new.u.head.act at.act])
+          repo.act  %default-branch  new.u.head.act  ~  ~  ~  actor.act  route.act
+          at.act  now.bowl  (rap 3 ~['recorded: ' moved '; its schedules were registered again'])
+          ~  ~
+      ==
+    [cards state]
+  =/  scheduled=out  schedule
+  [:(weld ref-cards pull-cards timers cards.scheduled) state.scheduled polls.scheduled]
+::
+::  a ref move %urgit reported, checked against the ref now: still at the
+::  reported tip (or gone, for a deletion)
+::
+++  verify-push
+  |=  [repo=@t u=ref-update:ci]
+  ^-  (each ~ @t)
+  =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo ref.u)
+  ?~  tip  [%| '%urgit cannot be read, so the ref cannot be checked']
+  ?~  new.u
+    ?~  u.tip  [%& ~]
+    [%| (rap 3 ~['the event deletes ' ref.u ', which is at ' (oid-text:git-codec tip.u.u.tip) ' now: stale'])]
+  ?~  u.tip  [%| (rap 3 ~[ref.u ' has no tip now: the event is stale'])]
+  ?:  =(u.new.u tip.u.u.tip)  [%& ~]
+  :-  %|
+  %+  rap  3
+  :~  ref.u  ' is at '  (oid-text:git-codec tip.u.u.tip)  ', not the event\'s '
+      (oid-text:git-codec u.new.u)  ': stale, or not what the forge persisted'
+  ==
+::
+::  one push: recorded with its outcome, and run when the governing
+::  catalog selects a workflow for it
+::
+++  admit-push
+  |=  [repo=@t u=ref-update:ci actor=@p route=@t at=@da]
+  ^-  [(list card) _state]
+  ?:  (~(has by event-ids) id.u)  [~ state]
+  =.  event-ids  (remember-id id.u)
+  =/  base=forge-event:ci
+    [id.u repo %push ref.u old.u new.u ~ actor route at now.bowl '' ~ ~]
+  =/  checked=(each ~ @t)  (verify-push repo u)
+  ?:  ?=(%| -.checked)
+    [~ state(forge-events (record-forge-event base(outcome (rap 3 ~['refused: ' p.checked]))))]
+  ?~  new.u
+    =/  why=@t  'recorded: a deletion runs no workflow (the delete event is not implemented)'
+    [~ state(forge-events (record-forge-event base(outcome why)))]
+  ?:  (~(has in ci-protected) [repo ref.u])
+    =/  landed=(unit candidate-id:ci)  (landed-by repo ref.u u.new.u)
+    =/  why=@t
+      %+  rap  3
+      :~  'recorded: a CI-protected ref moves only by landing, so its push ran as '
+          'the required candidate before it moved; nothing runs again'
+      ==
+    [~ state(forge-events (record-forge-event base(outcome why, runs ?~(landed ~ ~[u.landed]))))]
+  =/  gov  (governing repo ref.u)
+  ?:  ?=(%| -.gov)  [~ state(forge-events (record-forge-event base(outcome p.gov)))]
+  =/  cat=trigger-catalog:ci  catalog.p.gov
+  =/  changes=(unit evidence:ci-trigger)
+    ?.  (push-needs-paths:ci-trigger cat ref.u)  ~
+    `(push-evidence repo ref.u old.u u.new.u)
+  =/  outcomes=(list workflow-selection:ci)  (select-push:ci-trigger cat ref.u changes)
+  =/  sel=event-selection:ci  [(push-basis ref.u old.u u.new.u changes) outcomes ~]
+  =/  chosen=(list @t)  (selected-workflows:ci-trigger outcomes)
+  ?~  chosen
+    [~ state(forge-events (record-forge-event base(outcome (no-run-outcome 'push' outcomes), selected `sel)))]
+  =/  writable=(unit ?)  (can-write repo actor)
+  ?~  writable
+    =/  why=@t  'refused: %urgit cannot be read, so the actor cannot be classified'
+    [~ state(forge-events (record-forge-event base(outcome why, selected `sel)))]
+  =/  id=candidate-id:ci  (sham [%ci-event-run id.u])
+  =/  default=(unit @t)  (fall (default-ref repo) ~)
+  =/  payload=@t  (push-event-payload:ci-trigger repo ref.u old.u u.new.u actor default)
+  =/  e=run-event:ci  [id.u %push ref.u old.u new.u ~ ~ actor route at payload]
+  =/  =trust:ci  ?:(u.writable %trusted %untrusted)
+  =/  run=candidate:ci
+    (event-candidate id repo ref.u u.new.u (fall old.u u.new.u) actor route trust ~ e sel new.u)
+  =.  candidates  (~(put by candidates) id run)
+  =/  why=@t
+    (rap 3 ~[(crip (a-co:co (lent chosen))) ' workflow(s) selected: run ' (scot %uv id)])
+  =.  forge-events  (record-forge-event base(outcome why, selected `sel, runs ~[id]))
+  =.  audit  (record-audit actor 'event-run' repo (rap 3 ~['push to ' ref.u ' → run ' (scot %uv id)]))
+  :_  state
+  ~[(urgit-git-poke /scratch/(scot %uv id) [%set-ref repo (scratch-ref run) u.new.u])]
+::
+::  a pull request transition %urgit reported, checked against the
+::  record now: present, in the state the activity leaves it in, at the
+::  reported head
+::
+++  verify-pull
+  |=  [repo=@t p=pull-update:ci]
+  ^-  (each ~ @t)
+  =/  found=(unit (unit native-pull:git))  (pull-record repo number.p)
+  ?~  found  [%| '%urgit cannot be read, so the pull request cannot be checked']
+  ?~  u.found  [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is not in the repository'])]
+  =/  pr=native-pull:git  u.u.found
+  =/  want=?(%open %merged %closed)
+    ?:  =('closed' action.p)  ?:(merged.p %merged %closed)
+    %open
+  ?.  =(want state.pr)
+    [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is ' state.pr ' now, not what ' action.p ' leaves: stale'])]
+  ?.  =(head.p head.pr)
+    [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) '\'s head is not the reported one: stale'])]
+  [%& ~]
+::
+::  one pull request activity: recorded with its outcome, and run when
+::  the target branch's catalog selects a workflow for it.  the run tests
+::  the head merged onto the target's tip (%urgit builds it under the
+::  run's own scratch ref), or for a merged close the target's tip after
+::  the merge; its paths are three-dot from the merge base
+::
+++  admit-pull
+  |=  [repo=@t p=pull-update:ci actor=@p route=@t at=@da]
+  ^-  [(list card) _state]
+  ?:  (~(has by event-ids) id.p)  [~ state]
+  =.  event-ids  (remember-id id.p)
+  =/  now-tip=(unit oid:git)
+    =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo target-ref.p)
+    ?~  tip  ~
+    ?~  u.tip  ~
+    `tip.u.u.tip
+  ::  the tip the run integrates onto, and the target side of its diff
+  =/  onto=(unit oid:git)  ?:(merged.p target-before.p now-tip)
+  =/  facts=pull-facts:ci
+    :*  number.p  title.p  action.p  head.p  source-ref.p  target-ref.p
+        (fall onto base.p)  merged.p  source-ship.p  source-repository.p
+    ==
+  =/  base=forge-event:ci
+    [id.p repo %pull-request target-ref.p ~ `head.p `facts actor route at now.bowl '' ~ ~]
+  =/  checked=(each ~ @t)  (verify-pull repo p)
+  ?:  ?=(%| -.checked)
+    [~ state(forge-events (record-forge-event base(outcome (rap 3 ~['refused: ' p.checked]))))]
+  ?~  onto
+    =/  why=@t  (rap 3 ~['refused: the target branch ' target-ref.p ' has no tip to test against'])
+    [~ state(forge-events (record-forge-event base(outcome why)))]
+  ?:  ?&(merged.p ?=(~ now-tip))
+    =/  why=@t  (rap 3 ~['refused: the target branch ' target-ref.p ' has no tip after the merge'])
+    [~ state(forge-events (record-forge-event base(outcome why)))]
+  =/  gov  (governing repo target-ref.p)
+  ?:  ?=(%| -.gov)  [~ state(forge-events (record-forge-event base(outcome p.gov)))]
+  =/  cat=trigger-catalog:ci  catalog.p.gov
+  =/  changes=(unit evidence:ci-trigger)
+    ?.  (pull-needs-paths:ci-trigger cat action.p target-ref.p)  ~
+    `(pull-evidence repo head.p u.onto)
+  =/  outcomes=(list workflow-selection:ci)
+    (select-pull:ci-trigger cat action.p target-ref.p changes)
+  =/  note=(unit @t)
+    ?:  (~(has in native-pull-types:ci-trigger) action.p)  ~
+    `(rap 3 ~['activity ' action.p ' has no native source in this forge'])
+  =/  sel=event-selection:ci  [(pull-basis p u.onto changes) outcomes note]
+  =/  chosen=(list @t)  (selected-workflows:ci-trigger outcomes)
+  ?~  chosen
+    =/  why=@t  (no-run-outcome 'pull_request' outcomes)
+    [~ state(forge-events (record-forge-event base(outcome why, selected `sel)))]
+  ::  the pull request's author decides the trust class (D3): a ship that
+  ::  cannot write the repository runs untrusted, and waits for a writer's
+  ::  approval unless the repository runs restricted checks
+  =/  writable=(unit ?)  (can-write repo source-ship.p)
+  ?~  writable
+    =/  why=@t  'refused: %urgit cannot be read, so the author cannot be classified'
+    [~ state(forge-events (record-forge-event base(outcome why, selected `sel)))]
+  =/  id=candidate-id:ci  (sham [%ci-event-run id.p])
+  =/  default=(unit @t)  (fall (default-ref repo) ~)
+  =/  payload=@t  (pull-event-payload:ci-trigger repo facts actor default)
+  =/  e=run-event:ci  [id.p %pull-request target-ref.p ~ `head.p `facts ~ actor route at payload]
+  =/  =trust:ci  ?:(u.writable %trusted %untrusted)
+  =/  object=(unit oid:git)  ?:(merged.p now-tip ~)
+  =/  run=candidate:ci
+    %:  event-candidate
+      id  repo  target-ref.p  head.p  ?:(merged.p (need now-tip) u.onto)  actor  route
+      trust  `number.p  e  sel  object
+    ==
+  =.  candidates  (~(put by candidates) id run)
+  =/  why=@t
+    (rap 3 ~[(crip (a-co:co (lent chosen))) ' workflow(s) selected: run ' (scot %uv id)])
+  =.  forge-events  (record-forge-event base(outcome why, selected `sel, runs ~[id]))
+  =.  audit
+    %:  record-audit  actor  'event-run'  repo
+      (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' ' action.p ' → run ' (scot %uv id)])
+    ==
+  :_  state
+  :_  ~
+  ?^  object
+    (urgit-git-poke /scratch/(scot %uv id) [%set-ref repo (scratch-ref run) u.object])
+  (urgit-poke /materialize/(scot %uv id) [%materialize-run id repo target-ref.p head.p u.onto])
+::
+::  a pull request run's integration object, built by %urgit under the
+::  run's own scratch ref
+::
+++  run-ready
+  |=  [id=candidate-id:ci object=oid:git]
+  ^-  out
+  =/  found=(unit candidate:ci)  (~(get by candidates) id)
+  ?~  found  (emit ~)
+  ?.  ?=(%event -.trigger.u.found)  (emit ~)
+  ?^  candidate.u.found  (emit ~)
+  =.  candidates  (~(put by candidates) id u.found(candidate `object, updated now.bowl))
+  schedule
+::
+::  a head that cannot be merged onto its target runs nothing (GitHub
+::  runs no pull_request workflow on a conflicted pull request either)
+::
+++  run-conflict
+  |=  [id=candidate-id:ci reason=@t]
+  ^-  out
+  =/  found=(unit candidate:ci)  (~(get by candidates) id)
+  ?~  found  (emit ~)
+  ?.  ?=(%event -.trigger.u.found)  (emit ~)
+  =/  why=@t
+    (rap 3 ~['not run: the pull request cannot be merged onto its target (' reason ')'])
+  =.  candidates
+    %+  ~(put by candidates)  id
+    u.found(conflict %.y, status %failed, verdict-reason `why, updated now.bowl)
+  (emit ~)
+::
+::  ---- schedules ----
+::
+++  timer-wire
+  |=  [k=schedule-key:ci due=@da definition=@uv]
+  ^-  wire
+  :~  %schedule  (scot %t repo.k)  (scot %t workflow.k)  (scot %ud index.k)
+      (scot %ud (unix:ci-cron due))  (scot %uv definition)
+  ==
+::
+++  timer-card
+  |=  [k=schedule-key:ci due=@da definition=@uv]
+  ^-  card
+  [%pass (timer-wire k due definition) %arvo %b %wait due]
+::
+::  the wake of every active schedule, set again (on-load)
+::
+++  rearm-cards
+  ^-  (list card)
+  %+  murn  ~(tap by schedules)
+  |=  [k=schedule-key:ci e=schedule-entry:ci]
+  ^-  (unit card)
+  ?.  ?&(=(%active state.e) ?=(^ armed.e))  ~
+  `(timer-card k u.armed.e definition.e)
+::
+::  the schedules a default branch's catalog defines now, each a new entry
+::  armed at its first occurrence after now (never earlier: no catch-up);
+::  a refused entry, or a refused schedule event, is listed refused
+::
+++  catalog-schedules
+  |=  [repo=@t ref=@t gov=[=baseline:ci =lock:ci catalog=trigger-catalog:ci]]
+  ^-  (list [k=schedule-key:ci e=schedule-entry:ci])
+  %-  zing
+  %+  turn  workflows.catalog.gov
+  |=  w=trigger-workflow:ci
+  ^-  (list [k=schedule-key:ci e=schedule-entry:ci])
+  ?^  refusal.w  ~
+  =/  ev=(unit trigger-event:ci)  (event-of:ci-trigger w 'schedule')
+  ?~  ev  ~
+  =/  defs=(list schedule-def:ci)
+    ?~  refusal.u.ev  schedules.u.ev
+    ~[['' ~ refusal.u.ev ~]]
+  =/  i=@ud  0
+  =|  out=(list [k=schedule-key:ci e=schedule-entry:ci])
+  |-
+  ?~  defs  (flop out)
+  =/  zone=(unit zone:ci)
+    ?~  timezone.i.defs  ~
+    (~(get by zones.catalog.gov) u.timezone.i.defs)
+  =/  definition=@uv
+    %-  sham
+    :*  repo  workflow.w  i  i.defs  zone  revision.baseline.gov
+        digest.lock.gov  (current-incarnation repo)
+    ==
+  =/  next=(each @da @t)
+    ?~  spec.i.defs  [%| (fall refusal.i.defs 'the schedule is refused')]
+    (next-after:ci-cron u.spec.i.defs zone now.bowl)
+  =/  entry=schedule-entry:ci
+    :*  name.w  i.defs  zone  definition  ref  revision.baseline.gov
+        digest.lock.gov  (current-incarnation repo)  actor.baseline.gov
+        promoted.baseline.gov  now.bowl
+        ?:(?=(%& -.next) %active %refused)
+        ?:(?=(%& -.next) ~ `p.next)
+        ?:(?=(%& -.next) `p.next ~)
+        ~  ~  ~  ~  0
+    ==
+  $(defs t.defs, i +(i), out [[[repo workflow.w i] entry] out])
+::
+::  a repository's schedules registered again from its default branch's
+::  promoted catalog: an equal definition keeps its entry and wake; a new
+::  one replaces the entry and arms from now; one no longer defined — every
+::  one, when the default branch has no baseline or an unknown catalog — is
+::  retired with the reason (its wake, still set, does nothing).  the cards
+::  are the new wakes
+::
+++  register-schedules
+  |=  [repo=@t why=@t]
+  ^-  [(list card) _state]
+  =/  mine=(list [k=schedule-key:ci e=schedule-entry:ci])
+    (skim ~(tap by schedules) |=([k=schedule-key:ci *] =(repo repo.k)))
+  =/  default=(unit (unit @t))  (default-ref repo)
+  =/  found=(each [ref=@t gov=[=baseline:ci =lock:ci catalog=trigger-catalog:ci]] @t)
+    ?~  default  [%| '%urgit cannot be read for the default branch']
+    ?~  u.default  [%| 'the repository has no default branch']
+    =/  gov  (governing repo u.u.default)
+    ?:  ?=(%| -.gov)  [%| p.gov]
+    [%& u.u.default p.gov]
+  =/  wanted=(list [k=schedule-key:ci e=schedule-entry:ci])
+    ?:(?=(%| -.found) ~ (catalog-schedules repo ref.p.found gov.p.found))
+  =/  retire=@t  ?:(?=(%| -.found) (rap 3 ~[why ': ' p.found]) (rap 3 ~[why ': no longer defined']))
+  =/  keys=(set schedule-key:ci)  (silt (turn wanted |=([k=schedule-key:ci *] k)))
+  =.  schedules
+    %+  roll  mine
+    |=  [[k=schedule-key:ci e=schedule-entry:ci] acc=_schedules]
+    ?:  (~(has in keys) k)  acc
+    ?:  =(%retired state.e)  acc
+    (~(put by acc) k e(state %retired, armed ~, reason `retire))
+  =|  cards=(list card)
+  |-
+  ?~  wanted  [(flop cards) state]
+  =/  old=(unit schedule-entry:ci)  (~(get by schedules) k.i.wanted)
+  ?:  ?&(?=(^ old) =(definition.u.old definition.e.i.wanted) !=(%retired state.u.old))
+    $(wanted t.wanted)
+  =.  schedules  (~(put by schedules) k.i.wanted e.i.wanted)
+  =?  audit  =(%active state.e.i.wanted)
+    %:  record-audit  our.bowl  'schedule-armed'  repo
+      %+  rap  3
+      :~  workflow.k.i.wanted  '#'  (crip (a-co:co index.k.i.wanted))  ' '
+          cron.def.e.i.wanted  ' first due '
+          ?~(armed.e.i.wanted '' (iso-utc:ci-cron u.armed.e.i.wanted))
+      ==
+    ==
+  =?  cards  ?=(^ armed.e.i.wanted)
+    [(timer-card k.i.wanted u.armed.e.i.wanted definition.e.i.wanted) cards]
+  $(wanted t.wanted)
+::
+::  what a due occurrence needs at admission, revalidated now: the
+::  repository's incarnation, its default branch, that branch's baseline
+::  revision and lock, and a tip to run
+::
+++  due-problem
+  |=  [k=schedule-key:ci e=schedule-entry:ci]
+  ^-  (each oid:git @t)
+  =/  repo=@t  repo.k
+  ?.  =(incarnation.e (current-incarnation repo))
+    [%| 'the repository is another incarnation than the one the schedule was armed for']
+  =/  default=(unit (unit @t))  (default-ref repo)
+  ?~  default  [%| '%urgit cannot be read for the default branch']
+  ?.  =(`ref.e u.default)  [%| 'the default branch is no longer the one the schedule was armed for']
+  =/  base=(unit baseline:ci)  (~(get by baselines) [repo ref.e])
+  ?~  base  [%| (rap 3 ~['no promoted baseline governs ' ref.e ' now'])]
+  ?.  ?&(=(revision.u.base baseline.e) =(lock.u.base `lock.e))
+    [%| 'the default branch\'s baseline was replaced since the schedule was armed']
+  =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo ref.e)
+  ?~  tip  [%| '%urgit cannot be read for the default branch\'s tip']
+  ?~  u.tip  [%| (rap 3 ~[ref.e ' has no tip'])]
+  [%& tip.u.u.tip]
+::
+::  a schedule's wake: /schedule/<repo>/<workflow>/<index>/<due>/<definition>.
+::  the occurrence is admitted at most once (lib/ci-cron on-wake),
+::  revalidated (due-problem), and run as an event run of the default
+::  branch's tip with its due instant and admission time; the next is armed
+::  after now, and the occurrences between are recorded missed
+::
+++  schedule-wake
+  |=  rest=wire
+  ^-  out
+  ?.  ?=([@ @ @ @ @ ~] rest)  (emit ~)
+  =/  repo=@t  (decode-segment i.rest)
+  =/  workflow=@t  (decode-segment i.t.rest)
+  =/  index=(unit @ud)  (slaw %ud i.t.t.rest)
+  =/  due-secs=(unit @ud)  (slaw %ud i.t.t.t.rest)
+  =/  definition=(unit @uv)  (slaw %uv i.t.t.t.t.rest)
+  ?:  |(?=(~ index) ?=(~ due-secs) ?=(~ definition))  (emit ~)
+  =/  k=schedule-key:ci  [repo workflow u.index]
+  =/  found=(unit schedule-entry:ci)  (~(get by schedules) k)
+  ::  a reinstalled agent or a removed repository: nothing is armed
+  ?~  found  (emit ~)
+  =/  e=schedule-entry:ci  u.found
+  =/  due=@da  (from-unix:ci-cron u.due-secs)
+  =/  occurrence=@uv  (sham [%ci-occurrence repo workflow u.index u.definition due])
+  =/  verdict=wake:ci-cron  (on-wake:ci-cron e due u.definition occurrence now.bowl)
+  ?:  ?=(%ignore -.verdict)
+    =.  schedules  (~(put by schedules) k e(stale-wakes +(stale-wakes.e)))
+    (emit ~)
+  =/  next-due=(unit @da)  ?:(?=(%& -.next.verdict) `p.next.verdict ~)
+  =/  advanced=schedule-entry:ci
+    %=  e
+      armed  next-due
+      state  ?~(next-due %refused state.e)
+      reason  ?:(?=(%| -.next.verdict) `p.next.verdict ~)
+      last-due  `due
+      admitted  (scag 64 `(list @uv)`[occurrence admitted.e])
+      missed
+        ?~  missed.verdict  missed.e
+        (scag 16 `(list missed-interval:ci)`[u.missed.verdict missed.e])
+    ==
+  =/  timers=(list card)  ?~(next-due ~ ~[(timer-card k u.next-due definition.e)])
+  =/  ready=(each oid:git @t)  (due-problem k e)
+  ?:  ?=(%| -.ready)
+    =/  why=@t  (rap 3 ~['not admitted at ' (iso-utc:ci-cron due) ': ' p.ready])
+    =.  schedules  (~(put by schedules) k advanced(reason `why))
+    =.  audit  (record-audit our.bowl 'schedule-refused' repo why)
+    ::  a changed default branch or baseline registers the schedules again
+    =^  again  state  (register-schedules repo 'revalidated at due admission')
+    (emit (weld timers again))
+  =/  tip=oid:git  p.ready
+  =/  facts=occurrence-facts:ci
+    :*  workflow  u.index  cron.def.e  timezone.def.e  due  now.bowl
+        definition.e  promoter.e  promoted.e
+    ==
+  =/  payload=@t  (schedule-event-payload:ci-trigger repo ref.e cron.def.e promoter.e)
+  =/  ev=run-event:ci
+    [occurrence %schedule ref.e ~ `tip ~ `facts promoter.e 'schedule (system timer)' due payload]
+  =/  zone-text=@t  (fall timezone.def.e 'UTC')
+  =/  late-text=@t
+    ?.  late.verdict  ''
+    (rap 3 ~['; admitted late at ' (iso-utc:ci-cron now.bowl)])
+  =/  sel=event-selection:ci
+    :+  (rap 3 ~['schedule ' cron.def.e ' (' zone-text ') due ' (iso-utc:ci-cron due)])
+      :~  :*  workflow  name.e  %selected
+              (rap 3 ~['due ' (iso-utc:ci-cron due) ' (' (local-text:ci-cron zone.e due) ')' late-text])
+      ==  ==
+    ~
+  =/  id=candidate-id:ci  (sham [%ci-occurrence-run occurrence])
+  =/  run=candidate:ci
+    %:  event-candidate
+      id  repo  ref.e  tip  tip  promoter.e  'schedule (system timer)'
+      %trusted  ~  ev  sel  `tip
+    ==
+  =.  candidates  (~(put by candidates) id run)
+  =.  schedules
+    %+  ~(put by schedules)  k
+    advanced(last-admitted `[due now.bowl id late.verdict])
+  =.  audit
+    %:  record-audit  our.bowl  'schedule-run'  repo
+      %+  rap  3
+      :~  workflow  '#'  (crip (a-co:co u.index))  ' due '  (iso-utc:ci-cron due)
+          ' → run '  (scot %uv id)  late-text
+      ==
+    ==
+  =/  keep=card
+    (urgit-git-poke /scratch/(scot %uv id) [%set-ref repo (scratch-ref run) tip])
+  =/  scheduled=out  schedule
+  [:(weld ~[keep] timers cards.scheduled) state.scheduled polls.scheduled]
+::
 ++  handle-http
   |=  [eyre-id=@ta req=inbound-request:eyre]
   ^-  out
@@ -4335,6 +5183,16 @@
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-storage-probe eyre-id req)
+  ::  the recorded forge events and the schedules of a repository
+  ::  (Delivery 1C), for the CI tab; the ship's session
+  ?:  ?=([%apps %urgit %api %ci %repository @ %events ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-events eyre-id req i.t.t.t.t.t.site)
+  ?:  ?=([%apps %urgit %api %ci %repository @ %schedules ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-schedules eyre-id req i.t.t.t.t.t.site)
   ?:  ?=([%apps %urgit %api %ci %repository @ %candidates ~] site)
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
@@ -5128,6 +5986,20 @@
       ['bindingsCurrent' b+(bindings-current candidate)]
       ['landable' b+(landable candidate)]
       ['event' (event-json candidate)]
+      ::  which workflows the event selected and why (Delivery 1C), and for
+      ::  a required run whether its required evidence is complete: an
+      ::  excluded or refused push workflow is evidence absent, never a pass
+      ['selection' (selection-json selected.candidate)]
+      :-  'requiredEvidence'
+      ?.  =(%required mode.candidate)  ~
+      =/  missing=(list workflow-selection:ci)
+        ?~  selected.candidate  ~
+        (unselected:ci-trigger outcomes.u.selected.candidate)
+      %-  pairs:enjs:format
+      :~  ['complete' b+=(~ missing)]
+          ['evaluated' b+?&(?=(^ selected.candidate) ?=(~ note.u.selected.candidate))]
+          ['missing' [%a (turn missing outcome-json)]]
+      ==
       :-  'approvals'
       :-  %a
       %+  turn
@@ -5166,8 +6038,33 @@
         ['ref' s+ref.c]
         ['source' s+(oid-text:git-codec head.c)]
         ['revision' ?~(baseline.c ~ s+(oid-text:git-codec u.baseline.c))]
+        ::  the event the run was admitted for, as its manifest signs it
+        ['trigger' s+(trigger-text:ci-trigger c)]
     ==
   ?-  -.trigger.c
+      ::  an automatic event's run (Delivery 1C): the event, how it
+      ::  arrived, its tips, the pull request or the occurrence, and the
+      ::  payload act reads
+      ::
+      %event
+    =/  e=run-event:ci  run-event.trigger.c
+    %-  pairs:enjs:format
+    :*  ['name' s+(event-name:ci-trigger trigger.c)]
+        ['kind' s+kind.e]
+        ['workflow' ~]
+        ['inputs' [%a ~]]
+        ['eventId' s+(scot %uv id.e)]
+        ['route' s+route.e]
+        ['at' (numb:enjs:format (unix-seconds at.e))]
+        ['before' ?~(before.e ~ s+(oid-text:git-codec u.before.e))]
+        ['after' ?~(after.e ~ s+(oid-text:git-codec u.after.e))]
+        ['pull' (pull-facts-json pull.e)]
+        ['occurrence' (occurrence-json occurrence.e)]
+        ['payload' s+payload.e]
+        ['payloadSha256' s+(context-digest:ci-dispatch payload.e)]
+        common
+    ==
+  ::
       %push
     =/  payload=@t  (push-payload-of c)
     %-  pairs:enjs:format
@@ -5262,6 +6159,204 @@
       ?^  invalidated.o  'invalidated'
       ?:((gte now.bowl expires.o) 'expired' 'valid')
   ==
+::
+::  ---- the views of events and schedules (Delivery 1C) ----
+::
+++  outcome-json
+  |=  o=workflow-selection:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['workflow' s+workflow.o]  ['name' s+name.o]
+      ['verdict' s+verdict.o]  ['reason' s+reason.o]
+  ==
+::
+++  selection-json
+  |=  s=(unit event-selection:ci)
+  ^-  json
+  ?~  s  ~
+  %-  pairs:enjs:format
+  :~  ['basis' s+basis.u.s]
+      ['note' ?~(note.u.s ~ s+u.note.u.s)]
+      ['outcomes' [%a (turn outcomes.u.s outcome-json)]]
+  ==
+::
+++  pull-facts-json
+  |=  p=(unit pull-facts:ci)
+  ^-  json
+  ?~  p  ~
+  %-  pairs:enjs:format
+  :~  ['number' (numb:enjs:format number.u.p)]
+      ['title' s+title.u.p]
+      ['action' s+action.u.p]
+      ['head' s+(oid-text:git-codec head.u.p)]
+      ['headRef' s+head-ref.u.p]
+      ['baseRef' s+base-ref.u.p]
+      ['base' s+(oid-text:git-codec base.u.p)]
+      ['merged' b+merged.u.p]
+      ['sourceShip' s+(scot %p source-ship.u.p)]
+      ['sourceRepository' s+source-repository.u.p]
+  ==
+::
+::  an instant as the views show it: unix seconds, UTC, and the wall clock
+::  of the schedule's zone from its pinned table
+::
+++  instant-json
+  |=  [zone=(unit zone:ci) at=(unit @da)]
+  ^-  json
+  ?~  at  ~
+  %-  pairs:enjs:format
+  :~  ['at' (numb:enjs:format (unix-seconds u.at))]
+      ['utc' s+(iso-utc:ci-cron u.at)]
+      ['local' s+(local-text:ci-cron zone u.at)]
+  ==
+::
+++  seconds-between
+  |=  [a=@da b=@da]
+  ^-  @ud
+  ?:  (lte b a)  0
+  (div (sub b a) ~s1)
+::
+++  occurrence-json
+  |=  o=(unit occurrence-facts:ci)
+  ^-  json
+  ?~  o  ~
+  =/  zone=(unit zone:ci)
+    =/  hits=(list schedule-entry:ci)
+      (skim ~(val by schedules) |=(e=schedule-entry:ci =(definition.e definition.u.o)))
+    ?~(hits ~ zone.i.hits)
+  %-  pairs:enjs:format
+  :~  ['workflow' s+workflow.u.o]
+      ['index' (numb:enjs:format index.u.o)]
+      ['cron' s+cron.u.o]
+      ['timezone' ?~(timezone.u.o ~ s+u.timezone.u.o)]
+      ['due' (instant-json zone `due.u.o)]
+      ['admitted' (instant-json zone `admitted.u.o)]
+      ['lateSeconds' (numb:enjs:format (seconds-between due.u.o admitted.u.o))]
+      ['late' b+(gth admitted.u.o (add due.u.o late-after:ci-cron))]
+      ['definition' s+(scot %uv definition.u.o)]
+      ['promoter' s+(scot %p promoter.u.o)]
+      ['promoted' (numb:enjs:format (unix-seconds promoted.u.o))]
+  ==
+::
+++  forge-event-json
+  |=  e=forge-event:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id.e)]
+      ['kind' s+kind.e]
+      ['ref' s+ref.e]
+      ['before' ?~(before.e ~ s+(oid-text:git-codec u.before.e))]
+      ['after' ?~(after.e ~ s+(oid-text:git-codec u.after.e))]
+      ['pull' (pull-facts-json pull.e)]
+      ['actor' s+(scot %p actor.e)]
+      ['route' s+route.e]
+      ['at' (numb:enjs:format (unix-seconds at.e))]
+      ['received' (numb:enjs:format (unix-seconds received.e))]
+      ['outcome' s+outcome.e]
+      ['selection' (selection-json selected.e)]
+      ['runs' [%a (turn runs.e |=(id=candidate-id:ci s+(scot %uv id)))]]
+  ==
+::
+::  a repository's recorded forge events, newest first, at most fifty
+::
+++  events-json
+  |=  repo=@t
+  ^-  json
+  =/  mine=(list forge-event:ci)
+    %+  sort
+      (skim ~(val by forge-events) |=(e=forge-event:ci =(repo repo.e)))
+    |=([a=forge-event:ci b=forge-event:ci] (gth received.a received.b))
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+      ['events' [%a (turn (scag 50 mine) forge-event-json)]]
+  ==
+::
+++  schedule-entry-json
+  |=  [k=schedule-key:ci e=schedule-entry:ci]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['workflow' s+workflow.k]
+      ['index' (numb:enjs:format index.k)]
+      ['name' s+name.e]
+      ['cron' s+cron.def.e]
+      ['timezone' ?~(timezone.def.e ~ s+u.timezone.def.e)]
+      ['timezoneLabel' s+?~(timezone.def.e 'UTC (default)' u.timezone.def.e)]
+      ['state' s+state.e]
+      ['reason' ?~(reason.e ~ s+u.reason.e)]
+      ['refusal' ?~(refusal.def.e ~ s+u.refusal.def.e)]
+      ['ref' s+ref.e]
+      ['baseline' s+(oid-text:git-codec baseline.e)]
+      ['lock' s+(hex-bytes:ci-provenance lock.e 32)]
+      ['promoter' s+(scot %p promoter.e)]
+      ['promoted' (numb:enjs:format (unix-seconds promoted.e))]
+      ['registered' (numb:enjs:format (unix-seconds registered.e))]
+      ['definition' s+(scot %uv definition.e)]
+      ['next' (instant-json zone.e armed.e)]
+      ['lastDue' (instant-json zone.e last-due.e)]
+      :-  'lastAdmitted'
+      ?~  last-admitted.e  ~
+      =/  a  u.last-admitted.e
+      %-  pairs:enjs:format
+      :~  ['due' (instant-json zone.e `due.a)]
+          ['at' (instant-json zone.e `at.a)]
+          ['run' s+(scot %uv run.a)]
+          ['late' b+late.a]
+          ['lateSeconds' (numb:enjs:format (seconds-between due.a at.a))]
+      ==
+      :-  'missed'
+      :-  %a
+      %+  turn  missed.e
+      |=  m=missed-interval:ci
+      %-  pairs:enjs:format
+      :~  ['first' (instant-json zone.e `first.m)]
+          ['last' (instant-json zone.e `last.m)]
+          ['count' (numb:enjs:format count.m)]
+      ==
+      ['staleWakes' (numb:enjs:format stale-wakes.e)]
+  ==
+::
+::  a repository's schedules by workflow and entry, with the default
+::  branch they come from and what the default branch's catalog needs
+::  (refresh: a baseline to promote, or a lock to resolve again)
+::
+++  schedules-json
+  |=  repo=@t
+  ^-  json
+  =/  default=(unit (unit @t))  (default-ref repo)
+  =/  mine=(list [k=schedule-key:ci e=schedule-entry:ci])
+    %+  sort
+      (skim ~(tap by schedules) |=([k=schedule-key:ci *] =(repo repo.k)))
+    |=  [a=[k=schedule-key:ci *] b=[k=schedule-key:ci *]]
+    ?:  =(workflow.k.a workflow.k.b)  (lth index.k.a index.k.b)
+    (aor workflow.k.a workflow.k.b)
+  =/  refresh=(unit @t)
+    ?~  default  `'%urgit cannot be read for the default branch'
+    ?~  u.default  `'the repository has no default branch'
+    =/  gov  (governing repo u.u.default)
+    ?:(?=(%| -.gov) `p.gov ~)
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+      ['nowUtc' s+(iso-utc:ci-cron now.bowl)]
+      ['defaultBranch' ?~(default ~ ?~(u.default ~ s+u.u.default))]
+      ['refresh' ?~(refresh ~ s+u.refresh)]
+      ['schedules' [%a (turn mine schedule-entry-json)]]
+  ==
+::
+++  handle-events
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  (emit (give-json eyre-id 200 (events-json repo)))
+::
+++  handle-schedules
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  (emit (give-json eyre-id 200 (schedules-json repo)))
 ::
 ::  a repository's candidates newest first, at most fifty, from before
 ::  the candidate `before` names when the query carries one
@@ -5648,11 +6743,21 @@
       ?.  ?=([%o *] u.jon)  [%& ~]
       (parse-inventory:ci-dispatch (~(get by p.u.jon) 'dispatch'))
     ?:  ?=(%| -.inventory)  [%| (rap 3 ~['dispatch inventory: ' p.inventory])]
+    ::  the trigger catalog the resolver's compiler read (Delivery 1C):
+    ::  none from a resolver that sends none — unknown, never empty — and a
+    ::  malformed one refuses the lock
+    ::
+    =/  triggers=(each (unit trigger-catalog:ci) @t)
+      ?.  ?=([%o *] u.jon)  [%& ~]
+      (parse-catalog:ci-trigger (~(get by p.u.jon) 'triggers'))
+    ?:  ?=(%| -.triggers)  [%| (rap 3 ~['trigger catalog: ' p.triggers])]
     =/  revision=oid:git  (fall candidate.candidate head.candidate)
     =/  digest=@ux
-      (lock-digest-with:ci-provenance repo.candidate revision nodes.p.parsed p.inventory)
+      %:  lock-digest-full:ci-provenance
+        repo.candidate  revision  nodes.p.parsed  p.inventory  p.triggers
+      ==
     :*  %&  digest  repo.candidate  revision  nodes.p.parsed  now.bowl  daemon.u.found
-        bytes.p.parsed  notices.p.parsed  p.inventory
+        bytes.p.parsed  notices.p.parsed  p.inventory  p.triggers
     ==
   =.  daemons  (touch-daemon daemon.u.found)
   =/  clear=(list card)  (mirror-token-cards u.found)
@@ -6845,6 +7950,12 @@
     =/  base=(unit baseline:ci)  (~(get by baselines) [repo.candidate ref.candidate])
     ?~  base  repo.candidate
     ?:(=(%trial mode.candidate) repo.candidate (fall policy-repo.u.base repo.candidate))
+  ::  a required push's selection (Delivery 1C), from the baseline's
+  ::  catalog and the push's own changed paths (two-dot, its base to the
+  ::  object it would land); ~ for any other run
+  =/  required-selection=(unit event-selection:ci)
+    ?.  ?&(?=(%push -.trigger.candidate) =(%required mode.candidate))  ~
+    `(required-push-selection candidate oid)
   =/  validated=(each (list job:ci) @t)
     =/  parsed=(each wire-plan:ci-plan @t)  (parse:ci-plan u.jon)
     ?:  ?=(%| -.parsed)  parsed
@@ -6861,9 +7972,26 @@
       ?.  ?=([@ ~] path)  ~
       `i.path
     ::  a push plans every push-triggered job; a manual run the one
-    ::  workflow it dispatched (Delivery 1A)
+    ::  workflow it dispatched (Delivery 1A); an event run the workflows
+    ::  its event selected (Delivery 1C); a required push the push
+    ::  workflows the baseline's filters select for it, which are
+    ::  selected now, the rest recorded as absent evidence
     =/  checked=(each (list job:ci) @t)
-      (validate-for:ci-plan (oid-text:git-codec oid) names p.parsed trigger.candidate)
+      ?:  ?=(%event -.trigger.candidate)
+        %:  validate-selected:ci-plan
+          (oid-text:git-codec oid)  names  p.parsed
+          (event-name:ci-trigger trigger.candidate)
+          ?~(selected.candidate ~ (selected-workflows:ci-trigger outcomes.u.selected.candidate))
+        ==
+      ?.  ?&(?=(%push -.trigger.candidate) =(%required mode.candidate) ?=(^ required-selection))
+        (validate-for:ci-plan (oid-text:git-codec oid) names p.parsed trigger.candidate)
+      =/  outcomes=(list workflow-selection:ci)  outcomes.u.required-selection
+      ?~  outcomes
+        (validate-for:ci-plan (oid-text:git-codec oid) names p.parsed trigger.candidate)
+      %:  validate-selected:ci-plan
+        (oid-text:git-codec oid)  names  p.parsed  'push'
+        (selected-workflows:ci-trigger outcomes)
+      ==
     ?:  ?=(%| -.checked)  checked
     =/  unreadable=(unit @t)
       %+  find-first:ci-plan  workflows.p.parsed
@@ -6887,7 +8015,12 @@
     ~[['error' s+p.validated] ['attempt' (attempt-json (~(got by attempts) id.u.found))]]
   =.  candidates
     %+  ~(put by candidates)  id.candidate
-    candidate(plan `p.validated, plan-oid `wf-oid, updated now.bowl)
+    %=  candidate
+      plan  `p.validated
+      plan-oid  `wf-oid
+      updated  now.bowl
+      selected  ?^(required-selection required-selection selected.candidate)
+    ==
   =.  state  (close-attempt u.found [%job-result %success])
   =/  closed=out  (after-close candidate.u.found)
   =.  state  state.closed

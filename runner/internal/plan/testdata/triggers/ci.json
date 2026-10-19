@@ -1,0 +1,445 @@
+{
+  "version": 1,
+  "workflows": [
+    {
+      "workflow": "ci.yml",
+      "name": "Event CI",
+      "events": [
+        {
+          "event": "push",
+          "refusal": "",
+          "branches": {
+            "ignore": false,
+            "patterns": [
+              {
+                "text": "main",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "main"
+                  }
+                ]
+              },
+              {
+                "text": "releases/**",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "releases/"
+                  },
+                  {
+                    "t": "globstar"
+                  }
+                ]
+              },
+              {
+                "text": "!releases/**-alpha",
+                "negated": true,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "releases/"
+                  },
+                  {
+                    "t": "globstar"
+                  },
+                  {
+                    "t": "lit",
+                    "c": "-alpha"
+                  }
+                ]
+              }
+            ]
+          },
+          "tags": null,
+          "paths": {
+            "ignore": false,
+            "patterns": [
+              {
+                "text": "src/**",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "src/"
+                  },
+                  {
+                    "t": "globstar"
+                  }
+                ]
+              },
+              {
+                "text": "!src/docs/**",
+                "negated": true,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "src/docs/"
+                  },
+                  {
+                    "t": "globstar"
+                  }
+                ]
+              }
+            ]
+          },
+          "types": null,
+          "typesDeclared": false,
+          "schedules": null,
+          "line": 6,
+          "col": 3
+        },
+        {
+          "event": "pull_request",
+          "refusal": "",
+          "branches": {
+            "ignore": false,
+            "patterns": [
+              {
+                "text": "main",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "main"
+                  }
+                ]
+              }
+            ]
+          },
+          "tags": null,
+          "paths": {
+            "ignore": true,
+            "patterns": [
+              {
+                "text": "docs/**",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "lit",
+                    "c": "docs/"
+                  },
+                  {
+                    "t": "globstar"
+                  }
+                ]
+              },
+              {
+                "text": "**/*.md",
+                "negated": false,
+                "tokens": [
+                  {
+                    "t": "dirs"
+                  },
+                  {
+                    "t": "star"
+                  },
+                  {
+                    "t": "lit",
+                    "c": ".md"
+                  }
+                ]
+              }
+            ]
+          },
+          "types": [
+            "opened",
+            "closed"
+          ],
+          "typesDeclared": true,
+          "schedules": null,
+          "line": 9,
+          "col": 3
+        },
+        {
+          "event": "schedule",
+          "refusal": "",
+          "branches": null,
+          "tags": null,
+          "paths": null,
+          "types": null,
+          "typesDeclared": false,
+          "schedules": [
+            {
+              "cron": "30 5 * * 1-5",
+              "timezone": "America/New_York",
+              "refusal": "",
+              "minutes": [
+                30
+              ],
+              "hours": [
+                5
+              ],
+              "days": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30,
+                31
+              ],
+              "months": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "dayStar": true,
+              "weekdayStar": false
+            },
+            {
+              "cron": "*/4 * * * *",
+              "timezone": "",
+              "refusal": "the schedule runs 4 minute(s) apart; GitHub Actions runs scheduled workflows at most once every five minutes, and this one is refused rather than clamped",
+              "minutes": null,
+              "hours": null,
+              "days": null,
+              "months": null,
+              "weekdays": null,
+              "dayStar": false,
+              "weekdayStar": false
+            }
+          ],
+          "line": 13,
+          "col": 3
+        },
+        {
+          "event": "workflow_dispatch",
+          "refusal": "",
+          "branches": null,
+          "tags": null,
+          "paths": null,
+          "types": null,
+          "typesDeclared": false,
+          "schedules": null,
+          "line": 17,
+          "col": 3
+        },
+        {
+          "event": "issues",
+          "refusal": "issues: this forge has no native source for this event; it never runs here",
+          "branches": null,
+          "tags": null,
+          "paths": null,
+          "types": null,
+          "typesDeclared": false,
+          "schedules": null,
+          "line": 18,
+          "col": 3
+        }
+      ],
+      "refusal": ""
+    }
+  ],
+  "zones": {
+    "America/New_York": {
+      "start": 1577836800,
+      "end": 2208988800,
+      "offset": -18000,
+      "transitions": [
+        [
+          1583650800,
+          -14400
+        ],
+        [
+          1604210400,
+          -18000
+        ],
+        [
+          1615705200,
+          -14400
+        ],
+        [
+          1636264800,
+          -18000
+        ],
+        [
+          1647154800,
+          -14400
+        ],
+        [
+          1667714400,
+          -18000
+        ],
+        [
+          1678604400,
+          -14400
+        ],
+        [
+          1699164000,
+          -18000
+        ],
+        [
+          1710054000,
+          -14400
+        ],
+        [
+          1730613600,
+          -18000
+        ],
+        [
+          1741503600,
+          -14400
+        ],
+        [
+          1762063200,
+          -18000
+        ],
+        [
+          1772953200,
+          -14400
+        ],
+        [
+          1793512800,
+          -18000
+        ],
+        [
+          1805007600,
+          -14400
+        ],
+        [
+          1825567200,
+          -18000
+        ],
+        [
+          1836457200,
+          -14400
+        ],
+        [
+          1857016800,
+          -18000
+        ],
+        [
+          1867906800,
+          -14400
+        ],
+        [
+          1888466400,
+          -18000
+        ],
+        [
+          1899356400,
+          -14400
+        ],
+        [
+          1919916000,
+          -18000
+        ],
+        [
+          1930806000,
+          -14400
+        ],
+        [
+          1951365600,
+          -18000
+        ],
+        [
+          1962860400,
+          -14400
+        ],
+        [
+          1983420000,
+          -18000
+        ],
+        [
+          1994310000,
+          -14400
+        ],
+        [
+          2014869600,
+          -18000
+        ],
+        [
+          2025759600,
+          -14400
+        ],
+        [
+          2046319200,
+          -18000
+        ],
+        [
+          2057209200,
+          -14400
+        ],
+        [
+          2077768800,
+          -18000
+        ],
+        [
+          2088658800,
+          -14400
+        ],
+        [
+          2109218400,
+          -18000
+        ],
+        [
+          2120108400,
+          -14400
+        ],
+        [
+          2140668000,
+          -18000
+        ],
+        [
+          2152162800,
+          -14400
+        ],
+        [
+          2172722400,
+          -18000
+        ],
+        [
+          2183612400,
+          -14400
+        ],
+        [
+          2204172000,
+          -18000
+        ]
+      ]
+    }
+  }
+}

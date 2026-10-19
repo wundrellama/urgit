@@ -72,6 +72,8 @@ function routeForRepository(repo) {
     branchCreate: name === repo.name && tab === 'branches' && params.get('new') === 'branch',
     tagTarget: name === repo.name && tab === 'tags' ? params.get('target') || '' : '',
     tagKind: name === repo.name && tab === 'tags' ? params.get('targetKind') || '' : '',
+    // a native pull request opened by number (the CI tab links to it)
+    pull: name === repo.name && tab === 'pulls' ? Number(params.get('pull')) || 0 : 0,
   }
 }
 
@@ -86,6 +88,7 @@ function repositoryHash(repo, route) {
   if (route.tab === 'branches' && route.branchCreate) params.set('new', 'branch')
   if (route.tab === 'tags' && route.tagTarget) params.set('target', route.tagTarget)
   if (route.tab === 'tags' && route.tagKind) params.set('targetKind', route.tagKind)
+  if (route.tab === 'pulls' && route.pull) params.set('pull', String(route.pull))
   const query = params.toString()
   return `#/${encodeURIComponent(repo.name)}${query ? `?${query}` : ''}`
 }
@@ -644,7 +647,7 @@ function Webhooks({ repo, onMutate }) {
   </div>
 }
 
-function PullRequests({ repo, onMutate, onOpenOrigin }) {
+function PullRequests({ repo, onMutate, onOpenOrigin, initialPull = 0, onPullConsumed }) {
   const [busy, setBusy] = useState(0)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('open')
@@ -779,6 +782,16 @@ function PullRequests({ repo, onMutate, onOpenOrigin }) {
       setSubmitBusy(false)
     }
   }
+
+  // a pull request named by the route (a CI run's link) opens once, by its
+  // number among the native pull requests, and the route then forgets it
+  useEffect(() => {
+    if (!initialPull) return
+    const found = pulls.find((pull) => Number(pull.number) === Number(initialPull))
+    if (found) inspect({ ...found, native: true })
+    else setError(`Pull request #${initialPull} is not a native pull request of this repository.`)
+    onPullConsumed?.()
+  }, [initialPull])
 
   async function inspect(pull) {
     setSelected(pull); setDiff(null); setGithubDetail(null); setGithubDiff(null); setError(''); setCommentTarget(null)
@@ -1472,6 +1485,7 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
   const [branchCreate, setBranchCreate] = useState(initialRoute.branchCreate)
   const [tagTarget, setTagTarget] = useState(initialRoute.tagTarget)
   const [tagKind, setTagKind] = useState(initialRoute.tagKind)
+  const [pull, setPull] = useState(initialRoute.pull)
   const [searchQuery, setSearchQuery] = useState(initialRoute.searchQuery)
   const [searchDraft, setSearchDraft] = useState(initialRoute.searchQuery)
   const [searchData, setSearchData] = useState(null)
@@ -1499,18 +1513,20 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
     setBranchCreate(route.branchCreate)
     setTagTarget(route.tagTarget)
     setTagKind(route.tagKind)
+    setPull(route.pull || 0)
     setSearchQuery(route.searchQuery)
     setSearchDraft(route.searchQuery)
   }
 
   function navigate(changes, replace = false) {
-    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, branchCreate, tagTarget, tagKind, searchQuery, ...changes }
+    const route = { tab, branch, filePath, lineStart, lineEnd, commitOid, branchCreate, tagTarget, tagKind, pull, searchQuery, ...changes }
     if (Object.hasOwn(changes, 'filePath') && changes.filePath !== filePath && !Object.hasOwn(changes, 'lineStart')) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'code') { route.filePath = ''; route.lineStart = null; route.lineEnd = null; route.searchQuery = '' }
     if (!route.filePath) { route.lineStart = null; route.lineEnd = null }
     if (route.tab !== 'commits') route.commitOid = ''
     if (route.tab !== 'branches') route.branchCreate = false
     if (route.tab !== 'tags') { route.tagTarget = ''; route.tagKind = '' }
+    if (route.tab !== 'pulls') route.pull = 0
     history[replace ? 'replaceState' : 'pushState']({}, '', repositoryHash(repo, route))
     applyRoute(route)
   }
@@ -1623,8 +1639,8 @@ export default function RepositoryView({ repo, onRefresh, onOpenOrigin, publicMo
         {tab === 'tags' && <Tags repo={repo} publicMode={publicMode} onMutate={mutate} initialTarget={tagTarget} initialKind={tagKind} onTargetConsumed={() => navigate({ tagTarget: '', tagKind: '' }, true)} />}
         {tab === 'releases' && <Releases repo={repo} publicMode={publicMode} onMutate={mutate} client={client} />}
         {tab === 'commits' && (commitOid ? commitLoading || !commitDetail ? <div className="empty">Loading commit…</div> : <CommitDetail data={commitDetail} onBack={() => navigate({ commitOid: '' })} onOpenGit={(oid) => navigate({ commitOid: oid })} onCreateTag={!publicMode ? createTagFrom : null} /> : <Commits data={detail} loading={loading} loadingMore={historyLoadingMore} onLoadMore={loadMoreHistory} onSelect={openCommit} onCreateTag={!publicMode ? createTagFrom : null} />)}
-        {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} />}
-        {tab === 'ci' && <CiTab repo={repo} onMutate={mutate} />}
+        {tab === 'pulls' && <PullRequests repo={repo} onMutate={mutate} onOpenOrigin={onOpenOrigin} initialPull={pull} onPullConsumed={() => navigate({ pull: 0 }, true)} />}
+        {tab === 'ci' && <CiTab repo={repo} onMutate={mutate} onOpenPull={(number) => navigate({ tab: 'pulls', pull: number, filePath: '', commitOid: '' })} />}
         {tab === 'webhooks' && <Webhooks repo={repo} onMutate={mutate} />}
         {tab === 'settings' && <Settings repo={repo} onMutate={mutate} />}
       </section>

@@ -23,7 +23,7 @@ import (
 // controller must emit (desk/lib/ci-provenance.hoon manifest-json)
 var signedFields = []string{
 	"incarnation", "repo", "ref", "candidate", "oid", "baseline", "lock", "generation", "workflow", "job",
-	"trust", "sandbox", "mode", "network", "network-scope", "event", "context", "needs", "prerequisites",
+	"trust", "sandbox", "mode", "network", "network-scope", "event", "context", "needs", "prerequisites", "trigger",
 }
 
 func TestManifestFieldsAreTheSignedFields(t *testing.T) {
@@ -33,13 +33,13 @@ func TestManifestFieldsAreTheSignedFields(t *testing.T) {
 }
 
 // the reference manifest as the controller's serializer renders it
-// (testdata/reference-manifest-v4.json: the ship's @uv spellings, the
+// (testdata/reference-manifest-v5.json: the ship's @uv spellings, the
 // generation a JSON number) decodes into the manifest the reference
 // signature binds, with its nonempty needs and prerequisites; the same
 // object without those two keys — the 1B emission — decodes to another
 // manifest, and the signature refuses it, as the runner did
 func TestReferenceManifestJSONVerifies(t *testing.T) {
-	data, err := os.ReadFile("testdata/reference-manifest-v4.json")
+	data, err := os.ReadFile("testdata/reference-manifest-v5.json")
 	if err != nil {
 		t.Fatal(err)
 	}

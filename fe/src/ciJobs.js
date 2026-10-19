@@ -219,6 +219,31 @@ export function renderJobDetails(h, model) {
         model.needs.map((n) => h('div', { key: n.job }, h('dt', null, `${n.job} attempt`), h('dd', null, h('code', null, n.attempt)))))))
 }
 
+// where an attempt row's reason is shown (correction 03): the status badge
+// holds the status alone, and the ship's reason, complete and in its own
+// case, is shown once outside it. A job's decision details show it when
+// it is the decision's reason, in the summary line that stays visible
+// while the details are closed. Any other reason (a plan's, a resolver's,
+// an infrastructure record's, a job attempt's own outcome, or a job whose
+// ship sent no decision details) is a full-width line under the row, and
+// the details do not repeat it.
+export function attemptReason(row) {
+  const reason = str(row?.reason)
+  const details = row?.details || null
+  const open = Boolean(details) && !details.unavailable
+  if (!reason || (open && details.decision?.reason === reason)) return { line: '', details }
+  const shown = open && details.outcome?.reason === reason ? { ...details, outcome: { ...details.outcome, reason: '' } } : details
+  return { line: reason, details: shown }
+}
+
+// the full-width reason line under an attempt row: plain text, wrapped,
+// never cut and never cased by the badge's style
+export function renderAttemptReason(h, line) {
+  if (!line) return null
+  return h('div', { className: 'ci-attempt-reason', 'data-part': 'attempt-reason' },
+    h('span', { className: 'quiet' }, 'Reason: '), h('span', { className: 'ci-attempt-reason-text' }, line))
+}
+
 // the plan's jobs that have no attempt yet, with the ship's live decision
 export function renderWaitingJobs(h, rows) {
   if (!rows.length) return null

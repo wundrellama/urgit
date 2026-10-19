@@ -1,0 +1,13 @@
+# ignore lists: a branch, and paths every changed path must match to skip
+name: Ignore lists
+on:
+  push:
+    branches-ignore: ['feature/**']
+    paths-ignore: ['docs/**']
+  pull_request:
+    types: [opened, closed]
+    branches-ignore: [wip]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps: [{run: echo check}]

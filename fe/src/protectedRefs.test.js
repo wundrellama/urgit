@@ -140,8 +140,25 @@ test('census: every ref mutation in %urgit belongs to a writer this test gates',
     'handle-api POST [%apps %urgit %api %repository @ %pulls @ %merge ~]',
     'apply-receive',
     'materialize-candidate',
+    'materialize-run',
     'on-arvo [%github @ ~]', 'on-arvo [%github @ ~]',
   ].sort())
+})
+
+// Delivery 1C: a pull request run is tested on an integration object
+// %urgit builds and keeps under the run's own scratch ref. Its writer is
+// reached only by this ship's own %urgit-ci, and the one ref it writes is
+// computed from the run's id under refs/ci/run/, never the ref the poke
+// names; scratch refs are never reported as forge events (lib/ci-forge)
+test('census: materialize-run writes only the run\'s own scratch ref, for our own %urgit-ci', () => {
+  const run = arm(backend, 'on-poke/materialize-run')
+  assert.match(run, /=\/  scratch=@t  \(rap 3 ~\['refs\/ci\/run\/' \(scot %uv id\)\]\)/)
+  assert.match(run, /refs  \(~\(put by refs\.u\.found\) scratch candidate\.outcome\)/)
+  assert.equal(count(run, '(~(put by refs.'), 1, 'the run writes one ref')
+  assert.equal(count(run, '(~(del by refs.'), 0, 'the run deletes no ref')
+  const gate = block(backend, '          %ci-action\n', '          %handle-http-request')
+  precedes(gate, '?>  =(src.bowl our.bowl)', '(materialize-run id.act repo.act ref.act head.act base.act)', 'only this ship pokes it')
+  assert.match(readDesk('lib/ci-forge.hoon'), /\?:  \(scratch ref\)  ~/, 'a scratch ref is never reported as an event')
 })
 
 test('census: the shared ref-writing helpers are reached only from gated callers', () => {

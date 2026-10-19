@@ -1,4 +1,5 @@
 import { jobDetailsModel } from './ciJobs.js'
+import { runEventSummary } from './ciEvents.js'
 
 // The CI tab's pure helpers (BRIEF-CI-P2 D6): the log renderer over the
 // raw act jsonl the store serves, the shapes the candidate list and the
@@ -90,6 +91,13 @@ export function candidateRow(candidate, nowSeconds = Date.now() / 1000) {
     // a manual run (Delivery 1A) is listed with the workflow it ran
     manual: candidate.event?.name === 'workflow_dispatch',
     workflowName: candidate.event?.workflowName || candidate.event?.workflow || '',
+    // an automatic run (Delivery 1C) with the event it was for; it is
+    // advisory: it never lands and never satisfies a required check
+    event: runEventSummary(candidate.event)?.short || '',
+    advisory: candidate.mode === 'event',
+    // a required run whose selection left a push workflow out: its
+    // required evidence is absent, never a pass
+    evidenceAbsent: Boolean(candidate.requiredEvidence?.evaluated && candidate.requiredEvidence.complete === false),
   }
 }
 
