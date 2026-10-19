@@ -40,6 +40,9 @@ type fakeBox struct {
 	// answer, when set, is the output and exit of every Run that is not
 	// act (the image loads before the job)
 	answer func(argv []string) (string, int)
+	// the bundle's event.json and bundle.json as they were copied in
+	// (Delivery 1A), when the bundle had them
+	eventJSON, bundleJSON string
 }
 
 func (f *fakeBox) record(op string) {
@@ -54,6 +57,13 @@ func (f *fakeBox) Prepare(_ context.Context, spec sandbox.Spec) (sandbox.Handle,
 }
 func (f *fakeBox) Copy(_ context.Context, _ sandbox.Handle, host, guest string) error {
 	f.record("copy " + filepath.Base(strings.TrimSuffix(host, "/.")) + " -> " + guest)
+	dir := strings.TrimSuffix(host, "/.")
+	if data, err := os.ReadFile(filepath.Join(dir, "event.json")); err == nil {
+		f.eventJSON = string(data)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "bundle.json")); err == nil {
+		f.bundleJSON = string(data)
+	}
 	return nil
 }
 func (f *fakeBox) Run(_ context.Context, _ sandbox.Handle, workDir string, argv, env []string) (io.ReadCloser, <-chan int, error) {
@@ -110,6 +120,11 @@ type fakeShip struct {
 	// answers them with (0: 200)
 	pinned       []string
 	pinnedStatus int
+	// the resolver's lock posts (both phases), as sent
+	locks []string
+	// the job the ship assigned, which its event tripwire holds every line
+	// to (CI-PROJECT-1); "" is b
+	job string
 }
 
 func (s *fakeShip) handler(t *testing.T) http.Handler {
@@ -125,7 +140,11 @@ func (s *fakeShip) handler(t *testing.T) http.Handler {
 		case strings.HasSuffix(r.URL.Path, "/event"):
 			var ev map[string]any
 			_ = json.Unmarshal(body, &ev)
-			if ev["jobID"] != "b" {
+			assigned := s.job
+			if assigned == "" {
+				assigned = "b"
+			}
+			if ev["jobID"] != assigned {
 				w.WriteHeader(409)
 				_, _ = w.Write([]byte(`{"error":"event job does not match the assignment"}`))
 				return
@@ -149,6 +168,9 @@ func (s *fakeShip) handler(t *testing.T) http.Handler {
 		case strings.HasSuffix(r.URL.Path, "/plan"):
 			s.plans = append(s.plans, string(body))
 			w.WriteHeader(200)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/lock"):
+			s.locks = append(s.locks, string(body))
+			_, _ = w.Write([]byte(`{"mirrors":{},"downloads":{}}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/retentions"):
 			s.reports = append(s.reports, string(body))
 			w.WriteHeader(204)
@@ -235,17 +257,19 @@ func newTestDaemon(t *testing.T, box *fakeBox, sh *fakeShip, capacity int) *Daem
 }
 
 // the execution manifest the ship signs (P4 D5); the plain fields must
-// agree with it, and the fake sandbox is the container shape
+// agree with it, and the fake sandbox is the container shape. A push
+// binds its event payload by the signed context, as a manual run does.
 var jobManifest = sig.Manifest{
 	Incarnation: "0v1.inc", Repo: "r", Ref: "refs/heads/master", Candidate: "0v1.cand", OID: "0000000000000000000000000000000000000001",
 	Baseline: "", Lock: "", Generation: 1, Workflow: "fixture-chain.yml", Job: "b", Trust: "trusted", Sandbox: "container", Mode: "required", Network: "locked",
+	Event: "push", Context: payloadDigest(pushPayload),
 }
 
 var jobAssignment = &ship.Assignment{
 	ID: "0v1.asg", Attempt: "0v1.att", Candidate: "0v1.cand", Repo: "r", Ref: "refs/heads/master",
 	OID: "0000000000000000000000000000000000000001", Kind: "job", Workflow: "fixture-chain.yml", Job: "b",
 	PrereqOutputs: map[string]map[string]string{"a": {"go": "true"}}, DeadlineSeconds: 60,
-	Manifest: &jobManifest,
+	Manifest: &jobManifest, EventPayload: pushPayload,
 }
 
 // a job: prepare, copy the checkout, the act binary and the projection in,
@@ -268,7 +292,7 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 		"prepare ci-0v1.att image=img",
 		"copy bundle -> /work",
 		"copy sh -> /usr/local/bin/act",
-		"run /usr/local/bin/act push -W /work/projected/fixture-chain.yml -j b -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --container-daemon-socket unix:///run/user/1000/test/docker.sock --action-cache-path /work/actions --action-offline-mode --container-options -v /work/downloads:/urgit/downloads:ro --env URGIT_CI_DOWNLOADS=/urgit/downloads --cache-server-addr 10.9.8.7 --artifact-server-addr 10.9.8.7 --env NEEDS_A_OUTPUTS_GO=true env=",
+		"run /usr/local/bin/act push -W /work/projected/fixture-chain.yml -j b -e /work/event.json --actor ~zod -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --container-daemon-socket unix:///run/user/1000/test/docker.sock --action-cache-path /work/actions --action-offline-mode --container-options -v /work/downloads:/urgit/downloads:ro --env URGIT_CI_DOWNLOADS=/urgit/downloads --cache-server-addr 10.9.8.7 --artifact-server-addr 10.9.8.7 --env NEEDS_A_OUTPUTS_GO=true env=",
 		"destroy ci-0v1.att",
 	}
 	if strings.Join(box.ops, "\n") != strings.Join(want, "\n") {
@@ -664,7 +688,7 @@ func TestVerifyAssignment(t *testing.T) {
 	sign := func(priv ed25519.PrivateKey, recipient, attempt, op string, expiry int64, m sig.Manifest) *ship.Signature {
 		msg := sig.ManifestMessage{Recipient: recipient, Attempt: attempt, Operation: op, Expiry: expiry, Nonce: "0v7", Manifest: m}
 		b, _ := msg.Bytes()
-		return &ship.Signature{Version: 2, Recipient: recipient, Attempt: attempt, Operation: op, Expiry: expiry, Nonce: msg.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, b))}
+		return &ship.Signature{Version: sig.ManifestVersion, Recipient: recipient, Attempt: attempt, Operation: op, Expiry: expiry, Nonce: msg.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, b))}
 	}
 	later := time.Now().Unix() + 300
 	good := *jobAssignment

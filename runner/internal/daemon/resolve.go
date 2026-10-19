@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"urgit/runner/internal/plan"
 	"urgit/runner/internal/provenance"
 	"urgit/runner/internal/ship"
 )
@@ -50,6 +51,15 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		return
 	}
 	logf("walk: %d node(s), depth %d, %d bytes, %d script reference(s), %d external line(s)", len(inv.Nodes), inv.Depth, inv.Bytes, len(inv.Scripts), len(inv.External))
+	// what each workflow declares for a manual run (Delivery 1A), as the
+	// pinned compiler reads it at this revision: the ship lists it in the
+	// Run workflow form and admits a run's inputs against it
+	dispatch, err := workflowDispatches(src)
+	if err != nil {
+		d.fail(ctx, a, "manual-run inventory: "+err.Error(), logf)
+		return
+	}
+	logf("manual workflows: %d", len(dispatch))
 	// phase 1: the inventory; the ship creates the mirrors
 	type mirrorGrant struct {
 		Repo  string `json:"repo"`
@@ -136,7 +146,7 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 			n.Mirror, n.Path = "store", put.Key
 		}
 	}
-	lock := map[string]any{"phase": "lock", "nodes": nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices, "digest": provenance.Digest(nodes)}
+	lock := map[string]any{"phase": "lock", "nodes": nodes, "scripts": inv.Scripts, "external": inv.External, "depth": inv.Depth, "bytes": inv.Bytes, "notices": inv.Notices, "digest": provenance.Digest(nodes), "dispatch": dispatch}
 	// the resolver's own record of what it walked and fetched, for the
 	// import preview and the record (rider 03: native replacements and
 	// mappings appear in evidence)
@@ -149,6 +159,30 @@ func (d *Daemon) runResolve(ctx context.Context, a *ship.Assignment, work string
 		return
 	}
 	logf("lock POST -> %s", resp.Error())
+}
+
+// workflowDispatches reads every workflow file of a checkout, in name
+// order, and lists those that declare workflow_dispatch (Delivery 1A).
+func workflowDispatches(src string) ([]plan.Dispatch, error) {
+	files, err := workflowFiles(src)
+	if err != nil {
+		return nil, err
+	}
+	out := []plan.Dispatch{}
+	for _, file := range files {
+		data, err := os.ReadFile(filepath.Join(src, ".github", "workflows", file))
+		if err != nil {
+			return nil, err
+		}
+		declared, err := plan.DispatchOf(data, file)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", file, err)
+		}
+		if declared != nil {
+			out = append(out, *declared)
+		}
+	}
+	return out, nil
 }
 
 func uniq(in []string) []string {

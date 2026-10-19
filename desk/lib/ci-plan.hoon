@@ -232,8 +232,55 @@
 ++  validate
   |=  [candidate=@t tree=(list @t) plan=wire-plan]
   ^-  (each (list job:ci) @t)
+  =/  common=(unit @t)  (plan-problem candidate tree plan)
+  ?^  common  [%| u.common]
+  =/  problem=(unit @t)  (job-problem workflows.plan jobs.plan)
+  ?^  problem  [%| u.problem]
+  =/  planned=(list job:ci)
+    %+  murn  jobs.plan
+    |=  =wire-job
+    ^-  (unit job:ci)
+    ?.  (lien events.wire-job |=(event=@t =('push' event)))  ~
+    `(to-job wire-job)
+  ?~  planned
+    [%| 'no push-triggered jobs under .github/workflows']
+  [%& planned]
+::
+::  validation for the event a candidate runs for (Delivery 1A).  a push
+::  is +validate.  a manual run plans exactly the jobs of the one
+::  workflow it dispatches, which must trigger on workflow_dispatch, and
+::  the job checks apply to those jobs: a construct this release refuses
+::  in an unrelated workflow does not refuse the run
+::
+++  validate-for
+  |=  [candidate=@t tree=(list @t) plan=wire-plan =trigger:ci]
+  ^-  (each (list job:ci) @t)
+  ?:  ?=(%push -.trigger)  (validate candidate tree plan)
+  =/  common=(unit @t)  (plan-problem candidate tree plan)
+  ?^  common  [%| u.common]
+  =/  file=@t  workflow.trigger
+  ?.  (lien workflows.plan |=(name=@t =(name file)))
+    [%| (rap 3 ~['workflow ' file ' is not a workflow file of this revision'])]
+  =/  selected=(list wire-job)
+    %+  skim  jobs.plan
+    |=  =wire-job
+    ?&  =(file workflow.wire-job)
+        (lien events.wire-job |=(event=@t =('workflow_dispatch' event)))
+    ==
+  ?~  selected
+    [%| (rap 3 ~['workflow ' file ' does not trigger on workflow_dispatch at this revision'])]
+  =/  problem=(unit @t)  (job-problem workflows.plan selected)
+  ?^  problem  [%| u.problem]
+  [%& (turn selected to-job)]
+::
+::  the plan's own identity: read at the candidate, naming exactly the
+::  workflow files of the tree
+::
+++  plan-problem
+  |=  [candidate=@t tree=(list @t) plan=wire-plan]
+  ^-  (unit @t)
   ?.  =(candidate oid.plan)
-    [%| (rap 3 ~['plan oid ' oid.plan ' is not the candidate oid ' candidate])]
+    `(rap 3 ~['plan oid ' oid.plan ' is not the candidate oid ' candidate])
   =/  in-tree=(list @t)
     %-  sort-texts
     %+  skim  tree
@@ -243,63 +290,63 @@
         &((gth width 5) =('.yaml' (rsh [3 (sub width 5)] name)))
     ==
   =/  named=(list @t)  (sort-texts workflows.plan)
-  ?.  =(in-tree named)
-    :-  %|
-    %-  rap
-    :-  3
-    :~  'workflow files under .github/workflows differ from the plan: tree has '
-        (join in-tree ', ')  '; plan has '  (join named ', ')
-    ==
+  ?:  =(in-tree named)  ~
+  :-  ~
+  %-  rap
+  :-  3
+  :~  'workflow files under .github/workflows differ from the plan: tree has '
+      (join in-tree ', ')  '; plan has '  (join named ', ')
+  ==
+::
+::  the checks every planned job must pass; each walks the jobs once and
+::  stops at the first refusal
+::
+++  job-problem
+  |=  [workflows=(list @t) jobs=(list wire-job)]
+  ^-  (unit @t)
   =/  ids=(set key)
     %-  silt
-    %+  turn  jobs.plan
+    %+  turn  jobs
     |=(=wire-job [workflow.wire-job id.wire-job])
-  ::  each check walks the jobs once and stops at the first refusal
-  ::
-  =/  remaining=(list wire-job)  jobs.plan
+  =/  remaining=(list wire-job)  jobs
   =|  seen=(set key)
   |-
-  ?^  remaining
-    =/  =wire-job  i.remaining
-    =/  name=@t  (job-name id.wire-job workflow.wire-job)
-    =/  k=key  [workflow.wire-job id.wire-job]
-    ?:  (~(has in seen) k)
-      [%| (rap 3 ~['duplicate job id ' id.wire-job ' in ' workflow.wire-job])]
-    ?.  (lien workflows.plan |=(name=@t =(name workflow.wire-job)))
-      [%| (rap 3 ~[name ': workflow ' workflow.wire-job ' is not in the plan'])]
-    ?:  matrix.wire-job
-      [%| (rap 3 ~['matrix unsupported in P1 (' name ')'])]
-    ::  runs-on is matched as literal labels (CI-P3-SCHED-A, rider 2): an
-    ::  expression there could never match a daemon and is refused now,
-    ::  never left pending
-    ::
-    ?:  (lien ~(tap in runs-on.wire-job) has-expression)
-      [%| (rap 3 ~['runs-on expression unsupported in P3 (' name ')'])]
-    =/  missing=(unit @t)
-      %+  find-first  needs.wire-job
-      |=(need=@t !(~(has in ids) [workflow.wire-job need]))
-    ?^  missing
-      [%| (rap 3 ~[name ' needs ' u.missing ', which is not a job in ' workflow.wire-job])]
-    ?:  ?=([~ %unsupported *] cond.wire-job)
-      [%| (rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])]
-    ?:  ?&  ?=([~ %output-eq *] cond.wire-job)
-            !(lien needs.wire-job |=(need=@t =(need job.u.cond.wire-job)))
-        ==
-      [%| (rap 3 ~[name ': if references needs.' job.u.cond.wire-job ', which is not in needs'])]
-    $(remaining t.remaining, seen (~(put in seen) k))
-  =/  planned=(list job:ci)
-    %+  murn  jobs.plan
-    |=  =wire-job
-    ^-  (unit job:ci)
-    ?.  (lien events.wire-job |=(event=@t =('push' event)))  ~
-    :-  ~
-    :*  id.wire-job  workflow.wire-job  name.wire-job  stage.wire-job
-        needs.wire-job  cond.wire-job  environment.wire-job
-        runs-on.wire-job  timeout.wire-job
-    ==
-  ?~  planned
-    [%| 'no push-triggered jobs under .github/workflows']
-  [%& planned]
+  ?~  remaining  ~
+  =/  =wire-job  i.remaining
+  =/  name=@t  (job-name id.wire-job workflow.wire-job)
+  =/  k=key  [workflow.wire-job id.wire-job]
+  ?:  (~(has in seen) k)
+    `(rap 3 ~['duplicate job id ' id.wire-job ' in ' workflow.wire-job])
+  ?.  (lien workflows |=(name=@t =(name workflow.wire-job)))
+    `(rap 3 ~[name ': workflow ' workflow.wire-job ' is not in the plan'])
+  ?:  matrix.wire-job
+    `(rap 3 ~['matrix unsupported in P1 (' name ')'])
+  ::  runs-on is matched as literal labels (CI-P3-SCHED-A, rider 2): an
+  ::  expression there could never match a daemon and is refused now,
+  ::  never left pending
+  ::
+  ?:  (lien ~(tap in runs-on.wire-job) has-expression)
+    `(rap 3 ~['runs-on expression unsupported in P3 (' name ')'])
+  =/  missing=(unit @t)
+    %+  find-first  needs.wire-job
+    |=(need=@t !(~(has in ids) [workflow.wire-job need]))
+  ?^  missing
+    `(rap 3 ~[name ' needs ' u.missing ', which is not a job in ' workflow.wire-job])
+  ?:  ?=([~ %unsupported *] cond.wire-job)
+    `(rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])
+  ?:  ?&  ?=([~ %output-eq *] cond.wire-job)
+          !(lien needs.wire-job |=(need=@t =(need job.u.cond.wire-job)))
+      ==
+    `(rap 3 ~[name ': if references needs.' job.u.cond.wire-job ', which is not in needs'])
+  $(remaining t.remaining, seen (~(put in seen) k))
+::
+++  to-job
+  |=  =wire-job
+  ^-  job:ci
+  :*  id.wire-job  workflow.wire-job  name.wire-job  stage.wire-job
+      needs.wire-job  cond.wire-job  environment.wire-job
+      runs-on.wire-job  timeout.wire-job
+  ==
 ::
 ::  whether a label carries a `${{` expression opener
 ::

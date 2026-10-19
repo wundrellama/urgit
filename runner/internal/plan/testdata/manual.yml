@@ -1,0 +1,49 @@
+name: Manual release
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Rehearse without publishing
+        type: boolean
+        default: false
+      count:
+        description: How many artifacts to build
+        type: number
+        required: true
+        default: 0
+      level:
+        description: Log level
+        type: choice
+        options:
+          - info
+          - warning
+          - debug
+        default: warning
+      note:
+        description: A note for the run record
+        default: hello
+      target:
+        description: Where to publish
+        type: environment
+        required: false
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      # toJSON tells a number from its text (0 against "0"); through env, so
+      # the shell does not eat the quotes
+      - name: show the event
+        env:
+          WORKFLOW: ${{ github.workflow }}
+          ACTOR: ${{ github.actor }}
+          COUNT_JSON: ${{ toJSON(inputs.count) }}
+          EVENT_COUNT_JSON: ${{ toJSON(github.event.inputs.count) }}
+          DRY_RUN_JSON: ${{ toJSON(inputs.dry_run) }}
+        run: |
+          echo "event=${{ github.event_name }}"
+          printf 'workflow=%s actor=%s\n' "$WORKFLOW" "$ACTOR"
+          echo "ref=${{ github.ref }} sha=${{ github.sha }} job=${{ github.job }}"
+          printf 'inputs.count=%s github.event.inputs.count=%s inputs.dry_run=%s\n' "$COUNT_JSON" "$EVENT_COUNT_JSON" "$DRY_RUN_JSON"
+          echo "dry_run=${{ inputs.dry_run }} count=${{ inputs.count }} level=${{ inputs.level }} note=${{ inputs.note }}"

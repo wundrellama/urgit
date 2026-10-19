@@ -99,6 +99,26 @@ Every original obligation the brief names, its status in this tree, and the code
 | A push of an eligible object advanced a CI-protected ref through the receive path (P0's H8) | Restart 01 (Q5): the push lands it through `land-through`, the landing path, answering `ok` from the landing, so `%urgit-ci` hears `%landed`. H8's same-tip case keeps its answer. A pushed candidate object whose base is not the ref's tip is staged, not landed; so is one whose override is consumed, expired or invalidated. A push that carries such a landing with other commands is refused whole. |
 | `sandbox` default `docker-rootless` | An omitted `sandbox` is `microvm` (rider 04); the legacy harness configs set `docker-rootless` explicitly, and a new repository's requirement is `vm` until the explicit `set-sandbox-requirement container` opt-in the adapted `push_commit` records once per repository. A network profile under docker-rootless needs `docker_egress_unrestricted_ack = true` (NAT egress as a whole; the daemon's banner and this ledger say so). |
 
+## Delivery 1A — manual runs and the run's event
+
+| Requirement | Status | Evidence / owner |
+|---|---|---|
+| Manual workflow inventory derived from the promoted baseline's workflow source (no UI catalog) | done (source, fixture) | `runner/internal/plan/dispatch.go` + tests; the resolver posts it beside the lock, digest-covered (`lib/ci-dispatch` `parse-inventory`, `ci-dispatch-vector`); live: a real resolve on the owned fake ship stored it |
+| Typed inputs validated on the controller (boolean, number, choice, string, environment; required/default/absent; unknown; credential values) | done (source, fixture) | `lib/ci-dispatch` `admit` (`ci-dispatch-vector`: 47/47 before correction 01; its 61 cases since are not yet run on a ship); live: 12 refusals, none creating a run |
+| Immutable event/input context bound by the signed manifest (v3 `event`, `context`) | done | `ci-provenance-vector` 28/28 and `sig` tests agree byte for byte; the runner refuses a payload that does not match |
+| The runner runs each job on its signed event: the manual event, never push in its place | done (code, fixture), UNRUN in a VM | `daemon` tests; live: the real runner code built `act workflow_dispatch … -e /work/event.json --actor ~zod` for a manual job from the ship's real assignments (act itself not run) |
+| A push job receives the push's own context: actor, ref, source (`after`), base (`before`), bound by the signed context; never act's defaults (empty event, actor `nektos/act`) | done (source), Hoon UNRUN, VM UNRUN | the ship renders the payload per attempt (`lib/ci-dispatch` `push-payload`; `ci-dispatch-vector` cases written, not yet run on a ship); `daemon` tests: `act push … -e /work/event.json --actor ~zod`, the payload byte for byte, a payload naming another ref, source or no sender refused |
+| `github.workflow` is the workflow's own name; two attempts of a job still never share act's container, volume or network names | done (code), UNRUN in a VM | the projection names the job's run `<attempt>/<its name or id>` instead (CI-PROJECT-1.1); `plan` tests (`identity_test.go`, every ERPit job), `daemon` tests (the push and manual bundles) |
+| A number input is a number to the job: `toJSON(inputs.count)` is `0`, never `"0"` | done (source), Hoon UNRUN, VM UNRUN | the payload carries a number as a JSON number and a boolean as its text (`ci-dispatch-vector` cases written, not yet run on a ship); `daemon` test against a transcription of act 0.2.89's `inputs` rule (not act); `runner/internal/plan/testdata/manual.yml` prints `toJSON(inputs.count)` for the VM run |
+| Missing, the default and an explicit empty text are distinct from the form | done (component tests), browser walk-through UNRUN | a text input whose default is not empty has *Send empty text instead of the default*; the request then carries `""`, recorded as supplied |
+| Manual execution never landable; no credentials; cancelled by a policy change | done (source, fixture) | mode `manual`; live checks |
+| Run workflow UI and run details | done (component tests, served bundle), browser walk-through UNRUN | `fe/src/ciDispatch.js`, `runWorkflowComponent.js`, `runWorkflowView.js`, `CiTab.jsx` |
+
+Known differences from GitHub, as act 0.2.89 runs the projection:
+- An unnamed workflow's `github.workflow` is its file name (act names it so for `act -l` and the run alike), not the path GitHub uses.
+- The job container's network alias is its attempt's run name, not the job's own name.
+- A job written as a flow mapping (`job: {…}`) is refused by the projection: it has no line of its own for the run name.
+
 ## P5 handoff (brief §9)
 
-Ref-writer coverage on a ship (source and rows authored in restart 01, NOT RUN) and Clay compensation; matrices/expressions/reusable workflows/services/concurrency/manual inputs/schedules/PR filters/cancellation semantics; artifact/summary export, caches, retention/GC, public-browser topology; CI-RECOVERY-1; nightly batteries; real ERPit shadow period and cutover; upstream PR. Nothing above claims them.
+Ref-writer coverage on a ship (source and rows authored in restart 01, NOT RUN) and Clay compensation; matrices/expressions/reusable workflows/services/concurrency/schedules/PR filters/cancellation semantics (manual `workflow_dispatch` runs with typed inputs: Delivery 1A, below); artifact/summary export, caches, retention/GC, public-browser topology; CI-RECOVERY-1; nightly batteries; real ERPit shadow period and cutover; upstream PR. Nothing above claims them.

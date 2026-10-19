@@ -123,6 +123,10 @@ type Assignment struct {
 	// BaselineRef is the scratch ref the ship keeps the baseline revision
 	// reachable under, fetched before the harness overlay
 	BaselineRef string `json:"baseline-ref"`
+	// EventPayload is the event JSON act reads (Delivery 1A), a push's or
+	// a manual run's; the signed manifest's context is its sha-256. ''
+	// for a resolve
+	EventPayload string `json:"event-payload"`
 }
 
 // Mapping is one explicit import mapping: From (a prefix) is read from To.

@@ -8,9 +8,10 @@ import (
 	"strings"
 )
 
-// ManifestVersion is the execution-manifest message version (P4 D5). A
-// verifier of another version fails closed; there is no shim.
-const ManifestVersion = 2
+// ManifestVersion is the execution-manifest message version (P4 D5;
+// version 3, Delivery 1A, binds the run's event). A verifier of another
+// version fails closed; there is no shim.
+const ManifestVersion = 3
 
 // Manifest is the execution manifest the ship binds an authorization to
 // (specs/ci-execution-contract.md §5): everything the attempt may act on.
@@ -27,9 +28,15 @@ type Manifest struct {
 	Job          string `json:"job"`
 	Trust        string `json:"trust"`
 	Sandbox      string `json:"sandbox"` // vm / container
-	Mode         string `json:"mode"`    // required / trial / shadow / plan / resolve
+	Mode         string `json:"mode"`    // required / trial / manual / shadow / plan / resolve
 	Network      string `json:"network"` // locked or a profile name
 	NetworkScope string `json:"network-scope"`
+	// the event the run's jobs receive (Delivery 1A): push, or
+	// workflow_dispatch for a manual run; '' for a resolve. Context is the
+	// sha-256 (64 hex) of the event payload act reads, a push's as a
+	// manual run's; '' for a resolve, which runs no job
+	Event   string `json:"event"`
+	Context string `json:"context"`
 }
 
 // ScopeText is the canonical text of a destination list: sorted,
@@ -41,7 +48,7 @@ func ScopeText(dests []string) string {
 }
 
 // Noun is [incarnation repo ref candidate oid baseline lock generation
-// workflow job trust sandbox mode network network-scope].
+// workflow job trust sandbox mode network network-scope event context].
 func (m Manifest) Noun() (*Noun, error) {
 	inc, err := ParseUV(m.Incarnation)
 	if err != nil {
@@ -54,13 +61,13 @@ func (m Manifest) Noun() (*Noun, error) {
 	return Tuple(
 		Atom(inc), Cord(m.Repo), Cord(m.Ref), Atom(cand), Cord(m.OID), Cord(m.Baseline), Cord(m.Lock),
 		Atom(new(big.Int).SetUint64(m.Generation)), Cord(m.Workflow), Cord(m.Job), Cord(m.Trust), Cord(m.Sandbox), Cord(m.Mode),
-		Cord(m.Network), Cord(m.NetworkScope),
+		Cord(m.Network), Cord(m.NetworkScope), Cord(m.Event), Cord(m.Context),
 	), nil
 }
 
-// ManifestMessage is the v2 authorization: the v1 fields plus the
-// manifest, signed as one noun [2 recipient attempt operation expiry
-// nonce manifest].
+// ManifestMessage is the authorization: the v1 fields plus the manifest,
+// signed as one noun [3 recipient attempt operation expiry nonce
+// manifest].
 type ManifestMessage struct {
 	Recipient string
 	Attempt   string
@@ -102,7 +109,7 @@ func (m ManifestMessage) Bytes() ([]byte, error) {
 	return LittleEndian(Jam(n)), nil
 }
 
-// VerifyManifest checks a v2 signature over the message.
+// VerifyManifest checks a signature over the message.
 func VerifyManifest(pubHex string, m ManifestMessage, sigHex string) error {
 	n, err := m.Noun()
 	if err != nil {

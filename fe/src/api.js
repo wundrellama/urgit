@@ -396,6 +396,8 @@ async function ciRequest(path, options = {}) {
     // whose answer was lost (which rejects without one)
     const error = new Error(data?.error || `HTTP ${response.status}`)
     error.status = response.status
+    // a refusal of named fields (a manual run's inputs): each field's reason
+    error.fields = data?.fields || null
     throw error
   }
   return data
@@ -425,6 +427,12 @@ export const ci = {
   storageProbe: () => ciRequest('/storage/probe'),
   // the poke as JSON; the ship answers 200 {ok} or the refusal
   action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
+  // manual runs (Delivery 1A): the workflows each branch's promoted
+  // baseline declares for workflow_dispatch, with their inputs; and the
+  // dispatch, answered with the run the ship recorded ({run, fresh}) or the
+  // refusal (each refused input in `fields`)
+  dispatchInventory: (name) => ciRequest(`/repository/${encodeURIComponent(name)}/dispatch`),
+  dispatch: (name, body) => ciRequest(`/repository/${encodeURIComponent(name)}/dispatch`, { method: 'POST', body: JSON.stringify(body) }),
   // the log route answers a 302 to a presigned store URL; the browser
   // follows it with no headers of its own and the text is act's jsonl
   logUrl: (attempt) => `${CI}/attempt/${encodeURIComponent(attempt)}/log`,

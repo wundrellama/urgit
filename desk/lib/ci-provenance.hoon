@@ -10,10 +10,11 @@
 /-  ci, git
 /+  git-codec
 |%
-::  the manifest message version (contract §5).  a verifier of another
-::  version fails closed on both sides.
+::  the manifest message version (contract §5; 3 binds the run's event,
+::  Delivery 1A).  a verifier of another version fails closed on both
+::  sides.
 ::
-++  manifest-version  2
+++  manifest-version  3
 ::
 ::  bounds (D4; the brief's proposed S0 bounds, adopted)
 ::
@@ -46,9 +47,15 @@
       mode=@t
       network=@t
       scope=@t
+      ::  the event the run's jobs receive (Delivery 1A): 'push', or
+      ::  'workflow_dispatch' for a manual run, '' for a resolve; and
+      ::  the sha-256 of the event payload act reads, 64 hex, a push's
+      ::  as a manual run's; '' for a resolve, which runs no job
+      event=@t
+      context=@t
   ==
 ::
-::  the signed noun: [2 recipient attempt operation expiry nonce manifest]
+::  the signed noun: [3 recipient attempt operation expiry nonce manifest]
 ::  — the manifest's cells continue the tuple, exactly as the daemon's
 ::  Tuple(…, manifest) nests them
 ::
@@ -127,6 +134,17 @@
   |=  [repo=@t revision=oid:git nodes=(list dep-node:ci)]
   ^-  @ux
   (shax (jam [repo revision nodes]))
+::
+::  a lock resolved since manual runs (Delivery 1A): its identity covers
+::  the manual-run inventory its resolver read too, so the same nodes
+::  read with other declarations are another lock, and a promoted
+::  baseline's inventory changes only with a promotion; no inventory (~)
+::  is another lock than an empty one
+::
+++  lock-digest-with
+  |=  [repo=@t revision=oid:git nodes=(list dep-node:ci) inventory=(unit (list dispatch-workflow:ci))]
+  ^-  @ux
+  (shax (jam [repo revision nodes inventory]))
 ::
 ::  lock validation (D4): bounds, well-formed identities, refusals
 ::

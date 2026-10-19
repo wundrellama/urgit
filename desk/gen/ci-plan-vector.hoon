@@ -78,6 +78,47 @@
   |=  entries=(list [key:ci-plan (map @t @t)])
   ^-  (map key:ci-plan (map @t @t))
   (malt entries)
+::  a manual run's plan (Delivery 1A): the tree gains manual.yml, and a
+::  job names the events act -l listed for its workflow
+::
+=/  tree-3=(list @t)  ~['chain.yml' 'pass.yml' 'manual.yml' 'README.md']
+=/  ev-job
+  |=  [id=@t workflow=@t needs=@t events=@t extra=@t]
+  ^-  @t
+  %-  rap
+  :-  3
+  :~  '{"id":"'  id  '","workflow":"'  workflow  '","name":"wf","stage":0'
+      ',"needs":'  needs  ',"cond":null,"events":'  events  extra  '}'
+  ==
+=/  plan-3
+  |=  jobs=@t
+  ^-  wire-plan:ci-plan
+  =/  jon=json
+    %-  need
+    %-  de:json:html
+    %-  rap
+    :-  3
+    :~  '{"oid":"'  oid  '","workflows":["chain.yml","pass.yml","manual.yml"],"jobs":['  jobs  ']}'
+    ==
+  =/  parsed=(each wire-plan:ci-plan @t)  (parse:ci-plan jon)
+  ?>  ?=(%& -.parsed)
+  p.parsed
+=/  dispatch-of
+  |=  [workflow=@t jobs=@t]
+  ^-  (each (list job:ci) @t)
+  %:  validate-for:ci-plan
+    oid
+    tree-3
+    (plan-3 jobs)
+    [%dispatch workflow 'Manual release' ~ '' 'request-1']
+  ==
+=/  manual-jobs=@t
+  %-  rap
+  :-  3
+  :~  (ev-job 'a' 'chain.yml' '[]' '["push"]' '')  ','
+      (ev-job 'report' 'manual.yml' '[]' '["push","workflow_dispatch"]' '')  ','
+      (ev-job 'deploy' 'manual.yml' '["report"]' '["push","workflow_dispatch"]' '')
+  ==
 ::
 =/  results=(list [name=@t ok=?])
   :~  :-  'chain: three jobs planned, keyed by [workflow id]'
@@ -336,6 +377,62 @@
     ::
       :-  'verdict: a linear chain with no attempts is pending'
       =([%pending ~] (verdict:ci-plan chain-plan ~))
+    ::
+      ::  a manual run plans the one workflow it dispatches (Delivery 1A)
+      ::
+      :-  'dispatch: only the selected workflow\'s jobs are planned, its needs kept'
+      =/  planned  (dispatch-of 'manual.yml' manual-jobs)
+      ?.  ?=(%& -.planned)  %.n
+      ?&  =(~['report' 'deploy'] (turn p.planned |=(=job:ci id.job)))
+          (levy p.planned |=(=job:ci =('manual.yml' workflow.job)))
+          =(~['report'] needs:(snag 1 p.planned))
+      ==
+    ::
+      :-  'dispatch: a workflow that does not trigger on workflow_dispatch is refused'
+      .=  [%| 'workflow chain.yml does not trigger on workflow_dispatch at this revision']
+      (dispatch-of 'chain.yml' manual-jobs)
+    ::
+      :-  'dispatch: a workflow the plan does not list is refused'
+      .=  [%| 'workflow nope.yml is not a workflow file of this revision']
+      (dispatch-of 'nope.yml' manual-jobs)
+    ::
+      :-  'dispatch: an unsupported construct in another workflow does not refuse it'
+      =/  jobs=@t
+        %-  rap
+        :-  3
+        :~  (ev-job 'a' 'chain.yml' '[]' '["push"]' ',"matrix":true')  ','
+            (ev-job 'report' 'manual.yml' '[]' '["workflow_dispatch"]' '')
+        ==
+      =/  got=(each (list job:ci) @t)  (dispatch-of 'manual.yml' jobs)
+      ?=(%& -.got)
+    ::
+      :-  'dispatch: an unsupported construct in the selected workflow refuses it'
+      .=  [%| 'matrix unsupported in P1 (job report in manual.yml)']
+      %+  dispatch-of
+        'manual.yml'
+      (ev-job 'report' 'manual.yml' '[]' '["workflow_dispatch"]' ',"matrix":true')
+    ::
+      :-  'dispatch: needs still never cross a workflow file'
+      .=  [%| 'job deploy in manual.yml needs a, which is not a job in manual.yml']
+      %+  dispatch-of  'manual.yml'
+      %-  rap
+      :-  3
+      :~  (ev-job 'a' 'chain.yml' '[]' '["push"]' '')  ','
+          (ev-job 'deploy' 'manual.yml' '["a"]' '["workflow_dispatch"]' '')
+      ==
+    ::
+      :-  'push: a dispatch-only workflow is not planned for a push'
+      =/  planned
+        %:  validate:ci-plan  oid  tree-3
+          %-  plan-3
+          %-  rap
+          :-  3
+          :~  (ev-job 'a' 'chain.yml' '[]' '["push"]' '')  ','
+              (ev-job 'report' 'manual.yml' '[]' '["workflow_dispatch"]' '')
+          ==
+        ==
+      ?.  ?=(%& -.planned)  %.n
+      =(~['a'] (turn p.planned |=(=job:ci id.job)))
   ==
 =/  failures=(list @t)
   (murn results |=([name=@t ok=?] ?:(ok ~ `name)))

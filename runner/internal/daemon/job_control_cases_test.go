@@ -115,7 +115,7 @@ func TestC9RunReturnsOnDaemonStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Sig = &ship.Signature{Version: 2, Recipient: msg.Recipient, Attempt: msg.Attempt, Operation: msg.Operation, Expiry: msg.Expiry, Nonce: msg.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, data))}
+	a.Sig = &ship.Signature{Version: sig.ManifestVersion, Recipient: msg.Recipient, Attempt: msg.Attempt, Operation: msg.Operation, Expiry: msg.Expiry, Nonce: msg.Nonce, Sig: hex.EncodeToString(ed25519.Sign(priv, data))}
 	var offered atomic.Bool
 	d.client.HTTP.Transport = inproc{"ship.test": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/assignment") {

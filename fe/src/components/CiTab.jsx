@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { ci, publicApi } from '../api'
-import { approveHint, attemptRows, candidateRow, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, statusLabel } from '../ci'
+import { approveHint, attemptRows, candidateRow, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, shortOid, statusLabel } from '../ci'
+import { eventRows } from '../ciDispatch'
 import { applyCandidateFactToPage, feedPip, mergeCandidateFact, mergeRunnerCount } from '../ciLive'
 import { probeClass, probeMessage, probeStore } from '../storageProbe'
 import { watchAgent } from '../channel'
@@ -8,6 +9,7 @@ import { exactTime, relativeTime } from '../format'
 import SetupGuide from './SetupGuide'
 import { CandidateProvenance } from './CiProvenance'
 import { useConfirm } from './ConfirmDialog'
+import RunWorkflow from './RunWorkflow'
 
 // The repository page's CI tab (BRIEF-CI-P2 D6; P3 D4/D7), read-first
 // and then live: the candidate list (ref, head, actor, status, age,
@@ -114,7 +116,7 @@ function CandidateList({ feed, onOpen }) {
       <div className="table-head ci-row"><span>Ref</span><span>Head</span><span>Actor</span><span>Status</span><span>Age</span><span>Jobs</span></div>
       {rows.map((row) => (
         <button type="button" className="ci-row ci-candidate" key={row.id} onClick={() => onOpen(row.id)}>
-          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}</span>
+          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}</span>
           <code>{row.head}</code>
           <span>{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
           <span className={`status ${statusClass(row.status)}`} title={row.reason}>{statusLabel[row.status] || row.status}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
@@ -146,6 +148,43 @@ function LogView({ attempt, onClose }) {
           <pre className="ci-log-lines">{group.lines.map((line, at) => <span key={at} className={line.result ? `ci-line ${statusClass(line.result === 'success' ? 'passed' : 'failed')}` : 'ci-line'}>{lineText(line)}{'\n'}</span>)}</pre>
         </details>
       ))}
+    </div>
+  )
+}
+
+// the event a run is for, as the ship admitted it (Delivery 1A): the event,
+// who triggered it, the branch and source, the workflow and its revision,
+// and every input with its typed value and how it was decided; technical
+// identifiers in details. Text only.
+function EventFacts({ candidate }) {
+  const e = eventRows(candidate)
+  if (!e) return null
+  return (
+    <div className="ci-event" data-part="event">
+      <dl className="ci-facts">
+        <div><dt>Event</dt><dd><strong>{e.label}</strong> <small className="quiet">{e.name}</small></dd></div>
+        {e.workflow && <div><dt>Workflow</dt><dd>{e.workflowName} <small className="quiet">{e.workflow}{e.revision ? ` at ${shortOid(e.revision)}` : ''}</small></dd></div>}
+        <div><dt>Triggered by</dt><dd>{e.actor}</dd></div>
+        <div><dt>Source</dt><dd>{e.branch} <code>{shortOid(e.source)}</code></dd></div>
+      </dl>
+      {e.inputs.length > 0 && (
+        <div className="ci-list ci-inputs-table">
+          <div className="table-head ci-input-row"><span>Input</span><span>Type</span><span>Value</span><span>Decided by</span></div>
+          {e.inputs.map((i) => <div className="ci-input-row" key={i.id}><code>{i.id}</code><span>{i.type}</span><code>{i.text}</code><span className="quiet">{i.sourceLabel}</span></div>)}
+        </div>
+      )}
+      {(e.name === 'workflow_dispatch' || e.payload) && (
+        <details>
+          <summary>Technical identifiers</summary>
+          <dl className="ci-facts">
+            {e.request && <div><dt>Request</dt><dd><code>{e.request}</code></dd></div>}
+            <div><dt>Source</dt><dd><code>{e.source}</code></dd></div>
+            <div><dt>Revision</dt><dd><code>{e.revision || 'none'}</code></dd></div>
+            <div><dt>Payload sha-256</dt><dd><code>{e.payloadSha256}</code></dd></div>
+          </dl>
+          <pre className="ci-log-lines">{e.payload}</pre>
+        </details>
+      )}
     </div>
   )
 }
@@ -186,10 +225,12 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
         {c.verdictReason && <div><dt>{c.status === 'pending' ? 'Waiting' : 'Verdict'}</dt><dd>{c.verdictReason}</dd></div>}
       </dl>
       {error && <small className="field-error">{error}</small>}
+      <EventFacts candidate={c} />
       <CandidateProvenance data={data} tip={(repo?.refs || []).find((r) => r.name === c.ref)?.oid || ''} onAct={act} busy={busy} confirm={confirm} />
       <div className="form-actions">
         {c.trust === 'untrusted' && c.status !== 'skipped' && <button className="button primary" disabled={busy !== ''} title={approveHint(policy)} onClick={() => act('approve', ciActions.approve(c.id))}>{busy === 'approve' ? 'Approving…' : 'Approve and run trusted'}</button>}
-        {c.status !== 'pending' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
+        {c.status !== 'pending' && c.mode !== 'manual' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
+        {c.mode === 'manual' && <small className="quiet">A manual run is not re-run in place: run the workflow again from Run workflow, which admits its inputs under the policy now.</small>}
       </div>
       <div className="ci-list">
         <div className="table-head ci-attempt-row"><span>Job</span><span>Daemon</span><span>Status</span><span>Started</span><span>Finished</span><span>Log</span></div>
@@ -221,11 +262,12 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
 export default function CiTab({ repo, onMutate }) {
   const [open, setOpen] = useState('')
   const [guide, setGuide] = useState(false)
+  const [running, setRunning] = useState(false)
   const [policy, setPolicy] = useState(null)
   const feed = useRepositoryFeed(repo.name)
   const probe = useStorageProbe()
   const pip = feedPip(feed.status)
-  useEffect(() => { setOpen('') }, [repo.name])
+  useEffect(() => { setOpen(''); setRunning(false) }, [repo.name])
   useEffect(() => { let live = true; ci.policy(repo.name).then((p) => { if (live) setPolicy(p) }).catch(() => {}); return () => { live = false } }, [repo.name])
   const firstRun = noRunnerMessage(policy?.ciProtected || [], feed.runners)
   const liveCandidate = open ? (feed.raw || []).find((c) => c.id === open) || null : null
@@ -237,10 +279,12 @@ export default function CiTab({ repo, onMutate }) {
           <StoragePip probe={probe} />
           <span className={`ci-feed ci-feed-${pip}`} title={pip === 'live' ? 'Subscribed: the ship pushes every change.' : pip === 'polling' ? 'The channel is down: the list re-reads every 10 s; Refresh reads now.' : 'Connecting to the ship.'}><span className={`ci-pip ${pip === 'live' ? 'good' : pip === 'polling' ? 'warn' : ''}`} /> {pip}</span>
           {!open && <button className="text-button" onClick={() => { feed.load(''); probe.run() }}>Refresh</button>}
+          {!open && !running && <button className="button" onClick={() => setRunning(true)}>Run workflow</button>}
         </div>
       </div>
       {(probe.state === 'unreachable' || probe.state === 'cors') && <div className="empty ci-first-run ci-storage-warning">{probeMessage(probe.state, probe.host)}</div>}
       {firstRun && <div className="empty ci-first-run">{firstRun} <button type="button" className="text-button" onClick={() => setGuide(true)}>Setup guide</button></div>}
+      {running && !open && <RunWorkflow repo={repo} onClose={() => setRunning(false)} onCreated={(id) => { setRunning(false); setOpen(id); feed.load('') }} />}
       {open ? <CandidatePage id={open} live={liveCandidate} policy={policy?.untrusted} repo={repo} onBack={() => { setOpen(''); feed.load('') }} onMutate={onMutate} /> : <CandidateList feed={feed} onOpen={setOpen} />}
       {guide && <SetupGuide onClose={() => setGuide(false)} />}
     </section>

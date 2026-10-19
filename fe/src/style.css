@@ -767,3 +767,16 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-history { margin: 0.5rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
 .ci-history ul { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; font-size: 0.9rem; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .ci-recovery-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* the Run workflow form and a run's event (Delivery 1A) */
+.ci-run-workflow { margin-bottom: 16px; }
+.ci-run-choice { align-items: end; }
+.ci-inputs { display: grid; gap: 10px; margin: 12px 0; }
+.ci-input, .ci-input-field { display: grid; gap: 4px; }
+.ci-input-name code { font-weight: 600; }
+.ci-input input[type="checkbox"] { justify-self: start; }
+.ci-input-empty { display: flex; gap: 6px; align-items: center; }
+.ci-event { margin: 8px 0 12px; }
+.ci-input-row { display: grid; grid-template-columns: minmax(120px, 1fr) 110px minmax(160px, 2fr) 120px; gap: 8px; align-items: baseline; padding: 4px 0; }
+.ci-input-row code { overflow-wrap: anywhere; }
+.ci-manual-tag { white-space: nowrap; }

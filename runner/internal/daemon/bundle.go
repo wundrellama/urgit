@@ -66,8 +66,12 @@ type bundleManifest struct {
 	Lock          string   `json:"lock"`
 	WorkspaceSHA  string   `json:"workspace_sha256"`
 	Mode          string   `json:"mode"`
-	Actions       []string `json:"actions"`
-	Downloads     []string `json:"downloads"`
+	// the event the job runs for and, for a manual run, the sha-256 of
+	// the event.json beside this file (Delivery 1A)
+	Event       string   `json:"event"`
+	EventSHA256 string   `json:"event_sha256,omitempty"`
+	Actions     []string `json:"actions"`
+	Downloads   []string `json:"downloads"`
 }
 
 // assembleBundle builds work/bundle. Nothing from the runner's own
@@ -175,6 +179,19 @@ func (d *Daemon) assembleBundle(ctx context.Context, a *ship.Assignment, work st
 			return nil, err
 		}
 	}
+	// the run's event payload (Delivery 1A), a push's or a manual run's,
+	// exactly as signed, at the bundle's root: act reads it with -e at the
+	// guest's work root
+	event, eventSHA := "", ""
+	if a.Manifest != nil {
+		event = a.Manifest.Event
+	}
+	if a.EventPayload != "" {
+		if err := os.WriteFile(filepath.Join(dir, eventFile), []byte(a.EventPayload), 0o644); err != nil {
+			return nil, err
+		}
+		eventSHA = eventContext(a.EventPayload)
+	}
 	sha, err := guest.WorkspaceDigest(src)
 	if err != nil {
 		return nil, fmt.Errorf("workspace digest: %w", err)
@@ -195,7 +212,8 @@ func (d *Daemon) assembleBundle(ctx context.Context, a *ship.Assignment, work st
 	}
 	m := bundleManifest{
 		Attempt: a.Attempt, Candidate: a.Candidate, OID: a.OID, Baseline: baseline, WorkflowsOID: b.WorkflowsOID,
-		HarnessPaths: a.HarnessPaths, ReplacedPaths: b.Replaced, Lock: lock, WorkspaceSHA: sha, Mode: mode, Actions: actions, Downloads: downloads,
+		HarnessPaths: a.HarnessPaths, ReplacedPaths: b.Replaced, Lock: lock, WorkspaceSHA: sha, Mode: mode,
+		Event: event, EventSHA256: eventSHA, Actions: actions, Downloads: downloads,
 	}
 	if m.HarnessPaths == nil {
 		m.HarnessPaths = []string{}

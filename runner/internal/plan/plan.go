@@ -5,6 +5,7 @@
 package plan
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -171,24 +172,27 @@ func SafeFilename(s string) string {
 	).Replace(s)
 }
 
-// ProjectionName is the workflow name act sees for an attempt: the
-// attempt id, a slash, the original name (CI-PROJECT-1.1). act names a
-// job's container and volumes from sha256(workflow.Name/job.Name) and
-// force-removes an existing container of that name, so two attempts on
-// the same job on one Docker daemon must not share the workflow name.
+// ProjectionName is the run name act sees for an attempt's job: the
+// attempt id, a slash, the job's own name or else its id (CI-PROJECT-1.1).
+// act names a job's container, volumes and services network from
+// sha256(<workflow name>/<run name>) and force-removes an existing
+// container of that name, so two attempts on the same job on one Docker
+// daemon must not share it. The attempt goes in the run name, never in
+// the workflow's name, which is github.workflow; github.job is the id.
 func ProjectionName(attempt, original string) string {
 	return attempt + "/" + original
 }
 
 // Project writes the single-job projection of a workflow: the original
 // bytes with every job but jobID removed, jobID's own `needs` and
-// job-level `if` keys removed, and the top-level `name:` rewritten to
-// ProjectionName(attempt, original) — inserted when the workflow has
-// none, where act would have used the file name. Nothing else is
-// re-encoded: the projection is cut from the original text by the line
-// numbers yaml.v3 reports, so every other kept line is byte-identical to
-// the source. act then runs only what the ship admitted, under a name no
-// other attempt shares.
+// job-level `if` keys removed, and jobID's `name:` replaced by one line
+// holding ProjectionName(attempt, its name) — or its id when it has no
+// name — right after the job's key. Nothing else is re-encoded: the
+// projection is cut from the original text by the line numbers yaml.v3
+// reports, so every other kept line, the workflow's own `name:` among
+// them, is byte-identical to the source. act then runs only what the ship
+// admitted, under a run name no other attempt shares. A job written as a
+// flow mapping has no line of its own for the name and is refused.
 func Project(data []byte, jobID, attempt, fileName string) ([]byte, error) {
 	return ProjectImages(data, jobID, attempt, fileName, nil)
 }
@@ -210,9 +214,8 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 	}
 	lines := strings.SplitAfter(string(data), "\n")
 	total := len(lines)
-	// top-level keys in document order, to bound the jobs block; the
-	// name key's own line (its scalar sits on it) is the one rewritten
-	var jobsKey, jobsVal, nameKey, nameVal *yaml.Node
+	// top-level keys in document order, to bound the jobs block
+	var jobsKey, jobsVal *yaml.Node
 	var jobsEnd = total // exclusive, 0-based line index
 	for i := 0; i+1 < len(top.Content); i += 2 {
 		k, v := top.Content[i], top.Content[i+1]
@@ -220,18 +223,10 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 			jobsKey, jobsVal = k, v
 			continue
 		}
-		if k.Value == "name" && k.Column == 1 {
-			nameKey, nameVal = k, v
-		}
 		if jobsKey != nil && k.Line-1 < jobsEnd {
 			jobsEnd = k.Line - 1
 		}
 	}
-	original := fileName
-	if nameVal != nil && nameVal.Kind == yaml.ScalarNode {
-		original = nameVal.Value
-	}
-	nameLine := "name: " + ProjectionName(attempt, original) + "\n"
 	if jobsKey == nil || jobsVal.Kind != yaml.MappingNode {
 		return nil, errors.New("workflow has no jobs mapping")
 	}
@@ -262,54 +257,75 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 	if chosen == nil {
 		return nil, fmt.Errorf("job %q is not in the workflow", jobID)
 	}
-	// lines to drop inside the chosen job: needs and if, each from its key
-	// line to the line before the next key of the job mapping
+	if chosen.value.Kind != yaml.MappingNode || chosen.value.Style&yaml.FlowStyle != 0 || len(chosen.value.Content) == 0 {
+		return nil, fmt.Errorf("job %q is not a block mapping: the projection names the job's run on a line of its own", jobID)
+	}
+	// the job's run name: the attempt, then the job's own name (act
+	// interpolates it, so an expression is kept as written) or its id
+	runName := jobID
+	if name := mappingValue(chosen.value, "name"); name != nil {
+		if name.Kind != yaml.ScalarNode {
+			return nil, fmt.Errorf("job %q: name is not a string", jobID)
+		}
+		runName = name.Value
+	}
+	nameLine := strings.Repeat(" ", chosen.value.Content[0].Column-1) + "name: " + yamlQuoted(ProjectionName(attempt, runName)) + "\n"
+	// lines to drop inside the chosen job: needs, if and its own name,
+	// each from its key line to the line before the next key of the job
+	// mapping
 	drop := map[int]bool{}
-	if chosen.value.Kind == yaml.MappingNode {
-		type keyLine struct {
-			name       string
-			start, end int
+	type keyLine struct {
+		name       string
+		start, end int
+	}
+	var keys []keyLine
+	for i := 0; i+1 < len(chosen.value.Content); i += 2 {
+		keys = append(keys, keyLine{name: chosen.value.Content[i].Value, start: chosen.value.Content[i].Line - 1})
+	}
+	sort.Slice(keys, func(a, b int) bool { return keys[a].start < keys[b].start })
+	for i := range keys {
+		if i+1 < len(keys) {
+			keys[i].end = keys[i+1].start
+		} else {
+			keys[i].end = chosen.end
 		}
-		var keys []keyLine
-		for i := 0; i+1 < len(chosen.value.Content); i += 2 {
-			keys = append(keys, keyLine{name: chosen.value.Content[i].Value, start: chosen.value.Content[i].Line - 1})
-		}
-		sort.Slice(keys, func(a, b int) bool { return keys[a].start < keys[b].start })
-		for i := range keys {
-			if i+1 < len(keys) {
-				keys[i].end = keys[i+1].start
-			} else {
-				keys[i].end = chosen.end
-			}
-			if keys[i].name == "needs" || keys[i].name == "if" {
-				for l := keys[i].start; l < keys[i].end; l++ {
-					drop[l] = true
-				}
+		if keys[i].name == "needs" || keys[i].name == "if" || keys[i].name == "name" {
+			for l := keys[i].start; l < keys[i].end; l++ {
+				drop[l] = true
 			}
 		}
 	}
 	var out strings.Builder
-	if nameKey == nil {
-		out.WriteString(nameLine)
-	}
 	for l := 0; l < total; l++ {
-		if nameKey != nil && l == nameKey.Line-1 {
-			out.WriteString(nameLine)
-			continue
-		}
 		if l >= jobsKey.Line && l < jobsEnd {
-			// inside the jobs block: keep only the chosen job's lines
+			// inside the jobs block: keep only the chosen job's lines, its
+			// run name right after its key
 			if l < chosen.start || l >= chosen.end || drop[l] {
 				continue
 			}
+			line := lines[l]
 			if len(images) > 0 {
-				out.WriteString(renameImage(lines[l], images))
-				continue
+				line = renameImage(line, images)
 			}
+			out.WriteString(line)
+			if l == chosen.start {
+				out.WriteString(nameLine)
+			}
+			continue
 		}
 		out.WriteString(lines[l])
 	}
 	return []byte(out.String()), nil
+}
+
+// yamlQuoted is s as a YAML double-quoted scalar: a JSON string is one,
+// its escapes YAML's own
+func yamlQuoted(s string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // renameImage rewrites one job line that names an image (`container:`,

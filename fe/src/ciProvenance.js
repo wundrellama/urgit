@@ -62,6 +62,7 @@ export function modeLabel(candidate = {}) {
   switch (candidate.mode) {
     case 'trial': return { label: 'trial', detail: `Runs the candidate's own harness, unprivileged, always in the VM; its evidence never lands and never replaces required evidence${candidate.trialOf ? ` (a twin of ${candidate.trialOf})` : ''}.` }
     case 'shadow': return { label: 'shadow', detail: 'A comparison run for an external event; it never lands and never deploys.' }
+    case 'manual': return { label: 'manual', detail: `Runs the promoted baseline's workflow${candidate.baseline ? ` (${String(candidate.baseline).slice(0, 12)})` : ''} on this branch's tip because an operator dispatched it, with the inputs shown; it never lands, never satisfies the required checks and receives no credentials.` }
     default: return { label: 'required', detail: candidate.baseline ? `Runs the promoted baseline's harness (${String(candidate.baseline).slice(0, 12)}) against this exact checkout under policy generation ${candidate.generation ?? '?'}.` : 'Required checks come from a promoted baseline; none is promoted for this branch yet.' }
   }
 }

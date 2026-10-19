@@ -9,18 +9,21 @@
 ::    (sur/ci-state-q11) and state-1 (sur/ci-state-1).  none is claimed to
 ::    have been deployed.  the first three carry the tag %0, so the tag
 ::    never decides: a %0 state must fit exactly one of them, as a noun.
-::    state-1 is tagged %1.  the current state is state-2, tagged %2: an
-::    attempt gains the addresses each granted DNS name was pinned to
-::    (CI-P4-NET-1, pinned addresses shown per run).  a %0 shape is
-::    converted to state-1, and state-1 to state-2.  an unknown, partial,
+::    state-1 is tagged %1.  state-2, tagged %2, gave an attempt the
+::    addresses each granted DNS name was pinned to (CI-P4-NET-1, pinned
+::    addresses shown per run); it is frozen as sur/ci-state-2.  the
+::    current state is state-3, tagged %3 (Delivery 1A): a candidate gains
+::    its trigger, the event it runs for, and a lock its manual-run
+::    inventory.  a %0 shape is converted to state-1, state-1 to state-2,
+::    and state-2 to state-3.  an unknown, partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -40,8 +43,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %3
+    ?:  !=(~ (mole |.(;;(state-3:ci old))))  &+%current
+    |+'a %3 state that is not exactly state-3: partial or corrupt'
+  ::
       %2
-    ?:  !=(~ (mole |.(;;(state-2:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-2:ci-state-2 old))))  &+%state-2
     |+'a %2 state that is not exactly state-2: partial or corrupt'
   ::
       %1
@@ -63,7 +70,7 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-2:ci]
+  ^-  [=shape new=state-3:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
@@ -71,11 +78,103 @@
     !!
   :-  p.found
   ?-  p.found
-    %current  ;;(state-2:ci old)
-    %state-1  (from-state-1 ;;(state-1:ci-state-1 old))
-    %q11  (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old)))
-    %review06  (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old)))
-    %base  (from-state-1 (from-base ;;(state-0:ci-state-base old)))
+    %current  ;;(state-3:ci old)
+    %state-2  (from-state-2 ;;(state-2:ci-state-2 old))
+    %state-1  (from-state-2 (from-state-1 ;;(state-1:ci-state-1 old)))
+    %q11  (from-state-2 (from-state-1 (from-q11 ;;(state-0:ci-state-q11 old))))
+    %review06  (from-state-2 (from-state-1 (from-review06 ;;(state-0:ci-state-review06 old))))
+    %base  (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old))))
+  ==
+::
+::  state-2: its twenty-eight fields as they are, under the tag %3.  each
+::  candidate is a push run, as every candidate before state-3 was, and
+::  each lock has no manual-run inventory, none being read before state-3
+::  (~, which is not an empty inventory: its revision is resolved again
+::  to list its manual workflows)
+::
+++  from-state-2
+  |=  o=state-2:ci-state-2
+  ^-  state-3:ci
+  ;;  state-3:ci
+  :*  %3
+      (~(run by candidates.o) candidate-from-2)
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      (~(run by locks.o) lock-from-2)
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+  ==
+::
+::  a candidate of state-2: every field as it was, and its trigger a push
+::
+++  candidate-from-2
+  |=  c=candidate:ci-state-2
+  ^-  candidate:ci
+  :*  id.c
+      repo.c
+      ref.c
+      head.c
+      base.c
+      candidate.c
+      conflict.c
+      status.c
+      attempts.c
+      plan.c
+      plan-oid.c
+      verdict-reason.c
+      actor.c
+      via.c
+      trust.c
+      pull.c
+      created.c
+      updated.c
+      mode.c
+      generation.c
+      baseline.c
+      lock.c
+      incarnation.c
+      sandbox.c
+      trial-of.c
+      harness-differs.c
+      [%push ~]
+  ==
+::
+::  a lock of state-2: every field as it was, and no inventory
+::
+++  lock-from-2
+  |=  l=lock:ci-state-2
+  ^-  lock:ci
+  :*  digest.l
+      repo.l
+      revision.l
+      nodes.l
+      resolved.l
+      resolver.l
+      bytes.l
+      notices.l
+      ~
   ==
 ::
 ::  state-1: its twenty-eight fields as they are, under the tag %2, and
@@ -84,8 +183,8 @@
 ::
 ++  from-state-1
   |=  o=state-1:ci-state-1
-  ^-  state-2:ci
-  ;;  state-2:ci
+  ^-  state-2:ci-state-2
+  ;;  state-2:ci-state-2
   :*  %2
       candidates.o
       daemons.o
@@ -122,7 +221,7 @@
 ::
 ++  attempt-from-1
   |=  a=attempt:ci-state-1
-  ^-  attempt:ci
+  ^-  attempt:ci-state-2
   :*  id.a
       candidate.a
       assignment.a

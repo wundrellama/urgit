@@ -98,7 +98,8 @@ func TestPrereqEnv(t *testing.T) {
 
 // CI-PROJECT-1: for each of ERPit's eight jobs, the projection has exactly
 // one job, no needs, no job-level if, and the job's subtree is byte-identical
-// to the original's minus those lines
+// to the original's minus those lines and its name, which becomes the
+// attempt's run name (CI-PROJECT-1.1)
 func TestProjectERPit(t *testing.T) {
 	files := map[string][]string{
 		"suite.yml":         {"plan", "structural", "suite"},
@@ -140,17 +141,30 @@ func TestProjectERPit(t *testing.T) {
 			if body["runs-on"] == nil || body["steps"] == nil {
 				t.Errorf("%s %s: runs-on/steps missing", file, job)
 			}
-			// byte-identity: the original block minus its needs/if lines
+			// byte-identity: the original block minus its needs/if lines and
+			// its own name, with the attempt's run name right after its key
 			original, err := JobText(data, job, false)
 			if err != nil {
 				t.Fatal(err)
 			}
+			var originalDoc struct {
+				Jobs map[string]struct {
+					Name string `yaml:"name"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(data, &originalDoc); err != nil {
+				t.Fatal(err)
+			}
+			runName := originalDoc.Jobs[job].Name
+			if runName == "" {
+				runName = job
+			}
 			var kept []string
 			skipping := false
-			for _, line := range strings.SplitAfter(original, "\n") {
+			for i, line := range strings.SplitAfter(original, "\n") {
 				trimmed := strings.TrimLeft(line, " ")
 				indent := len(line) - len(trimmed)
-				if indent == 4 && (strings.HasPrefix(trimmed, "needs:") || strings.HasPrefix(trimmed, "if:")) {
+				if indent == 4 && (strings.HasPrefix(trimmed, "needs:") || strings.HasPrefix(trimmed, "if:") || strings.HasPrefix(trimmed, "name:")) {
 					skipping = true
 					continue
 				}
@@ -159,6 +173,9 @@ func TestProjectERPit(t *testing.T) {
 				}
 				skipping = false
 				kept = append(kept, line)
+				if i == 0 {
+					kept = append(kept, "    name: "+yamlQuoted(ProjectionName("0v1.att", runName))+"\n")
+				}
 			}
 			want := strings.Join(kept, "")
 			got, err := JobText(projected, job, false)
@@ -166,33 +183,19 @@ func TestProjectERPit(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got != want {
-				t.Errorf("%s %s: projected job subtree differs from the original minus needs/if\n--- want\n%s\n--- got\n%s", file, job, want, got)
+				t.Errorf("%s %s: projected job subtree differs from the original minus needs/if/name plus the run name\n--- want\n%s\n--- got\n%s", file, job, want, got)
 			}
-			// CI-PROJECT-1.1: the name is prefixed with the attempt id; every
-			// other top-level line before jobs: is the original text
-			var originalDoc struct {
-				Name string `yaml:"name"`
-			}
-			_ = yaml.Unmarshal(data, &originalDoc)
-			if doc.Name != "0v1.att/"+originalDoc.Name {
-				t.Errorf("%s %s: projected name %q, want %q", file, job, doc.Name, "0v1.att/"+originalDoc.Name)
-			}
+			// CI-PROJECT-1.1: the workflow keeps its own name (github.workflow);
+			// every line before jobs: is the original text
 			originalHead := string(data[:strings.Index(string(data), "\njobs:\n")+1])
 			projectedHead := string(projected[:strings.Index(string(projected), "\njobs:\n")+1])
-			wantHead := strings.Replace(originalHead, "name: "+originalDoc.Name+"\n", "name: 0v1.att/"+originalDoc.Name+"\n", 1)
-			if projectedHead != wantHead {
-				t.Errorf("%s %s: the text before jobs: changed beyond the name line\n--- want\n%s\n--- got\n%s", file, job, wantHead, projectedHead)
+			if projectedHead != originalHead {
+				t.Errorf("%s %s: the text before jobs: changed\n--- want\n%s\n--- got\n%s", file, job, originalHead, projectedHead)
 			}
 		}
 	}
 	if _, err := Project([]byte("on: [push]\njobs:\n  a:\n    runs-on: x\n    steps: []\n"), "zz", "0v1", "w.yml"); err == nil {
 		t.Fatal("projecting a job that does not exist must fail")
-	}
-	// a workflow with no name: act would use the file name, so the
-	// projection inserts one from it
-	unnamed, err := Project([]byte("on: [push]\njobs:\n  a:\n    runs-on: x\n    steps: []\n"), "a", "0v1", "w.yml")
-	if err != nil || !strings.HasPrefix(string(unnamed), "name: 0v1/w.yml\non: [push]\n") {
-		t.Fatalf("unnamed workflow projection: %q %v", unnamed, err)
 	}
 	if ProjectionName("0v9", "suite") != "0v9/suite" {
 		t.Fatal("ProjectionName")

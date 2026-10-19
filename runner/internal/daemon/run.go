@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -475,17 +476,26 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 	logf("plan POST -> %s", resp.Error())
 }
 
-// projectionNameOf reads the workflow's own name (or the file name when
-// it has none) and prefixes it the way the projection did.
-func projectionNameOf(original []byte, attempt, fileName string) string {
+// projectionNameOf is the name act runs the projected job under, as its
+// lines name the job (CI-PROJECT-1.1): the workflow's own name (or the
+// file name when it has none), a slash, the attempt's run name for the job
+// — its own name as written, or its id.
+func projectionNameOf(original []byte, attempt, fileName, jobID string) string {
 	var doc struct {
 		Name string `yaml:"name"`
+		Jobs map[string]struct {
+			Name string `yaml:"name"`
+		} `yaml:"jobs"`
 	}
 	_ = yaml.Unmarshal(original, &doc)
 	if doc.Name == "" {
 		doc.Name = fileName
 	}
-	return plan.ProjectionName(attempt, doc.Name)
+	run := doc.Jobs[jobID].Name
+	if run == "" {
+		run = jobID
+	}
+	return doc.Name + "/" + plan.ProjectionName(attempt, run)
 }
 
 func workflowFiles(src string) ([]string, error) {
@@ -537,10 +547,20 @@ func (d *Daemon) runJob(ctx, daemonCtx context.Context, a *ship.Assignment, h sa
 		d.fail(ctx, a, "workflow: "+err.Error(), logf)
 		return
 	}
+	// the event the ship signed for (Delivery 1A): act runs the job on it,
+	// a push or a manual run, each on the payload the ship signed for and
+	// the actor it names; never a push in a manual run's place
+	event, err := eventOf(a)
+	if err != nil {
+		d.fail(ctx, a, "event: "+err.Error(), logf)
+		return
+	}
 	argv := []string{
-		env.ActBinary, "push",
+		env.ActBinary, event.Name,
 		"-W", env.WorkRoot + "/projected/" + a.Workflow,
 		"-j", a.Job,
+		"-e", path.Join(env.WorkRoot, eventFile),
+		"--actor", event.Actor,
 		"-P", "ubuntu-latest=" + d.cfg.ActImage,
 	}
 	// every label of the job's runs-on maps to the runner image (P3 D2b):
@@ -606,7 +626,7 @@ func (d *Daemon) runJob(ctx, daemonCtx context.Context, a *ship.Assignment, h sa
 		shown = append(shown, "--secret", g.Name+"=***")
 		values = append(values, g.Value)
 	}
-	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow), strings.Join(shown, " "))
+	logf("projection-name %s (CI-PROJECT-1.1); running: %s", projectionNameOf(original, a.Attempt, a.Workflow, a.Job), strings.Join(shown, " "))
 	stream, done, err := d.box.Run(ctx, h, env.SourceDir, argv, nil)
 	if err != nil {
 		d.fail(ctx, a, "act start: "+err.Error(), logf)

@@ -21,7 +21,11 @@
 ::    the state is versioned from now on.  state-1, tagged %1, was the
 ::    Q11 schema's fields exactly; it is frozen byte for byte as
 ::    sur/ci-state-1.  state-2, tagged %2, is state-1 with each attempt's
-::    pinned addresses (CI-P4-NET-1, pinned addresses shown per run).
+::    pinned addresses (CI-P4-NET-1, pinned addresses shown per run); it
+::    is frozen byte for byte as sur/ci-state-2.  state-3, tagged %3
+::    (Delivery 1A, manual runs), is state-2 with each candidate's
+::    trigger — the event it runs for, a push or a manual dispatch with
+::    its admitted inputs — and each lock's manual-run inventory.
 ::    every earlier shape shared the tag %0 and is frozen byte for byte in
 ::    a sur file of its own — ci-state-base, ci-state-review06 and
 ::    ci-state-q11 — and every shape is converted explicitly by
@@ -56,7 +60,11 @@
 ::  the VM, a defaulted automation is manual, a defaulted outcome is
 ::  unknown, a defaulted dependency kind is unknown.
 ::
-+$  mode  ?(%required %trial %shadow)
+::  a manual run (%manual, Delivery 1A) is another mode that never lands:
+::  it runs the promoted baseline's workflow on a ref's tip because an
+::  operator dispatched it, and is no evidence for any landing
+::
++$  mode  ?(%required %trial %manual %shadow)
 +$  sandbox-need  ?(%container %vm)
 +$  automation  ?(%automatic %manual)
 +$  outcome  ?(%known %unknown)
@@ -123,6 +131,11 @@
       resolver=daemon-id
       bytes=@ud
       notices=(list @t)
+      ::  state-3: the workflows of the revision that declare
+      ::  workflow_dispatch, as the resolver's pinned compiler read them;
+      ::  ~ for a lock resolved before manual runs were read, which is
+      ::  not an empty inventory (contract §5; Delivery 1A)
+      inventory=(unit (list dispatch-workflow))
   ==
 ::
 ::  the promoted baseline of one branch (D5; rider 02): the approved
@@ -292,6 +305,72 @@
       [%unsupported raw=@t]
   ==
 ::
+::  manual runs (Delivery 1A).  a workflow that declares
+::  `on.workflow_dispatch` is listed with its declared inputs as the
+::  pinned compiler read them at the baseline revision; the ship checks
+::  each definition and admits a run's values against them, and never
+::  parses YAML.  a default is the text the workflow wrote: ~ is no
+::  default, which is not an empty one.
+::
++$  input-kind  ?(%boolean %choice %number %environment %string)
+::
++$  dispatch-input
+  $:  id=@t
+      kind=input-kind
+      description=@t
+      required=?
+      default=(unit @t)
+      options=(list @t)
+  ==
+::
+::  one workflow of a revision's manual-run inventory; .refusal is why it
+::  cannot be run manually, with its inputs dropped
+::
++$  dispatch-workflow
+  $:  workflow=@t
+      name=@t
+      inputs=(list dispatch-input)
+      refusal=(unit @t)
+  ==
+::
+::  an admitted value, typed as its input declares: a number keeps its
+::  plain decimal text; a choice and an environment are strings
+::
++$  input-value
+  $%  [%boolean p=?]
+      [%number p=@t]
+      [%string p=@t]
+  ==
+::
+::  how an input of a run got its value.  $? bunts to its last entry: a
+::  defaulted source claims nothing was supplied.
+::
++$  input-source  ?(%supplied %default %absent)
+::
++$  admitted-input
+  $:  id=@t
+      kind=input-kind
+      source=input-source
+      value=(unit input-value)
+  ==
+::
+::  the event a run is for, immutable once the run exists (CI-SIGN-1):
+::  a push (the candidate's ref, head and actor say which), or a manual
+::  dispatch of one workflow file with the inputs admitted for it, the
+::  event payload act reads, and the operator's idempotency key.  every
+::  attempt's signed manifest binds the event and the payload's digest.
+::
++$  trigger
+  $%  [%push ~]
+      $:  %dispatch
+          workflow=@t
+          name=@t
+          inputs=(list admitted-input)
+          payload=@t
+          request=@t
+      ==
+  ==
+::
 ::  one planned job.  jobs are keyed by [workflow id], never by id alone:
 ::  `needs` never crosses a workflow file.  .name is the workflow's real
 ::  name as `act -l` printed it from the unprojected candidate; the name
@@ -354,6 +433,8 @@
       sandbox=sandbox-need
       trial-of=(unit candidate-id)
       harness-differs=?
+      ::  state-3: the event the run is for (Delivery 1A)
+      =trigger
   ==
 ::
 ::  a runner daemon.  a record is created when the operator mints an
@@ -499,8 +580,8 @@
 ::
 +$  pin  [name=@t addrs=(list @t)]
 ::
-+$  state-2
-  $:  %2
++$  state-3
+  $:  %3
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -655,5 +736,22 @@
       ::  history, revision and evidence digest the runner's latest report
       ::  shows waiting; never delegable, and the actor is the session's ship
       [%request-history-transition id=daemon-id revision=@ud evidence=@t actor=@p]
+      ::  a manual run (Delivery 1A): one workflow that declares
+      ::  workflow_dispatch at the ref's promoted baseline, run on the
+      ::  ref's tip with typed inputs admitted against its declaration.
+      ::  .tip and .generation are what the operator's form was loaded
+      ::  at: a branch that moved or a policy that changed since refuses.
+      ::  .request is the operator's idempotency key: the same request
+      ::  is the same run.  the actor is the session's ship, never JSON.
+      $:  %dispatch-workflow
+          repo=@t
+          ref=@t
+          workflow=@t
+          inputs=(list [name=@t value=input-value])
+          tip=oid:git
+          generation=@ud
+          request=@t
+          actor=@p
+      ==
   ==
 --

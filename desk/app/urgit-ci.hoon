@@ -45,14 +45,22 @@
 ::    evidence; a privileged attempt whose outcome is uncertain is marked
 ::    unknown and never retried; shadow candidates land nothing.
 ::
-::    persisted state is state-2 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-1, and the three tagged %0 — is
-::    converted to it explicitly on load by lib/ci-migrate, or refused
-::    with its reason.
+::    Delivery 1A adds manual runs: an operator dispatches one workflow
+::    that declares workflow_dispatch at a ref's promoted baseline, with
+::    typed inputs admitted against the declaration the resolver's pinned
+::    compiler read (the lock's inventory); the run is a candidate of mode
+::    %manual, never landable, whose trigger — the event, the admitted
+::    inputs and the payload act reads — every attempt's signed manifest
+::    binds.
+::
+::    persisted state is state-3 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-2, state-1, and the three tagged
+::    %0 — is converted to it explicitly on load by lib/ci-migrate, or
+::    refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-event, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-dispatch, ci-event, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -102,7 +110,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-2:ci
+=|  state-3:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -135,7 +143,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-2, or converted to it explicitly, or refused with its
+    ::  current state-3, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::
     =/  loaded  (load:ci-migrate q.old)
@@ -145,7 +153,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-2")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-3")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [~[connect-card:hc keys-card:hc] this(polls ~)]
@@ -622,11 +630,15 @@
 ::
 ::  %urgit names the scratch ref by the head and base alone, so every
 ::  candidate of one head and base shares it: the twin's materialization
-::  re-sets what the first one's close released
+::  re-sets what the first one's close released.  a manual run keeps its
+::  source under a scratch ref of its own (Delivery 1A): two runs of one
+::  tip never release each other's objects
 ::
 ++  scratch-ref
   |=  =candidate:ci
   ^-  @t
+  ?:  ?=(%dispatch -.trigger.candidate)
+    (rap 3 ~['refs/ci/run/' (scot %uv id.candidate)])
   (rap 3 ~['refs/ci/candidate/' (scot %uv (sham [repo ref head base]:candidate))])
 ::
 ::  every candidate staged for this head and base that %urgit has not
@@ -784,6 +796,16 @@
   ?.  =(repo repo.c)  [cards.acc state]
   ?.  ?=(?(%pending %running %passed) status.c)  [cards.acc state]
   ?:  =(%skipped status.c)  [cards.acc state]
+  ::  a manual run is bound to the generation it was dispatched under
+  ::  (Delivery 1A): one still open is cancelled, never re-planned under
+  ::  another baseline with inputs admitted against an earlier one; one
+  ::  that passed keeps its verdict, which lands nothing
+  ::
+  ?:  ?=(%dispatch -.trigger.c)
+    ?:  =(%passed status.c)  [cards.acc state]
+    =/  release=card
+      (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.c (scratch-ref c)])
+    [(snoc cards.acc release) (cancel-run c why)]
   ::  a landed candidate keeps its record; one still open is reset
   ::
   ?:  ?&(?=(^ verdict-reason.c) =('landed' u.verdict-reason.c))  [cards.acc state]
@@ -828,6 +850,34 @@
     d(running (~(dif in running.d) (silt attempts.c)))
   =.  candidates
     (~(put by candidates) id c(status %skipped, verdict-reason `why, updated now.bowl))
+  state
+::
+::  an open manual run whose policy changed (Delivery 1A): its running
+::  attempts are cancelled (the daemon hears `attempt is closed`) and the
+::  run closes superseded with the reason; it is dispatched again, never
+::  re-bound
+::
+++  cancel-run
+  |=  [c=candidate:ci why=@t]
+  ^-  _state
+  =/  reason=@t
+    %+  rap  3
+    :~  'cancelled: '  why
+        '; a manual run keeps the policy it was dispatched under: dispatch it again'
+    ==
+  =.  attempts
+    %+  roll  attempts.c
+    |=  [id=attempt-id:ci acc=_attempts]
+    =/  found=(unit attempt:ci)  (~(get by acc) id)
+    ?~  found  acc
+    ?.  =(%running status.u.found)  acc
+    (~(put by acc) id u.found(status %cancelled, reason `reason, finished `now.bowl))
+  =.  daemons
+    %-  ~(run by daemons)
+    |=  d=daemon:ci
+    d(running (~(dif in running.d) (silt attempts.c)))
+  =.  candidates
+    (~(put by candidates) id.c c(status %skipped, verdict-reason `reason, updated now.bowl))
   state
 ::
 ::  a candidate whose bindings changed under it: running attempts are
@@ -1211,6 +1261,11 @@
     =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
     ?~  found  ~|('no such candidate' !!)
     =/  old=candidate:ci  u.found
+    ::  a manual run's inputs were admitted under the policy then
+    ::  (Delivery 1A): it is dispatched again, never re-run in place
+    ?:  ?=(%dispatch -.trigger.old)
+      ~|  'a manual run is not re-run in place: dispatch it again from Run workflow, which admits its inputs under the policy now'
+      !!
     =/  new-id=candidate-id:ci  (rerun-id repo.old ref.old head.old base.old)
     =/  next=candidate:ci
       %:  fresh-candidate
@@ -2283,6 +2338,200 @@
         ~[(scot %uv id) ' on runner ' (scot %uv id.act) ': epoch ' (crip (a-co:co epoch)) ' (' selection.u.history ')']
       ==
     (emit ~)
+  ::
+      ::  a manual run (Delivery 1A): one workflow that declares
+      ::  workflow_dispatch at the ref's promoted baseline, run on the
+      ::  ref's tip with its typed inputs admitted against the declaration
+      ::  the baseline's lock lists.  the run is a candidate of mode
+      ::  %manual — trusted, never landable, planned and scheduled like a
+      ::  trial — whose trigger every attempt's signed manifest binds.  the
+      ::  same request is the same run.  the authority is the ci-policy
+      ::  role's, the actor the session's ship (or the dojo's), never JSON.
+      ::
+      %dispatch-workflow
+    =+  (require-authority repo.act %ci-policy ~ actor.act)
+    =/  admitted  (admit-dispatch act)
+    ?:  ?=(%| -.admitted)  ~|(reason.p.admitted !!)
+    ?.  fresh.p.admitted  (emit ~)
+    =/  run=candidate:ci  run.p.admitted
+    =.  candidates  (~(put by candidates) id.run run)
+    =.  audit
+      %:  record-audit
+        actor.act
+        'dispatch-workflow'
+        repo.act
+        %+  rap  3
+        :~  workflow.act  ' on '  ref.act  ' at '  (oid-text:git-codec tip.act)
+            ' (run '  (scot %uv id.run)  ')'
+        ==
+      ==
+    ::  the source stays reachable for the runner under the run's own
+    ::  scratch ref, set before the plan attempt is handed out
+    ::
+    =/  keep=card
+      %+  urgit-git-poke  /scratch/(scot %uv id.run)
+      [%set-ref repo.act (scratch-ref run) tip.act]
+    =/  scheduled=out  schedule
+    [[keep cards.scheduled] state.scheduled polls.scheduled]
+  ==
+::
+::  the manual-run inventory of one ref (Delivery 1A): the workflows that
+::  declare workflow_dispatch at its promoted baseline, as the baseline's
+::  lock lists them, or why the ref offers none.  the inventory is what
+::  the resolver's pinned compiler read at the revision the CI-policy
+::  authority promoted: never a second catalog, never the tip's own YAML
+::
+++  ref-inventory
+  |=  [repo=@t ref=@t]
+  ^-  (each [=baseline:ci workflows=(list dispatch-workflow:ci)] @t)
+  =/  base=(unit baseline:ci)  (~(get by baselines) [repo ref])
+  ?~  base
+    :-  %|
+    %+  rap  3
+    :~  'no promoted baseline for '  ref
+        ': promote a harness revision (Settings → CI policy) to run its workflows'
+    ==
+  ?~  lock.u.base
+    [%| (rap 3 ~['the promoted baseline of ' ref ' has no workflows'])]
+  =/  found=(unit lock:ci)  (~(get by locks) u.lock.u.base)
+  ?~  found
+    [%| 'the baseline\'s lock is not on this ship: resolve and promote the revision again']
+  ?~  inventory.u.found
+    :-  %|
+    %+  rap  3
+    :~  'the baseline\'s lock was resolved before manual runs were listed: '
+        'resolve and promote its revision again to list its manual workflows'
+    ==
+  [%& u.base u.inventory.u.found]
+::
+::  the environments of a repository, by name: what an environment input
+::  may name.  naming one releases none of its credentials
+::
+++  environment-names
+  |=  repo=@t
+  ^-  (set @t)
+  %-  silt
+  %+  murn  ~(tap by environments)
+  |=([[r=@t name=@t] *] ?.(=(r repo) ~ `name))
+::
+::  a manual run's id: the repository, the actor and the operator's
+::  request, so a repeated request is the same run
+::
+++  dispatch-id
+  |=  [repo=@t actor=@p request=@t]
+  ^-  candidate-id:ci
+  (sham [%ci-dispatch repo actor request])
+::
+::  what a manual run's admission decides (Delivery 1A), as the route
+::  answers it: the run to record (or the one this request recorded
+::  before), else a status, the reason and any refused fields.  the
+::  operator's view is bound: the tip and the policy generation the form
+::  was loaded at must be the ref's and the repository's now.  every
+::  input is admitted against the declaration the baseline's lock lists.
+::
+++  admit-dispatch
+  |=  act=action:ci
+  ^-  (each [run=candidate:ci fresh=?] [status=@ud reason=@t fields=(list [@t @t])])
+  ?>  ?=(%dispatch-workflow -.act)
+  =/  bad
+    |=  reason=@t
+    ^-  (each [run=candidate:ci fresh=?] [status=@ud reason=@t fields=(list [@t @t])])
+    [%| 409 reason ~]
+  ?.  (request-valid:ci-dispatch request.act)
+    [%| 400 'request is 1 to 64 letters, digits, dots, dashes and underscores' ~]
+  =/  id=candidate-id:ci  (dispatch-id repo.act actor.act request.act)
+  =/  existing=(unit candidate:ci)  (~(get by candidates) id)
+  ?^  existing
+    ?:  (same-dispatch u.existing act)  [%& u.existing %.n]
+    (bad (rap 3 ~['request ' request.act ' was already used for another dispatch']))
+  =/  inventory=(each [=baseline:ci workflows=(list dispatch-workflow:ci)] @t)
+    (ref-inventory repo.act ref.act)
+  ?:  ?=(%| -.inventory)  (bad p.inventory)
+  =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo.act ref.act)
+  ?~  tip  (bad 'ci: %urgit cannot be read; the ref cannot be checked')
+  ?~  u.tip  (bad (rap 3 ~[ref.act ' has no tip']))
+  ?.  =(tip.u.u.tip tip.act)
+    %-  bad
+    %+  rap  3
+    :~  ref.act  ' moved since the form was loaded: its tip is now '
+        (oid-text:git-codec tip.u.u.tip)  '; reload and dispatch again'
+    ==
+  ?.  =(generation.act (current-generation repo.act))
+    %-  bad
+    %+  rap  3
+    :~  'the CI policy of '  repo.act  ' changed since the form was loaded (generation '
+        (crip (a-co:co generation.act))  ', now '  (crip (a-co:co (current-generation repo.act)))
+        '): reload the workflow\'s inputs and dispatch again'
+    ==
+  =/  hits=(list dispatch-workflow:ci)
+    (skim workflows.p.inventory |=(w=dispatch-workflow:ci =(workflow.w workflow.act)))
+  ?~  hits
+    %-  bad
+    %+  rap  3
+    :~  'workflow '
+        workflow.act
+        ' does not declare workflow_dispatch at the baseline revision of '
+        ref.act
+    ==
+  ?^  refusal.i.hits
+    (bad (rap 3 ~['workflow ' workflow.act ' cannot be run manually: ' u.refusal.i.hits]))
+  =/  admitted
+    %:  admit:ci-dispatch
+      inputs.i.hits
+      inputs.act
+      (environment-names repo.act)
+      (credential-values repo.act)
+    ==
+  ?:  ?=(%| -.admitted)
+    [%| 422 (refused-inputs p.admitted) p.admitted]
+  =/  payload=@t  (payload:ci-dispatch ref.act workflow.act actor.act p.admitted)
+  =/  run=candidate:ci
+    %:  fresh-candidate
+      id  repo.act  ref.act  tip.act  tip.act  actor.act  %session  %trusted  ~  %manual  ~
+    ==
+  :+  %&
+    %=  run
+      candidate  `tip.act
+      trigger  [%dispatch workflow.act name.i.hits p.admitted payload request.act]
+    ==
+  %.y
+::
+::  whether a recorded run is what this request asks again: the same ref,
+::  source, workflow and supplied values
+::
+++  same-dispatch
+  |=  [run=candidate:ci act=action:ci]
+  ^-  ?
+  ?>  ?=(%dispatch-workflow -.act)
+  ?.  ?=(%dispatch -.trigger.run)  %.n
+  =/  supplied=(map @t input-value:ci)
+    %-  malt
+    %+  murn  inputs.trigger.run
+    |=  i=admitted-input:ci
+    ^-  (unit [@t input-value:ci])
+    ?.  ?=(%supplied source.i)  ~
+    ?~  value.i  ~
+    `[id.i u.value.i]
+  ?&  =(ref.run ref.act)
+      =(head.run tip.act)
+      =(workflow.trigger.run workflow.act)
+      =(supplied (malt inputs.act))
+  ==
+::
+::  the 422's reason: every refused input, in the order admission found
+::  them
+::
+++  refused-inputs
+  |=  fields=(list [field=@t reason=@t])
+  ^-  @t
+  =/  texts=(list @t)
+    %+  turn  fields
+    |=([field=@t reason=@t] ?:(=('' field) reason (rap 3 ~[field ' ' reason])))
+  =/  count=@ud  (lent fields)
+  %+  rap  3
+  :~  (crip (a-co:co count))
+      ?:(=(1 count) ' input refused: ' ' inputs refused: ')
+      (join:ci-plan texts '; ')
   ==
 ::
 ::  a fresh candidate record with its P4 bindings taken from the current
@@ -2303,7 +2552,7 @@
         ?~(promoted ~ `revision.u.promoted)
         ?~(promoted ~ lock.u.promoted)
         (current-incarnation repo)
-        %vm  trial-of  %.n
+        %vm  trial-of  %.n  [%push ~]
     ==
   c(sandbox (sandbox-for c %.n))
 ::
@@ -2512,6 +2761,7 @@
   ^-  manifest:ci-provenance
   =/  net=[profile=@t destinations=(list @t)]
     ?~(workflow.a ['locked' ~] ?~(job.a ['locked' ~] (network-of repo.c u.workflow.a u.job.a)))
+  =/  event=[name=@t payload=@t]  (run-event c a)
   :*  incarnation.c
       repo.c
       ref.c
@@ -2527,6 +2777,39 @@
       ?-(kind.a %plan 'plan', %resolve 'resolve', %job `@t`mode.c)
       profile.net
       (scope-text:ci-provenance destinations.net)
+      ::  the event the run is for (Delivery 1A) and its payload's digest;
+      ::  a resolve runs none
+      name.event
+      ?:(=('' payload.event) '' (context-digest:ci-dispatch payload.event))
+  ==
+::
+::  the event an attempt's job receives (Delivery 1A), as act is told it:
+::  its name and the payload act reads with -e, both bound by the signed
+::  manifest, whose context is the payload's digest.  a push renders its
+::  payload from the candidate; a manual run carries the payload admitted
+::  with it; a resolve runs no job and receives none
+::
+++  run-event
+  |=  [c=candidate:ci a=attempt:ci]
+  ^-  [name=@t payload=@t]
+  ?:  ?=(%resolve kind.a)  ['' '']
+  ?-  -.trigger.c
+    %push  ['push' (push-payload-of c)]
+    %dispatch  ['workflow_dispatch' payload.trigger.c]
+  ==
+::
+::  a push candidate's event payload (push-payload): its ref, its base as
+::  before, and as after the integration object the manifest signs as its
+::  source ('' until %urgit has materialized it); its actor pushed
+::
+++  push-payload-of
+  |=  c=candidate:ci
+  ^-  @t
+  %:  push-payload:ci-dispatch
+    ref.c
+    (oid-text:git-codec base.c)
+    (oid-hex:ci-provenance candidate.c)
+    actor.c
   ==
 ::
 ::  a decided skip is recorded as an attempt no daemon ran: %skipped, with
@@ -3164,6 +3447,8 @@
       `'passed as a trial of the candidate\'s own harness: trial evidence never satisfies the required checks; promote the revision to make it the baseline'
     ?:  ?&(=(%passed status.verdict) =(%shadow mode.candidate))
       `'passed as a shadow run: nothing lands'
+    ?:  ?&(=(%passed status.verdict) =(%manual mode.candidate))
+      `'passed as a manual run: nothing lands'
     reason.verdict
   =/  next=candidate:ci
     %=  candidate
@@ -3494,6 +3779,8 @@
         ['mode' s+mode.manifest]
         ['network' s+network.manifest]
         ['network-scope' s+scope.manifest]
+        ['event' s+event.manifest]
+        ['context' s+context.manifest]
     ==
   =/  base=(unit baseline:ci)  (~(get by baselines) [repo.candidate ref.candidate])
   =/  lock-json=json
@@ -3561,6 +3848,10 @@
       ['lock' lock-json]
       ['downloads' downloads-json]
       ['read-token' s+(scot %uv (read-token attempt.assignment))]
+      ::  the event payload act reads (Delivery 1A), a push's or a manual
+      ::  run's, whose sha-256 the manifest's context binds; '' for a
+      ::  resolve
+      ['event-payload' s+payload:(run-event candidate attempt)]
       :-  'mappings'
       :-  %a
       %+  turn  (~(gut by resolve-mappings) candidate.assignment ~)
@@ -3604,6 +3895,35 @@
           ['size' (numb:enjs:format size.n)]
           ['path' s+path.n]
           ['refusal' ?~(refusal.n ~ s+u.refusal.n)]
+      ==
+      ::  the manual workflows the resolver listed (Delivery 1A): null
+      ::  when the lock predates them, which is not an empty list
+      :-  'inventory'
+      ?~  inventory.l  ~
+      [%a (turn u.inventory.l dispatch-workflow-json)]
+  ==
+::
+::  one workflow of a lock's manual-run inventory, as the run form and the
+::  lock view read it
+::
+++  dispatch-workflow-json
+  |=  w=dispatch-workflow:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['workflow' s+workflow.w]
+      ['name' s+name.w]
+      ['refusal' ?~(refusal.w ~ s+u.refusal.w)]
+      :-  'inputs'
+      :-  %a
+      %+  turn  inputs.w
+      |=  i=dispatch-input:ci
+      %-  pairs:enjs:format
+      :~  ['id' s+id.i]
+          ['type' s+kind.i]
+          ['description' s+description.i]
+          ['required' b+required.i]
+          ['default' ?~(default.i ~ s+u.default.i)]
+          ['options' [%a (turn options.i |=(o=@t s+o))]]
       ==
   ==
 ::
@@ -3944,6 +4264,13 @@
       ?~  ext.line  i.t.t.t.t.t.site
       (rap 3 ~[i.t.t.t.t.t.site '.' u.ext.line])
     (handle-candidate-read eyre-id req segment)
+  ::  manual runs (Delivery 1A): the Run workflow form's data, and the
+  ::  dispatch itself; both the ship's session
+  ::
+  ?:  ?=([%apps %urgit %api %ci %repository @ %dispatch ~] site)
+    ?:  =(%'GET' method)  (handle-dispatch-inventory eyre-id req i.t.t.t.t.t.site)
+    ?:  =(%'POST' method)  (handle-dispatch eyre-id req i.t.t.t.t.t.site)
+    (emit (give-error eyre-id 405 'method not allowed'))
   (emit (give-error eyre-id 404 'ci route not found'))
 ::
 ::  enrollment: the token is the credential.  its hash must match a
@@ -4193,15 +4520,13 @@
   ::
   ?:  ?&(?=(%job kind.u.found) ?=(^ job.u.found) !=(u.job.u.found job-id.event))
     (emit (give-error eyre-id 409 'event job does not match the assignment'))
-  ::  the name act ran the job under, as act's own line says it:
-  ::  `job` is `<workflow name>/<job id>` (CI-PROJECT-1.1)
+  ::  the name act ran the job under, as act's own line says it: `job` is
+  ::  `<workflow name>/<run name>`, and the projection names the run
+  ::  `<attempt>/<the job's name or id>` (CI-PROJECT-1.1)
   ::
   =/  seen-under=(unit @t)
     ?^  projection-name.u.found  projection-name.u.found
-    =/  full=@ud  (met 3 job.event)
-    =/  tail=@ud  +((met 3 job-id.event))
-    ?.  (gth full tail)  ~
-    `(end [3 (sub full tail)] job.event)
+    `job.event
   =/  next=attempt:ci
     %=  u.found
       events  +(events.u.found)
@@ -4502,6 +4827,7 @@
       ['harnessDiffers' b+harness-differs.candidate]
       ['bindingsCurrent' b+(bindings-current candidate)]
       ['landable' b+(landable candidate)]
+      ['event' (event-json candidate)]
       :-  'approvals'
       :-  %a
       %+  turn
@@ -4522,6 +4848,69 @@
       =/  found=(unit attempt:ci)  (~(get by attempts) id)
       ?~  found  ~
       `(attempt-summary-json u.found)
+  ==
+::
+::  the event a run is for, as its record holds it (Delivery 1A): the
+::  event act gives its jobs, who triggered it, the ref and the exact
+::  source, the workflow revision its jobs run from, the payload act
+::  reads with its digest (a push's once its integration object exists),
+::  and for a manual run the workflow and the typed inputs as admitted
+::  with how each was decided.  nothing here is secret: admission refused
+::  any input holding a stored credential's value
+::
+++  event-json
+  |=  c=candidate:ci
+  ^-  json
+  =/  common=(list [@t json])
+    :~  ['actor' s+(scot %p actor.c)]
+        ['ref' s+ref.c]
+        ['source' s+(oid-text:git-codec head.c)]
+        ['revision' ?~(baseline.c ~ s+(oid-text:git-codec u.baseline.c))]
+    ==
+  ?-  -.trigger.c
+      %push
+    =/  payload=@t  (push-payload-of c)
+    %-  pairs:enjs:format
+    :*  ['name' s+'push']
+        ['workflow' ~]
+        ['inputs' [%a ~]]
+        ['payload' ?~(candidate.c ~ s+payload)]
+        ['payloadSha256' ?~(candidate.c ~ s+(context-digest:ci-dispatch payload))]
+        common
+    ==
+  ::
+      %dispatch
+    %-  pairs:enjs:format
+    :*  ['name' s+'workflow_dispatch']
+        ['workflow' s+workflow.trigger.c]
+        ['workflowName' s+name.trigger.c]
+        ['request' s+request.trigger.c]
+        ['payload' s+payload.trigger.c]
+        ['payloadSha256' s+(context-digest:ci-dispatch payload.trigger.c)]
+        :-  'inputs'
+        :-  %a
+        %+  turn  inputs.trigger.c
+        |=  i=admitted-input:ci
+        %-  pairs:enjs:format
+        :~  ['id' s+id.i]
+            ['type' s+kind.i]
+            ['source' s+source.i]
+            ['value' ?~(value.i ~ (input-value-json u.value.i))]
+        ==
+        common
+    ==
+  ==
+::
+::  an admitted value as JSON of its type: a boolean, a number (its plain
+::  decimal text), or text
+::
+++  input-value-json
+  |=  v=input-value:ci
+  ^-  json
+  ?-  -.v
+    %boolean  b+p.v
+    %number  [%n p.v]
+    %string  s+p.v
   ==
 ::
 ++  approval-json
@@ -4951,12 +5340,20 @@
         bytes.p.parsed
       depth.p.parsed
     ?^  problem  [%| u.problem]
+    ::  the manual-run inventory the resolver's compiler read (Delivery
+    ::  1A): none from a resolver that sends none, never an empty one; a
+    ::  malformed one refuses the lock
+    ::
+    =/  inventory=(each (unit (list dispatch-workflow:ci)) @t)
+      ?.  ?=([%o *] u.jon)  [%& ~]
+      (parse-inventory:ci-dispatch (~(get by p.u.jon) 'dispatch'))
+    ?:  ?=(%| -.inventory)  [%| (rap 3 ~['dispatch inventory: ' p.inventory])]
+    =/  revision=oid:git  (fall candidate.candidate head.candidate)
     =/  digest=@ux
-      %^  lock-digest:ci-provenance
-        repo.candidate
-        (fall candidate.candidate head.candidate)
-      nodes.p.parsed
-    [%& digest repo.candidate (fall candidate.candidate head.candidate) nodes.p.parsed now.bowl daemon.u.found bytes.p.parsed notices.p.parsed]
+      (lock-digest-with:ci-provenance repo.candidate revision nodes.p.parsed p.inventory)
+    :*  %&  digest  repo.candidate  revision  nodes.p.parsed  now.bowl  daemon.u.found
+        bytes.p.parsed  notices.p.parsed  p.inventory
+    ==
   =.  daemons  (touch-daemon daemon.u.found)
   =/  clear=(list card)  (mirror-token-cards u.found)
   ?:  ?=(%| -.verdict)
@@ -5083,26 +5480,181 @@
     (emit (give-error eyre-id 400 p.parsed))
   =/  applied=(each out tang)  (mule |.((handle-action p.parsed)))
   ?:  ?=(%| -.applied)
-    ::  the refusal's own words: the first quoted cord in the trace (a
-    ::  ~| message renders as 'text'), else the trace's first line
-    ::
-    =/  lines=(list @t)
-      %+  turn  p.applied
-      |=  =tank
-      (crip (of-wall:format (wash [0 200] tank)))
-    =/  quoted=(list @t)
-      (skim lines |=(line=@t ?&(!=('' line) =('\'' (end [3 1] line)))))
-    =/  reason=@t
-      ?^  quoted  i.quoted
-      ?^  lines  i.lines
-      'action refused'
-    (emit (give-error eyre-id 409 (strip-quotes reason)))
+    (emit (give-error eyre-id 409 (trace-reason p.applied)))
   =.  state  state.p.applied
   =.  polls  polls.p.applied
   %-  emit
   %+  weld
     cards.p.applied
   (give-json eyre-id 200 (pairs:enjs:format ~[['ok' b+%.y] ['action' s+-.p.parsed]]))
+::
+::  a refusal's own words: the first quoted cord in the trace (a ~|
+::  message renders as 'text'), else the trace's first line
+::
+++  trace-reason
+  |=  =tang
+  ^-  @t
+  =/  lines=(list @t)
+    %+  turn  tang
+    |=  =tank
+    (crip (of-wall:format (wash [0 200] tank)))
+  =/  quoted=(list @t)
+    (skim lines |=(line=@t ?&(!=('' line) =('\'' (end [3 1] line)))))
+  =/  reason=@t
+    ?^  quoted  i.quoted
+    ?^  lines  i.lines
+    'action refused'
+  (strip-quotes reason)
+::
+::  the Run workflow form's data (Delivery 1A): for every ref of the
+::  repository with a promoted baseline, its tip, whether it offers manual
+::  runs (else why not) and the manual workflows its baseline's lock
+::  lists, each with its declared inputs or the reason it cannot run; the
+::  repository's environments by name, for an environment input; the
+::  policy generation a dispatch binds; and whether this session's ship
+::  may dispatch at all.  a ref with no baseline is not listed
+::
+++  handle-dispatch-inventory
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  (emit (give-json eyre-id 200 (dispatch-inventory-json repo)))
+::
+++  no-dispatch-authority
+  ^-  @t
+  'only the repository\'s owner, or a ship holding its ci-policy role, runs a workflow manually'
+::
+++  dispatch-inventory-json
+  |=  repo=@t
+  ^-  json
+  =/  allowed=?  (authorized repo %ci-policy ~ our.bowl)
+  =/  refs=(list @t)
+    %+  sort
+      %+  murn  ~(tap by baselines)
+      |=([[r=@t ref=@t] *] ?.(=(r repo) ~ `ref))
+    aor
+  %-  pairs:enjs:format
+  :~  ['repo' s+repo]
+      ['generation' (numb:enjs:format (current-generation repo))]
+      ['authorized' b+allowed]
+      ['authority' ?:(allowed ~ s+no-dispatch-authority)]
+      ['environments' [%a (turn (sort ~(tap in (environment-names repo)) aor) |=(n=@t s+n))]]
+      :-  'refs'
+      :-  %a
+      %+  turn  refs
+      |=  ref=@t
+      ^-  json
+      =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo ref)
+      =/  inventory  (ref-inventory repo ref)
+      =/  base=(unit baseline:ci)  (~(get by baselines) [repo ref])
+      =/  reason=(unit @t)
+        ?:  ?=(%| -.inventory)  `p.inventory
+        ?~  tip  `'ci: %urgit cannot be read; the ref cannot be checked'
+        ?~  u.tip  `(rap 3 ~[ref ' has no tip'])
+        ~
+      %-  pairs:enjs:format
+      :~  ['ref' s+ref]
+          ['tip' ?~(tip ~ ?~(u.tip ~ s+(oid-text:git-codec tip.u.u.tip)))]
+          ['baseline' ?~(base ~ s+(oid-text:git-codec revision.u.base))]
+          ['lock' ?~(base ~ ?~(lock.u.base ~ s+(hex-bytes:ci-provenance u.lock.u.base 32)))]
+          ['available' b+?=(~ reason)]
+          ['reason' ?~(reason ~ s+u.reason)]
+          :-  'workflows'
+          :-  %a
+          ?:  ?=(%| -.inventory)  ~
+          (turn workflows.p.inventory dispatch-workflow-json)
+      ==
+  ==
+::
+::  a manual run (Delivery 1A): the session's ship dispatches one
+::  workflow on one ref with typed inputs.  the body is {ref, workflow,
+::  tip, generation, request, inputs: {<id>: value}}; an actor, event or
+::  repository in it is never read.  the answer is the run as the ship
+::  recorded it ({run, fresh}: fresh is false for a request it recorded
+::  before), or the refusal {error, fields}: 400 a malformed body, 401 no
+::  session, 403 no ci-policy authority, 409 a refusal and its reason,
+::  422 refused inputs with each field's reason
+::
+++  handle-dispatch
+  |=  [eyre-id=@ta req=inbound-request:eyre repo=@t]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  =/  jon=(unit json)  (body-json req)
+  ?~  jon
+    (emit (give-error eyre-id 400 'valid JSON body required'))
+  =/  parsed=(each action:ci [status=@ud reason=@t fields=(list [@t @t])])
+    (parse-dispatch repo u.jon our.bowl)
+  ?:  ?=(%| -.parsed)
+    (emit (give-refusal eyre-id p.parsed))
+  ?.  (authorized repo %ci-policy ~ our.bowl)
+    (emit (give-error eyre-id 403 no-dispatch-authority))
+  =/  checked  (admit-dispatch p.parsed)
+  ?:  ?=(%| -.checked)
+    (emit (give-refusal eyre-id p.checked))
+  =/  applied=(each out tang)  (mule |.((handle-action p.parsed)))
+  ?:  ?=(%| -.applied)
+    (emit (give-error eyre-id 409 (trace-reason p.applied)))
+  =.  state  state.p.applied
+  =.  polls  polls.p.applied
+  =/  run=(unit candidate:ci)  (~(get by candidates) id.run.p.checked)
+  ?~  run
+    (emit (give-error eyre-id 500 'the run was not recorded'))
+  %-  emit
+  %+  weld  cards.p.applied
+  %^  give-json  eyre-id  200
+  (pairs:enjs:format ~[['run' (candidate-json u.run)] ['fresh' b+fresh.p.checked]])
+::
+::  the dispatch body as the action, every input a typed value: a JSON
+::  boolean, number or text.  a value of another JSON type is a refused
+::  field; a missing required field is a malformed body
+::
+++  parse-dispatch
+  |=  [repo=@t jon=json actor=@p]
+  ^-  (each action:ci [status=@ud reason=@t fields=(list [@t @t])])
+  =/  required  'ref, workflow, tip (40 hex), generation and request are required'
+  ?.  ?=([%o *] jon)  [%| 400 'the body is not a JSON object' ~]
+  =/  ref=(unit @t)  (string-at 'ref' jon)
+  =/  workflow=(unit @t)  (string-at 'workflow' jon)
+  =/  tip=(unit oid:git)  (oid-field 'tip' jon)
+  =/  generation=(unit (unit @ud))  (number-at 'generation' jon)
+  =/  request=(unit @t)  (string-at 'request' jon)
+  ?:  |(?=(~ ref) ?=(~ workflow) ?=(~ tip) ?=(~ request))  [%| 400 required ~]
+  ?.  ?&(?=(^ generation) ?=(^ u.generation))  [%| 400 required ~]
+  =/  raw=(unit json)  (~(get by p.jon) 'inputs')
+  =/  given=(each (list [@t json]) ~)
+    ?~  raw  [%& ~]
+    ?~  u.raw  [%& ~]
+    ?.  ?=([%o *] u.raw)  [%| ~]
+    [%& ~(tap by p.u.raw)]
+  ?:  ?=(%| -.given)  [%| 400 'inputs must be an object of input values' ~]
+  =/  typed=(list (each [@t input-value:ci] [@t @t]))
+    %+  turn  p.given
+    |=  [name=@t value=json]
+    ^-  (each [@t input-value:ci] [@t @t])
+    ?+  value  [%| name 'must be true or false, a number or text']
+      [%b *]  [%& name [%boolean p.value]]
+      [%n *]  [%& name [%number p.value]]
+      [%s *]  [%& name [%string p.value]]
+    ==
+  =/  errors=(list [@t @t])
+    (murn typed |=(t=(each [@t input-value:ci] [@t @t]) ?:(?=(%| -.t) `p.t ~)))
+  ?^  errors  [%| 422 (refused-inputs errors) errors]
+  =/  inputs=(list [name=@t value=input-value:ci])
+    (murn typed |=(t=(each [@t input-value:ci] [@t @t]) ?:(?=(%& -.t) `p.t ~)))
+  [%& [%dispatch-workflow repo u.ref u.workflow inputs u.tip u.u.generation u.request actor]]
+::
+::  a refusal with the reason and every refused field by name
+::
+++  give-refusal
+  |=  [eyre-id=@ta status=@ud reason=@t fields=(list [@t @t])]
+  ^-  (list card)
+  %^  give-json  eyre-id  status
+  %-  pairs:enjs:format
+  :~  ['error' s+reason]
+      ['fields' (pairs:enjs:format (turn fields |=([field=@t why=@t] [field s+why])))]
+  ==
 ::
 ++  strip-quotes
   |=  text=@t
@@ -6008,8 +6560,10 @@
       ^-  (unit @t)
       ?.  ?=([@ ~] path)  ~
       `i.path
+    ::  a push plans every push-triggered job; a manual run the one
+    ::  workflow it dispatched (Delivery 1A)
     =/  checked=(each (list job:ci) @t)
-      (validate:ci-plan (oid-text:git-codec oid) names p.parsed)
+      (validate-for:ci-plan (oid-text:git-codec oid) names p.parsed trigger.candidate)
     ?:  ?=(%| -.checked)  checked
     =/  unreadable=(unit @t)
       %+  find-first:ci-plan  workflows.p.parsed

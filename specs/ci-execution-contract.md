@@ -81,18 +81,18 @@ Tar validation on extraction (M09): no absolute path, no `..`, no component that
 
 The helper is PID 1 (`init=/sbin/urgit-guest`): mounts `proc sys dev devpts shm run tmp cgroup2`, sets hostname `urgit-<attempt-prefix>` and a fresh `/etc/machine-id`, brings up `lo` (and `eth0` only when the kernel cmdline carries `urgit.ip=`), starts `dockerd` on `/run/docker.sock` with `--data-root /var/lib/docker`, waits for `docker info`, creates the job network `urgit-ci`, then listens. It has no host-shell, path-open, mint or "run host command" operation; `EXEC` runs inside the guest only.
 
-## 5. Signed execution manifest (version 2; D5, P10)
+## 5. Signed execution manifest (version 3; D5, P10; Delivery 1A)
 
 The ship signs, with the CI key, the jam of the noun
 
 ```
-[2 recipient attempt operation expiry nonce manifest]
-manifest = [incarnation repo ref candidate oid baseline lock generation workflow job trust sandbox mode network network-scope]
+[3 recipient attempt operation expiry nonce manifest]
+manifest = [incarnation repo ref candidate oid baseline lock generation workflow job trust sandbox mode network network-scope event context]
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `2` | @ud | message version; a v1 verifier fails closed with `manifest version 2 is not the version this runner speaks` (no shim) |
+| `3` | @ud | message version (3 binds the run's event, Delivery 1A); a verifier of another version fails closed with `manifest version N is not the version this runner speaks (3)` (no shim) |
 | recipient, attempt, nonce | @uv | as v1 |
 | operation | @t | `assign`, `grant:<name>` or `read:<token-hash>` |
 | expiry | @ud | unix seconds |
@@ -106,11 +106,19 @@ manifest = [incarnation repo ref candidate oid baseline lock generation workflow
 | workflow, job | @t | '' for plan/resolve |
 | trust | @t | `trusted` / `untrusted` |
 | sandbox | @t | `vm` / `container` |
-| mode | @t | `required` / `trial` / `shadow` / `plan` / `resolve` |
+| mode | @t | `required` / `trial` / `manual` / `shadow` / `plan` / `resolve` (`manual`: an operator's dispatch; never landable) |
 | network | @t | the network profile the ship authorized for this job: `locked` (no NIC) or a profile name from the repository's network policy (rider 03) |
 | network-scope | @t | the ship-authorized destinations, canonical: sorted `proto:addr:port` entries joined by `,` ('' for `locked`); the daemon intersects with its own profile's ceiling, the launcher with its own, and neither may widen it |
+| event | @t | the event the run's jobs receive: `push`, or `workflow_dispatch` for a manual run; '' for a resolve. A runner gives back (abandons) any other event, never runs it as a push |
+| context | @t | the sha-256 (64 hex) of the event payload act reads; '' for a resolve, which runs no job. A runner gives back a plan or job whose manifest binds none |
 
-The runner rebuilds the noun from the assignment JSON (`manifest` object) and verifies. Grants sign the same manifest with `operation = grant:<name>`; the mirror read capability signs it with `read:<sha256 of the token>`. Cross-language vectors: `desk/gen/ci-provenance-vector.hoon` prints, for a fixed seed key, the jam hex and signature of the reference manifest and asserts each single-field mutation fails; `runner/internal/sig/manifest_test.go` embeds the same bytes and asserts the same (P10).
+**The event payload** (Delivery 1A). Every plan and job assignment carries `event-payload`, the JSON act reads with `-e`, whose sha-256 the manifest's `context` binds.
+- A manual run's payload is the one admitted with it: `{"inputs": {<id>: <value>}, "ref", "workflow": ".github/workflows/<file>", "sender": {"login": <ship>}}`, with every supplied and defaulted input. act 0.2.89 makes `inputs.<id>` the payload's own value, except that a boolean input is true exactly when its value is the text `"true"` (`pkg/runner/expression.go`, getEvaluatorInputs). So a boolean is that text, as GitHub's `github.event.inputs` carries it; a number is a JSON number, so `inputs.<id>` is a number (`toJSON(inputs.count)` is `0`, never `"0"`), and so is `github.event.inputs.<id>`, which GitHub documents as identical to `inputs` but for booleans; a choice, an environment and a string are text. A number is a double to act, as to GitHub: digits past fifteen significant ones are rounded.
+- A push run's payload is rendered for each attempt from its candidate's immutable fields: `{"ref", "before": <the base it was staged on>, "after": <the integration object, the signed oid>, "deleted": false, "pusher": {"name": <actor>}, "sender": {"login": <actor>}}`. Nothing else of GitHub's push payload is carried (`commits`, `head_commit`, `repository`, `compare`, `created`, `forced`).
+
+The runner refuses, as a tampered assignment, a payload whose sha-256 is not the signed `context`, and a payload beside an empty `context`. It gives back a plan or job whose manifest binds no payload, and refuses before act a payload whose `ref` is not the signed ref, a push payload whose `after` is not the signed oid, and a payload that names no sender. It then runs `act <event> -W <projection> -j <job> -e /work/event.json --actor <sender>`, the payload at the bundle's root (`bundle.json` names `event` and `event_sha256`). So `github.event_name`, `github.actor`, `github.ref`, `github.event` and, for a push, `github.sha` (act takes it from `after` beside `deleted: false`) are the signed ones, never act's defaults (an empty event, the actor `nektos/act`). The single-job projection keeps the workflow's own `name:`, which is `github.workflow` (§6).
+
+The runner rebuilds the noun from the assignment JSON (`manifest` object) and verifies. Grants sign the same manifest with `operation = grant:<name>`; the mirror read capability signs it with `read:<sha256 of the token>`. Cross-language vectors: `desk/gen/ci-provenance-vector.hoon` prints, for a fixed seed key, the jam hex and signature of the reference manifest and asserts each single-field mutation fails; `runner/internal/sig/manifest_test.go` embeds the same bytes and asserts the same (P10). The version-3 reference (a `workflow_dispatch` event with a context) was produced by the Go test and reproduced byte for byte by the Hoon generator on a fake ship, with all 22 single-field mutations, `event` and `context` among them, refused.
 
 **An assignment is its atoms** (`runner/launcher/INTEGRATION.md` §11.13). The @uv fields are signed as atoms: a separator anywhere, or leading zeros, in their text sign the same bytes. The runner binds the assignment's `attempt` and `candidate` to the signed ones by atom. Once the signature verifies, it names the assignment in the ship's spelling (`scot %uv`: no leading zero, groups of five from the right): its attempt and candidate in both fields, and the manifest's incarnation. It uses only that spelling from then on: in the claim, the sandbox, the launcher's record and every later message. A delivery of an attempt already claimed here, under any spelling, is ignored before anything is said to the ship. The recipient must still be the runner's own id as written.
 
@@ -121,13 +129,14 @@ The runner rebuilds the noun from the assignment JSON (`manifest` object) and ve
 ## 6. Immutable input bundle (D4/D5; copied into the guest at `/work`)
 
 ```
-/work/bundle.json      {attempt, candidate, oid, baseline, harness_paths, replaced_paths, lock, workspace_sha256, actions: [...], downloads: [...]}
+/work/bundle.json      {attempt, candidate, oid, baseline, harness_paths, replaced_paths, lock, workspace_sha256, event, event_sha256, actions: [...], downloads: [...]}
 /work/src/             the workspace: the exact candidate tree; every path matched by the branch policy's harness-paths replaced by the baseline's bytes
 /work/actions/<safeFilename(uses)>/   act's action cache: a git checkout of the mirror at the locked commit, `refs/tags/<ref>` and `refs/heads/<ref>` pointing at it, `origin` = the upstream URL act computes (never fetched: --action-offline-mode)
 /work/downloads/<sha256>              inventoried known downloads fetched from the store through the assignment's presigned GET and verified (sha256, size); `index.json` maps URL → sha256, size; mounted read-only into every job container at `/urgit/downloads` (`URGIT_CI_DOWNLOADS`)
 /work/toolcache/<tool>/<version>/x64  RUNNER_TOOL_CACHE prepopulated from inventoried toolchains (setup-go finds Go here and downloads nothing)
 /work/downloads/<sha256>              (also) the docker-archive of every locked container image (`container:`, `services.*.image`, `uses: docker://`), fetched and verified like a download; before act the runner `docker load`s it into the sandbox's own Docker under `urgit-locked/<path>:sha256-<digest>` (a name no registry serves) and verifies the loaded image against the archive (config id, or the rootfs diff ids on a containerd-backed store); the projection names the job's images by that name, so act (`--pull=false`) runs the locked bytes and never asks a registry (P03)
-/work/projected/<workflow>.yml        the single-job projection (CI-PROJECT-1) of the BASELINE's workflow file (required/shadow) or the candidate's (trial)
+/work/projected/<workflow>.yml        the single-job projection (CI-PROJECT-1) of the BASELINE's workflow file (required/shadow) or the candidate's (trial): the assigned job alone, its `needs` and job-level `if` removed, its `name:` replaced by `<attempt>/<its name or id>` (CI-PROJECT-1.1: act names the job's container, volumes and services network from `<workflow name>/<run name>`, so two attempts never share them); the workflow's own `name:` and every other kept line are the original bytes
+/work/event.json                      the event payload the manifest's context binds (§5), byte for byte
 /work/cache/ /work/artifacts/         act's cache and artifact servers
 ```
 
@@ -177,6 +186,8 @@ Transitions:
 | `GET ci/repository/<name>/audit` | the audit list |
 | `GET ci/candidate/<id>` | grows: mode, generation, baseline, lock, sandbox, trial-of, approvals, overrides |
 | `GET ci/shadow/<id>` | the exportable comparison record |
+| `GET ci/repository/<name>/dispatch` | the Run workflow form's data (Delivery 1A): `{repo, generation, authorized, authority, environments, refs: [{ref, tip, baseline, lock, available, reason, workflows: [{workflow, name, refusal, inputs: [{id, type, description, required, default, options}]}]}]}`. One entry per ref with a promoted baseline; its workflows are the inventory the resolver's pinned compiler read at that revision (stored in the baseline's lock, covered by its digest), never a second catalog. A lock resolved before manual runs has no inventory, and the ref says so |
+| `POST ci/repository/<name>/dispatch` | a manual run: `{ref, workflow, tip, generation, request, inputs: {<id>: boolean / number / text}}`. Admitted against the baseline lock's declaration: unknown, duplicate, ill-typed, missing-required, out-of-options and unknown-environment inputs, a value holding a stored credential, a branch that moved (`tip`) or a policy that changed (`generation`) since the form was loaded, all refuse and create nothing. The actor is the session's ship (an `actor`, `event` or `repo` in the body is never read); the authority is the `ci-policy` role. The answer is `{run, fresh}`, the candidate as recorded (`fresh` false when this `request` recorded it before: the same request is the same run, and the same request with other values is refused); else `{error, fields}`: 400, 401, 403, 409 or 422 with each refused input's reason. The run is a candidate of mode `manual`, trusted, VM-required, never landable, released no credentials, and cancelled (`skipped`) if the policy generation moves while it is open |
 | `POST ci/action` | grows the allow-list: `resolve-dependencies`, `promote-baseline`, `revoke-baseline`, `set-harness-paths`, `set-sandbox-requirement`, `set-role`, `clear-role`, `set-environment`, `delete-environment`, `approve-environment`, `record-override`, `stage-shadow`, `compare-shadow`, `cancel-attempt` |
 | daemon: `POST ci/attempt/<id>/lock` | the resolver posts the lock (bearer) |
 | daemon: `POST ci/attempt/<id>/pinned` | `{"pinned": [{"name", "addrs"}]}`, once, when the VM starts: what the launcher pinned each granted DNS name to (bearer). The names must be exactly the DNS names in the attempt's grant, each with 1 to 64 distinct IPv4 addresses; 409 a closed attempt or a second report, 422 anything else. The runner does not run a job whose report is refused (CI-P4-NET-1) |
@@ -230,10 +241,11 @@ This model was written before the code that implements it.
 | the Q11 schema | `submissions/08` | `desk/sur/ci-state-q11.hoon` | 28 |
 | state-1, tagged `%1` (the Q11 fields) | `desk/sur/ci.hoon` at commit `f33a177` | `desk/sur/ci-state-1.hoon` | 28 |
 
-The first three carry the tag `%0`, so the tag cannot tell them apart. State-1 is tagged `%1`. The current state is `state-2`, tagged `%2`: state-1's 28 fields, and each attempt gains `pinned`, the addresses each granted DNS name was pinned to for that run (CI-P4-NET-1, pinned addresses shown per run). Shapes that P4's development went through between the base and review 06 were never preserved; they are not supported and are refused.
+The first three carry the tag `%0`, so the tag cannot tell them apart. State-1 is tagged `%1`. State-2, tagged `%2`, is state-1's 28 fields with each attempt's `pinned` addresses (CI-P4-NET-1); it is frozen byte for byte as `desk/sur/ci-state-2.hoon` (`sur/ci.hoon` at commit `fd75b88`). The current state is `state-3`, tagged `%3` (Delivery 1A): state-2's 28 fields, each candidate gaining `trigger` (`[%push ~]`, or `[%dispatch workflow name inputs payload request]` for a manual run) and each lock gaining `inventory` (the manual workflows its resolver read; `~` for a lock resolved before them, which is not an empty inventory). Shapes that P4's development went through between the base and review 06 were never preserved; they are not supported and are refused.
 
 **Loading.** `on-load` reads the saved state as a noun, never by its vase's type:
-- `%2`: it must be exactly a `state-2`. It loads as it is.
+- `%3`: it must be exactly a `state-3`. It loads as it is.
+- `%2`: it must be exactly a `state-2`. It is converted.
 - `%1`: it must be exactly a `state-1`. It is converted.
 - `%0`: it is checked against each frozen shape (`;;`, which must hold as a fixpoint). If exactly one fits, it is converted. If none fits (an unknown, partial or corrupt state), or more than one fits (an ambiguous one), it is refused.
 - Any other tag, or an atom, is refused.
@@ -241,6 +253,8 @@ The first three carry the tag `%0`, so the tag cannot tell them apart. State-1 i
 A refusal crashes `on-load` with its reason. Nothing is cast, reset or read another way. That Gall then keeps the running version and its saved state is expected, but it is to be qualified live.
 
 **Conversions** (`desk/lib/ci-migrate.hoon`), each written out field by field:
+- **From state-2**: its 28 fields as they are, under the tag `%3`. Each candidate keeps every field and is a push run (`[%push ~]`), as every candidate before state-3 was; each lock keeps every field and has no inventory. A state-2 tagged `%3`, and a state-3 tagged `%2`, are refused.
+- **From state-1** and every earlier shape: to state-2 as below, then from state-2.
 - **From state-1**: its 28 fields as they are, under the tag `%2`. Each attempt keeps every field, and a running one stays running. It has no pinned addresses, since none was reported before state-2.
 - **From a `%0` shape**: first to state-1, as below, then from state-1.
 - **From the Q11 schema**: its 28 fields as they are, under the tag `%1`.
@@ -276,6 +290,7 @@ A refusal crashes `on-load` with its reason. Nothing is cast, reset or read anot
   - each conversion reads every field of its source shape and constructs every field of `state-1`, in order.
 
   Its negative control drops a protected field, and it must fail.
+- **Delivery 1A (2026-10-15, the opus chair's owned fake ship, not a fresh final verification):** the vector's run, 58 of 58, adds state-2 converted to state-3, a state-3 with a manual run and a lock inventory reloaded unchanged, and the mis-tagged and corrupt `%2`/`%3` shapes refused. A persisted upgrade ran: the baseline (state-2) agents, populated through their own routes with an enrolled, a revoked and a minted runner, two credentials, two environments, a role, a resolved lock, a promoted baseline and a running job attempt, then the new desk committed over them. Gall bumped `%urgit-ci` with no error; the tag became `%3`; 25 of 28 fields hashed the same, the candidates (each a push run), the locks (no inventory) and the audit (one `state-migration` entry) changed as specified; the running job attempt stayed running and the enrolled runner kept polling with its bearer (18 of 18 record checks).
 - **Run on a fresh fake ship (2026-10-08):** the Hoon compilation of the frozen shapes, the library, the agent and the vector, and the vector's run (46 of 46). It now covers state-1 converted to state-2, a state-2 with pinned addresses reloaded unchanged, and a state-1 tagged `%2` and a state-2 tagged `%1`, each refused.
 - **One persisted upgrade, run (2026-10-08):** the state-1 agent at commit `f33a177`, installed on a fresh fake ship and given a policy and two credentials through its own actions, then this desk committed over it. Gall bumped `%urgit-ci` with no error. The state's tag became `%2`; 26 of its 27 fields hashed the same, and the audit gained one `state-migration` entry. That state held no attempt, so the attempt conversion is proved by the vector only.
 - **Held:**

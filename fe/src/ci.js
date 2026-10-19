@@ -74,6 +74,9 @@ export function candidateRow(candidate, nowSeconds = Date.now() / 1000) {
     reason: candidate.verdictReason || '',
     ageSeconds,
     pips: attemptPips(candidate.attempts || []),
+    // a manual run (Delivery 1A) is listed with the workflow it ran
+    manual: candidate.event?.name === 'workflow_dispatch',
+    workflowName: candidate.event?.workflowName || candidate.event?.workflow || '',
   }
 }
 

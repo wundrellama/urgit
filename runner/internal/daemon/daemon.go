@@ -657,6 +657,16 @@ func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
 	if err := sig.VerifyManifest(d.ciKey, m, a.Sig.Sig); err != nil {
 		return err
 	}
+	// the event's payload is bound by the signed context (Delivery 1A): act
+	// reads exactly the payload the ship signed for, and a payload the
+	// manifest does not bind is a tampered assignment
+	if a.Manifest.Context == "" {
+		if a.EventPayload != "" {
+			return errors.New("the assignment carries an event payload the signed manifest does not bind")
+		}
+	} else if eventContext(a.EventPayload) != a.Manifest.Context {
+		return errors.New("the event payload does not match the signed context")
+	}
 	// verified: from here the assignment is its atoms, in the one spelling
 	// the ship writes — the claim, the sandbox, the launcher's record and
 	// every message about it (§11.13). The signature and the manifest are
@@ -686,6 +696,20 @@ func (d *Daemon) honourable(a *ship.Assignment) error {
 			return errors.New("resolve assignments need a resolver-capable runner (resolver = true)")
 		}
 		return nil
+	}
+	// the event the run's jobs receive (Delivery 1A): a push, or a manual
+	// dispatch; any other is given back, never run as a push. its payload
+	// is bound by the signed context: a manifest that binds none would run
+	// the job on act's own defaults, so it is given back too
+	switch a.Manifest.Event {
+	case "push", "workflow_dispatch":
+	case "":
+		return errors.New("the signed manifest names no event")
+	default:
+		return fmt.Errorf("event %s is not one this runner runs", a.Manifest.Event)
+	}
+	if a.Manifest.Context == "" {
+		return fmt.Errorf("the signed manifest binds no event payload for its %s", a.Manifest.Event)
 	}
 	if a.Manifest.Sandbox == "vm" && d.box.Kind() != "microvm" {
 		return fmt.Errorf("sandbox requirement vm; this runner is %s", d.box.Kind())
