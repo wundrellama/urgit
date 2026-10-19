@@ -342,12 +342,17 @@ func (d *Daemon) gitCheckout(ctx context.Context, a *ship.Assignment, dir string
 		scratch = "refs/ci/candidate/" + a.Candidate
 	}
 	auth := gitAuth(a)
+	// fetch only what the job needs: the candidate (with its full
+	// history) and the baseline, never every branch and tag of the
+	// repository. A whole-repository clone of a large repository moves
+	// hundreds of MiB per job, and it is what took a ship down.
 	steps := [][]string{
-		append(append([]string{"git"}, auth...), "clone", "--quiet", "--no-checkout", url, dir),
-		append(append([]string{"git", "-C", dir}, auth...), "fetch", "--quiet", "origin", scratch),
+		{"git", "init", "--quiet", dir},
+		{"git", "-C", dir, "remote", "add", "origin", url},
+		append(append([]string{"git", "-C", dir}, auth...), "fetch", "--quiet", "--no-tags", "origin", scratch),
 	}
 	if a.BaselineRef != "" {
-		steps = append(steps, append(append([]string{"git", "-C", dir}, auth...), "fetch", "--quiet", "origin", a.BaselineRef))
+		steps = append(steps, append(append([]string{"git", "-C", dir}, auth...), "fetch", "--quiet", "--no-tags", "origin", a.BaselineRef))
 	}
 	steps = append(steps, []string{"git", "-C", dir, "checkout", "--quiet", "-B", branch, a.OID})
 	for _, argv := range steps {
@@ -356,6 +361,13 @@ func (d *Daemon) gitCheckout(ctx context.Context, a *ship.Assignment, dir string
 		if err != nil {
 			return fmt.Errorf("%s: %s", shownGit(argv), strings.TrimSpace(scrubToken(string(out), a.ReadToken)))
 		}
+	}
+	// the whole-repository clone also brought the revision the candidate
+	// is compared with (a pull request's base), which a workflow may diff
+	// against. Fetch it by name when the ship gives one; a base that is no
+	// longer reachable from any ref is not an error of the checkout.
+	if a.Base != "" && a.Base != a.OID {
+		_ = checkoutCommand(ctx, a, append(append([]string{"git", "-C", dir}, auth...), "fetch", "--quiet", "--no-tags", "origin", a.Base)).Run()
 	}
 	head, err := checkoutCommand(ctx, a, []string{"git", "-C", dir, "rev-parse", "HEAD"}).Output()
 	if err != nil {
