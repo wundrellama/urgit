@@ -181,7 +181,7 @@ export function renderJobDetails(h, model) {
   return h('details', { className: 'ci-job-details', 'data-part': 'job-details' },
     h('summary', null,
       h('span', { 'data-part': 'decision' },
-        d ? [h('span', { className: 'quiet' }, 'Decision: '), h('strong', { className: `status ${d.tone}` }, d.label), ' ', h('small', { className: 'quiet' }, d.reason)] : h('small', { className: 'quiet' }, model.decisionNote)),
+        ...(d ? [h('span', { className: 'quiet' }, 'Decision: '), h('strong', { className: `status ${d.tone}` }, d.label), ' ', h('small', { className: 'quiet' }, d.reason)] : [h('small', { className: 'quiet' }, model.decisionNote)])),
       h('span', { className: 'ci-job-outcome' }, h('span', { className: 'quiet' }, 'Outcome: '), h('strong', { className: `status ${o.tone}`, 'data-part': 'outcome' }, o.label))),
     o.reason && o.reason !== d?.reason && h('div', { className: 'ci-job-section', 'data-part': 'outcome-detail' },
       h('span', { className: 'quiet' }, 'Outcome '), h('small', null, o.reason)),

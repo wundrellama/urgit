@@ -239,7 +239,7 @@
     ?:  (gth (met 3 u.v) max-text)  |+'an expression text exceeds 4096 bytes'
     &+u.v
   ?+  u.kind  |+(rap 3 ~['unknown expression node ' u.kind])
-      %null  &+[[%null ~] count]
+    %null  &+[[%null ~] count]
   ::
       %bool
     =/  v=(unit json)  (~(get by f) 'b')
@@ -672,11 +672,11 @@
   =?  chars  ?=([?(%'-' %'+') *] chars)  t.chars
   =|  whole=tape
   |-  ^-  (unit [s=? e=@s a=@u])
-  ?:  ?=([@ *] chars)
-    ?:  &((gte i.chars '0') (lte i.chars '9'))
-      $(chars t.chars, whole [i.chars whole])
-    (decimal-rest positive (flop whole) chars)
-  (decimal-rest positive (flop whole) chars)
+      ?:  ?=([@ *] chars)
+        ?:  &((gte i.chars '0') (lte i.chars '9'))
+          $(chars t.chars, whole [i.chars whole])
+        (decimal-rest positive (flop whole) chars)
+      (decimal-rest positive (flop whole) chars)
 ::
 ++  decimal-rest
   |=  [positive=? whole=tape chars=tape]
@@ -1283,7 +1283,10 @@
       %obj
     ?:  =(~ p.v)  "\{}"
     =/  inner=tape  (weld indent "  ")
-    =/  keys=(list @t)  (sort ~(tap in ~(key by p.v)) |=([a=@t b=@t] =(%lt (order (trip a) (trip b)))))
+    =/  keys=(list @t)
+      %+  sort
+        ~(tap in ~(key by p.v))
+      |=([a=@t b=@t] =(%lt (order (trip a) (trip b))))
     =/  items=(list tape)
       %+  turn  keys
       |=  k=@t
@@ -1408,15 +1411,15 @@
     =/  args=(list expr:ci)  args.e
     =|  vals=(list val)
     |-  ^-  ran
-    ?^  args
-      =/  a=ran  ^$(e i.args)
-      ?:  ?=(%| -.a)  a
-      $(args t.args, vals [v.p.a vals], fuel fuel.p.a)
-    =/  out=(each val @t)  (apply fn.e (flop vals))
-    ?:  ?=(%| -.out)  out
-    ?:  ?&(?=(%str -.p.out) (gth (met 3 p.p.out) max-value))
-      |+'a value exceeds 1 MiB'
-    &+[p.out %.n fuel]
+        ?^  args
+          =/  a=ran  ^$(e i.args)
+          ?:  ?=(%| -.a)  a
+          $(args t.args, vals [v.p.a vals], fuel fuel.p.a)
+        =/  out=(each val @t)  (apply fn.e (flop vals))
+        ?:  ?=(%| -.out)  out
+        ?:  ?&(?=(%str -.p.out) (gth (met 3 p.p.out) max-value))
+          |+'a value exceeds 1 MiB'
+        &+[p.out %.n fuel]
   ==
 ::
 ::  case(pred, value, ..., default): the value of the first true
@@ -1524,7 +1527,10 @@
   ?+  -.v  [%arr ~]
     %arr  v
       %obj
-    =/  keys=(list @t)  (sort ~(tap in ~(key by p.v)) |=([a=@t b=@t] =(%lt (order (trip a) (trip b)))))
+    =/  keys=(list @t)
+      %+  sort
+        ~(tap in ~(key by p.v))
+      |=([a=@t b=@t] =(%lt (order (trip a) (trip b))))
     [%arr (turn keys |=(k=@t (~(got by p.v) k)))]
   ==
 ::
@@ -1565,8 +1571,8 @@
     =/  sep=@t  ?:((gte (lent args) 2) (to-text b) ',')
     ?.  ?=(%arr -.a)  &+[%str (to-text a)]
     &+[%str (rap 3 (join-texts (turn p.a to-text) sep))]
-  ::
-      %tojson  &+[%str (to-json a)]
+::
+    %tojson  &+[%str (to-json a)]
   ::
       %fromjson
     ?.  ?=(%str -.a)  |+'fromJSON takes text'

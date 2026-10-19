@@ -65,20 +65,20 @@
 ::
 =/  expected-jam=@t
   %+  rap  3
-    :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c05326'
-        '0797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959'
-        '184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f6060606060606060'
-        '6060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626'
-        '26262626262626262626262626262626262626262626262626262626262626262626262626262626'
-        '2626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2'
-        'c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759'
-        'da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8'
-        'cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e'
-        '58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c18'
-        '4d584d8e0dcecd0d8e4d4e4d188dd8cc980c591c805fb1ba3436b21e183b1b1738b9373216b63437'
-        'ba1e18bb1b17b634373a008deedee4d6ccd8deeebec8d2e6e0c2e8c6d040e6ead2e8ca5cf2dad840'
-        'e4cae2eacae6e840e4eadc5a62'
-    ==
+  :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c05326'
+      '0797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959'
+      '184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f6060606060606060'
+      '6060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626'
+      '26262626262626262626262626262626262626262626262626262626262626262626262626262626'
+      '2626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2'
+      'c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759'
+      'da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8'
+      'cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e'
+      '58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c18'
+      '4d584d8e0dcecd0d8e4d4e4d188dd8cc980c591c805fb1ba3436b21e183b1b1738b9373216b63437'
+      'ba1e18bb1b17b634373a008deedee4d6ccd8deeebec8d2e6e0c2e8c6d040e6ead2e8ca5cf2dad840'
+      'e4cae2eacae6e840e4eadc5a62'
+  ==
 =/  sig=@ux  (sign-raw:ed:crypto message pub.pair sek.pair)
 =/  sig-hex=@t  (hex-bytes:ci-provenance sig 64)
 ::  the Go side's signature over the same bytes with the same seed
@@ -151,20 +151,20 @@
 =/  epoch-jam-hex=@t  (hex-bytes:ci-provenance epoch-message (met 3 epoch-message))
 =/  expected-epoch-jam=@t
   %+  rap  3
-    :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e8001c72ebe0300000000000000'
-        '000000008001792b7625033c65727069f4003cc89599cdbda0958591cdbdb485cdd195c9035ebb8a'
-        '3500fa84d990c5d4949191959985e1e4e0c8d4c08899d598d9d4d8d0d0c484d5d484e1c0c8dccc98'
-        'ddd4c401f00706060606060606060606060606060606060606060606060606060606060606060606'
-        '0606264c6c1c00fd6362626262626262626262626262626262626262626262626262626262626262'
-        '62626262626262626262626262626262626262626262626262626262626262e2f00378ccd5a5d195'
-        'b9e4b5b1033c73756974e5002f9d5cdd1c5d1939f076ed00bf5c595c5d9a5c1939c0c7f636b65646'
-        'ce003cdcbdc9ad99b1bddd7d91a5cdc185d18da103e0bf58d80d4e8c8d98198e194ccc985959184d'
-        '0c4d0c0d0c59590d5958998c8ccc8c180ccc8c4d4cd84c8e4dcccd4d58ce98184d0c8c99994d8c99'
-        '0c0c4c4c4d183900fa93cd8ce58495e190d18899d18cd59499d9c08485c990cd94d994e590e184d1'
-        '8cd588cd98c194c590c98ccd88d184d5e4d8e0dcdce0d8e4d484d188cd8cc990c501f815ab4b6323'
-        'eb81b1b37181937b2363614b73a3eb81b1bb71614b73a303d0e8ee4d6ecd8cededee8b2c6d0e2e8c'
-        '6e0c0d64ae2e8daecc25af8d0d44ae2caeae6c8e0e44aecead2506'
-    ==
+  :~  'e106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e8001c72ebe0300000000000000'
+      '000000008001792b7625033c65727069f4003cc89599cdbda0958591cdbdb485cdd195c9035ebb8a'
+      '3500fa84d990c5d4949191959985e1e4e0c8d4c08899d598d9d4d8d0d0c484d5d484e1c0c8dccc98'
+      'ddd4c401f00706060606060606060606060606060606060606060606060606060606060606060606'
+      '0606264c6c1c00fd6362626262626262626262626262626262626262626262626262626262626262'
+      '62626262626262626262626262626262626262626262626262626262626262e2f00378ccd5a5d195'
+      'b9e4b5b1033c73756974e5002f9d5cdd1c5d1939f076ed00bf5c595c5d9a5c1939c0c7f636b65646'
+      'ce003cdcbdc9ad99b1bddd7d91a5cdc185d18da103e0bf58d80d4e8c8d98198e194ccc985959184d'
+      '0c4d0c0d0c59590d5958998c8ccc8c180ccc8c4d4cd84c8e4dcccd4d58ce98184d0c8c99994d8c99'
+      '0c0c4c4c4d183900fa93cd8ce58495e190d18899d18cd59499d9c08485c990cd94d994e590e184d1'
+      '8cd588cd98c194c590c98ccd88d184d5e4d8e0dcdce0d8e4d484d188cd8cc990c501f815ab4b6323'
+      'eb81b1b37181937b2363614b73a3eb81b1bb71614b73a303d0e8ee4d6ecd8cededee8b2c6d0e2e8c'
+      '6e0c0d64ae2e8daecc25af8d0d44ae2caeae6c8e0e44aecead2506'
+  ==
 =/  epoch-jam-matches=?  =(epoch-jam-hex expected-epoch-jam)
 =/  epoch-sig=@ux  (sign-raw:ed:crypto epoch-message pub.pair sek.pair)
 =/  epoch-low-refused=?  !(veri:ed:crypto epoch-sig message pub.pair)
@@ -184,16 +184,16 @@
 =/  rendered=json  (manifest-json:ci-provenance manifest)
 =/  pinned-text=@t
   %+  rap  3
-    :~  '{"incarnation":"0v4.incar","repo":"erpit","ref":"refs/heads/master","candidate":'
-        '"0v5cand","oid":"a6d15eddefa898250bf5f656441a55a80273f751","baseline":"000000000'
-        '0000000000000000000000000000abc","lock":"111111111111111111111111111111111111111'
-        '1111111111111111111111111","generation":7,"workflow":"suite.yml","job":"suite","'
-        'trust":"trusted","sandbox":"vm","mode":"required","network":"locked","network-sc'
-        'ope":"","event":"workflow_dispatch","context":"ba7816bf8f01cfea414140de5dae2223b'
-        '00361a396177a9cb410ff61f20015ad","needs":"d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e'
-        '1d2c3b4a5968778695a4b3c2d1","prerequisites":"build=0v6.prod,lint=0v7.lint","trig'
-        'ger":"workflow_dispatch suite.yml request run-1"}'
-    ==
+  :~  '{"incarnation":"0v4.incar","repo":"erpit","ref":"refs/heads/master","candidate":'
+      '"0v5cand","oid":"a6d15eddefa898250bf5f656441a55a80273f751","baseline":"000000000'
+      '0000000000000000000000000000abc","lock":"111111111111111111111111111111111111111'
+      '1111111111111111111111111","generation":7,"workflow":"suite.yml","job":"suite","'
+      'trust":"trusted","sandbox":"vm","mode":"required","network":"locked","network-sc'
+      'ope":"","event":"workflow_dispatch","context":"ba7816bf8f01cfea414140de5dae2223b'
+      '00361a396177a9cb410ff61f20015ad","needs":"d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e'
+      '1d2c3b4a5968778695a4b3c2d1","prerequisites":"build=0v6.prod,lint=0v7.lint","trig'
+      'ger":"workflow_dispatch suite.yml request run-1"}'
+  ==
 =/  pinned=(unit json)  (de:json:html pinned-text)
 =/  decode
   |=  jon=json
@@ -246,7 +246,10 @@
 =/  decodes-to-signed=?  =(decoded `manifest)
 =/  decoded-verifies=?
   ?~  decoded  %.n
-  (veri:ed:crypto sig (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce u.decoded) pub.pair)
+  %^  veri:ed:crypto
+    sig
+    (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce u.decoded)
+  pub.pair
 =/  short-refused=?
   ?~  decoded-short  %.n
   ?&  =('' needs.u.decoded-short)

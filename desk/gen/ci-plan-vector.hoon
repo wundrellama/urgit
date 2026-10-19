@@ -306,7 +306,14 @@
       %-  rap
       :-  3
       :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
-          (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":2,"text":"x","line":1,"col":1,"expr":{"k":"always"}}' '')
+          %:  job-json
+            'b'
+            'chain.yml'
+            '1'
+            '["a"]'
+            '{"v":2,"text":"x","line":1,"col":1,"expr":{"k":"always"}}'
+            ''
+          ==
       ==
     ::
       :-  'if references a job that is not in needs'

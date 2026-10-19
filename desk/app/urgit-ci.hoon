@@ -3453,7 +3453,9 @@
   ::  An undelivered automatic resolve has no uncertain execution to
   ::  replay. Reoffer even without a replacement now; next preserves it.
   ?:  &(?=(%resolve kind.u.running) =(%tag (purpose:ci-resolve u.found)))
-    (reoffer-attempt u.running 'daemon stopped polling before it fetched the resolver assignment; re-offered')
+    %+  reoffer-attempt
+      u.running
+    'daemon stopped polling before it fetched the resolver assignment; re-offered'
   ?.  %:  other-daemon-exists
         repo.u.found
         (attempt-runs-on u.found u.running)

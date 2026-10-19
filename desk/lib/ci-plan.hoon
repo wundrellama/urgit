@@ -578,8 +578,8 @@
   ?-  -.cond
       %refused
     [%error (rap 3 ~['if ' (quote (shown:ci-expr text.cond)) ' is refused: ' reason.cond])]
-  ::
-      %output-eq  (legacy job cond standings entries)
+::
+    %output-eq  (legacy job cond standings entries)
   ::
       %if
     =/  shown=@t  (quote (shown:ci-expr text.cond))
