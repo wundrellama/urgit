@@ -122,6 +122,7 @@ func manualManifest() sig.Manifest {
 	m := jobManifest
 	m.Workflow, m.Job = "manual.yml", "report"
 	m.Event, m.Context, m.Mode, m.Sandbox = "workflow_dispatch", payloadDigest(manualPayload), "manual", "vm"
+	m.Needs, m.Prerequisites = "", ""
 	return m
 }
 
@@ -130,7 +131,7 @@ func manualManifest() sig.Manifest {
 func manualJob() *ship.Assignment {
 	a := *jobAssignment
 	m := manualManifest()
-	a.Workflow, a.Job, a.PrereqOutputs, a.Manifest, a.EventPayload = "manual.yml", "report", nil, &m, manualPayload
+	a.Workflow, a.Job, a.NeedsContext, a.Manifest, a.EventPayload = "manual.yml", "report", "", &m, manualPayload
 	return &a
 }
 

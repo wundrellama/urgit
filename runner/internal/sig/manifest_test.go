@@ -20,6 +20,7 @@ var referenceManifest = ManifestMessage{
 		OID: "a6d15eddefa898250bf5f656441a55a80273f751", Baseline: "0000000000000000000000000000000000000abc", Lock: "1111111111111111111111111111111111111111111111111111111111111111",
 		Generation: 7, Workflow: "suite.yml", Job: "suite", Trust: "trusted", Sandbox: "vm", Mode: "required", Network: "locked", NetworkScope: "",
 		Event: "workflow_dispatch", Context: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+		Needs: "d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1", Prerequisites: "build=0v6.prod,lint=0v7.lint",
 	},
 }
 
@@ -35,11 +36,11 @@ func vectorKey() (ed25519.PublicKey, ed25519.PrivateKey) {
 }
 
 // referenceJamHex is the jam of the reference message (manifest version
-// 3, its event bound) as BOTH sides produce it: printed by this test, and
+// 4, its event and its needs context bound) as BOTH sides produce it: printed by this test, and
 // by desk/gen/ci-provenance-vector on a fresh fake ship (its `%jam-hex`
 // line must be byte-identical, and its signature for the same seed
 // identical too). A drift on either side fails one of the two tests.
-const referenceJamHex = "a103fec5d6a936c0d2b375bd2b037c6173736967ee800f30fb130fb88e5d7c0fc85bb12b19e02993834ba307e041aecc6cee05ad2c8c6ceea52d6c8eae4c1ef0da55ac01d027cc862ca6a68c8caccc2c0c270747a60646ccacc6cca6c686862626aca6260c0746e666c6eca6260e803f303030303030303030303030303030303030303030303030303030303030303030303030306162e300e81f131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313871fc063ae2e8daecc25af8d1de099ab4ba32b0778e9e4eae6e8cac881b76b07f8e5cae2ead2e4cac8013eb6b7b1b5327206e0e1ee4d6ecd8cededee8b2c6d0e2e8c6e0c0dc07fb1b01b9c181b31331c33989831b3b2309a189a181a18b2b21ab2b03219199919311898199b98b0991c9b989b9bb09c31319a181833339b1833191898989a3032"
+const referenceJamHex = "6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c053260797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f60606060606060606060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c184d584d8e0dcecd0d8e4d4e4d188dd8cc980c590ce057ac2e8d8dac07c6cec6054eee8d8c852dcd8dae07c6eec6852dcd8d0e"
 
 func TestManifestSignatureRoundTripAndMutations(t *testing.T) {
 	pub, priv := vectorKey()
@@ -85,6 +86,12 @@ func TestManifestSignatureRoundTripAndMutations(t *testing.T) {
 		"context": func(m *ManifestMessage) {
 			m.Manifest.Context = "ca7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 		},
+		"needs": func(m *ManifestMessage) {
+			m.Manifest.Needs = "e3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1"
+		},
+		"needs-dropped":         func(m *ManifestMessage) { m.Manifest.Needs = "" },
+		"prerequisites":         func(m *ManifestMessage) { m.Manifest.Prerequisites = "build=0v8.stale,lint=0v7.lint" },
+		"prerequisites-dropped": func(m *ManifestMessage) { m.Manifest.Prerequisites = "" },
 	}
 	for name, mutate := range mutations {
 		m := referenceManifest

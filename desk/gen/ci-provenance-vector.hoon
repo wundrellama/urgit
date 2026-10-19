@@ -1,13 +1,16 @@
 ::  ci-provenance-vector: the cross-language manifest vector (P10; contract
-::  §5; version 3 binds the run's event, Delivery 1A).  The reference
+::  §5; version 3 binds the run's event, Delivery 1A; version 4 a job's
+::  needs context and the attempts it came from, Delivery 1B).  The reference
 ::  manifest below is the one runner/internal/sig/
 ::  manifest_test.go signs with the same fixed seed; both sides must
 ::  produce the same jam bytes, and every single-field mutation must fail
 ::  to verify against the reference signature.  The generator prints the
 ::  jam hex, the signature hex, the count, and ends in a loobean: %.y only
 ::  when the jam matches the Go side's pinned bytes, the reference
-::  verifies, and EVERY mutation refuses.  The lock digest and the policy
-::  predicates have their own vector (ci-policy-vector).
+::  verifies, and EVERY mutation refuses.  Correction 01 adds the wire:
+::  the manifest object the controller emits (manifest-json) carries every
+::  signed field and decodes back to the signed noun.  The lock digest and
+::  the policy predicates have their own vector (ci-policy-vector).
 ::
 /-  ci
 /+  ci-provenance, ci-recovery
@@ -47,6 +50,8 @@
       ''
       'workflow_dispatch'
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+      'd3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1'
+      'build=0v6.prod,lint=0v7.lint'
   ==
 =/  recipient=@uv  (parse-uv '0v1.daemon')
 =/  attempt=@uv  (parse-uv '0v2.attempt')
@@ -58,14 +63,25 @@
 ::
 =/  expected-jam=@t
   %+  rap  3
-  :~  'a103fec5d6a936c0d2b375bd2b037c6173736967ee800f30fb130fb88e5d7c0fc85bb12b19e02993834ba307e041aecc6cee05ad2c8c6ceea52d6c8eae4c1ef0da55ac01d027cc862ca6a68c8caccc2c0c270747a60646ccacc6cca6c686862626aca6260c0746e666c6eca6260e803f303030303030303030303030303030303030303030303030303030303030303030303030306162e300e81f131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313871fc063ae2e8daecc25af8d1de099ab4ba32b0778e9e4eae6e8cac881b76b07f8e5cae2ead2e4cac8013eb6b7b1b5327206e0e1ee4d6ecd8cededee8b2c6d0e2e8c6e0c0dc07fb1b01b9c181b31331c33989831b3b2309a189a181a18b2b21ab2b03219199919311898199b98b0991c9b989b9bb09c31319a181833339b1833191898989a3032'
-  ==
+    :~  '6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e701dbbf81e90b7625732c05326'
+        '0797460fc0835c99d9dc0b5a5918d9dc4b5bd81c5d993ce0b5ab5803a04f980d594c4d1919599959'
+        '184e0e8e4c0d8c98598d994d8d0d0d4d4c584d4d180e8ccccd8cd94d4d1c007f6060606060606060'
+        '6060606060606060606060606060606060606060606060606060606060c2c4c601d03f2626262626'
+        '26262626262626262626262626262626262626262626262626262626262626262626262626262626'
+        '2626262626262626262626262626262626260e3f80c75c5d1a5d994b5e1b3bc033579746570ef0d2'
+        'c9d5cdd19591036fd70ef0cb95c5d5a5c99591037c6c6f636b65e40cc0c3dd9bdc9a19dbdbdd1759'
+        'da1c5c18dd183a00fe8b85dde0c4d88899e198c1c48c999585d1c4d0c4d0c09095d5908595c9c8c8'
+        'cc88c1c0ccd8c484cde4d8c4dcdc84e58c89d1c4c09899d9c498c9c0c0c4d4849103a03fd9cc584e'
+        '58190e198d9819cd584d99990d4c58980cd94c994d590e194e18cd588dd88c194c590c99ccd88c18'
+        '4d584d8e0dcecd0d8e4d4e4d188dd8cc980c590ce057ac2e8d8dac07c6cec6054eee8d8c852dcd8d'
+        'ae07c6eec6852dcd8d0e'
+    ==
 =/  sig=@ux  (sign-raw:ed:crypto message pub.pair sek.pair)
 =/  sig-hex=@t  (hex-bytes:ci-provenance sig 64)
 ::  the Go side's signature over the same bytes with the same seed
 ::
 =/  expected-sig=@t
-  '1e648e3dede4426dd4bf5d183de19504e4e02944ffe5917db109600e3ddf6cbc33d0f555116325410069dc42414500e560a1a15a43608d8640c82e8e381cd601'
+  '39443354b3ac0129a61ff3c60f80efadbbd4ecef0c319ed936871df4dd9c83106c8a756de2293474a5b1260f35b85dbee6a588977fc24a3e4ba6f85c1972e00d'
 =/  sig-matches=?  =(sig-hex expected-sig)
 =/  verifies=?  (veri:ed:crypto sig message pub.pair)
 ::  every single-field mutation of the message must refuse the signature
@@ -94,6 +110,10 @@
       ['network-scope' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(scope 'tcp:198.51.100.20:8472'))]
       ['event' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(event 'push'))]
       ['context' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(context 'ca7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'))]
+      ['needs' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(needs 'e3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e1d2c3b4a5968778695a4b3c2d1'))]
+      ['needs-dropped' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(needs ''))]
+      ['prerequisites' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(prerequisites 'build=0v8.stale,lint=0v7.lint'))]
+      ['prerequisites-dropped' (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce mm(prerequisites ''))]
   ==
 =/  refused=(list @t)
   %+  murn  mutations
@@ -124,10 +144,106 @@
   ==
 =/  epoch-jam-hex=@t  (hex-bytes:ci-provenance epoch-message (met 3 epoch-message))
 =/  expected-epoch-jam=@t
-  'a103fec5d6a936c0d2b375bd2b037c6173736967ee800f30fb130fc0806317df010000000000000000000000c080bc15bb92019e3239b8347a001ee4cacce65ed0cac2c8e65edac2e6e8cae401af5dc51a007dc26cc8626acac8c8caccc2707270646a60c4cc6acc6c6a6c686862c26a6ac27060646e66cc6e6ae200f8030303030303030303030303030303030303030303030303030303030303030303030303031326360e80fe31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313171f8013ce6ead2e8ca5cf2dad8019eb9ba34ba7280974eae6e8eae8c1c78bb76805fae2cae2e4dae8c1ce0637b1b5b2b2367001eeedee4d6ccd8deeebec8d2e6e0c2e8c6d000fc170bbbc189b11133c331838919332b0ba389a189a181212bab210b2b9391919911838199b189099bc9b189b9b909cb1913a389813133b3893193818189a9092303'
+  %+  rap  3
+    :~  '6106fc8bad536d80a567eb7a5706f8c2e6e6d2cedc011f60f6271e8001c72ebe0300000000000000'
+        '000000008001792b7625033c65727069f4003cc89599cdbda0958591cdbdb485cdd195c9035ebb8a'
+        '3500fa84d990c5d4949191959985e1e4e0c8d4c08899d598d9d4d8d0d0c484d5d484e1c0c8dccc98'
+        'ddd4c401f00706060606060606060606060606060606060606060606060606060606060606060606'
+        '0606264c6c1c00fd6362626262626262626262626262626262626262626262626262626262626262'
+        '62626262626262626262626262626262626262626262626262626262626262e2f00378ccd5a5d195'
+        'b9e4b5b1033c73756974e5002f9d5cdd1c5d1939f076ed00bf5c595c5d9a5c1939c0c7f636b65646'
+        'ce003cdcbdc9ad99b1bddd7d91a5cdc185d18da103e0bf58d80d4e8c8d98198e194ccc985959184d'
+        '0c4d0c0d0c59590d5958998c8ccc8c180ccc8c4d4cd84c8e4dcccd4d58ce98184d0c8c99994d8c99'
+        '0c0c4c4c4d183900fa93cd8ce58495e190d18899d18cd59499d9c08485c990cd94d994e590e184d1'
+        '8cd588cd98c194c590c98ccd88d184d5e4d8e0dcdce0d8e4d484d188cd8cc990c5007ec5ead2d8c8'
+        '7a60ec6c5ce0e4dec858d8d2dce87a60ec6e5cd8d2dce8'
+    ==
 =/  epoch-jam-matches=?  =(epoch-jam-hex expected-epoch-jam)
 =/  epoch-sig=@ux  (sign-raw:ed:crypto epoch-message pub.pair sek.pair)
 =/  epoch-low-refused=?  !(veri:ed:crypto epoch-sig message pub.pair)
+::  the manifest as an assignment carries it (Delivery 1B correction
+::  01): the controller's one serializer, manifest-json, emits every signed
+::  field; its object equals the pinned emission the runner's Go test
+::  decodes (runner/internal/sig/testdata/reference-manifest-v4.json);
+::  decoded here as the runner decodes it, it is the signed manifest and
+::  the reference signature verifies.  the 1B emission, without needs and
+::  prerequisites, decodes those as empty and the signature refuses it
+::
+=/  signed-fields=(list @t)
+  :~  'incarnation'  'repo'  'ref'  'candidate'  'oid'  'baseline'  'lock'
+      'generation'  'workflow'  'job'  'trust'  'sandbox'  'mode'  'network'
+      'network-scope'  'event'  'context'  'needs'  'prerequisites'
+  ==
+=/  rendered=json  (manifest-json:ci-provenance manifest)
+=/  pinned-text=@t
+  %+  rap  3
+    :~  '{"incarnation":"0v4.incar","repo":"erpit","ref":"refs/heads/master","candidate":'
+        '"0v5cand","oid":"a6d15eddefa898250bf5f656441a55a80273f751","baseline":"000000000'
+        '0000000000000000000000000000abc","lock":"111111111111111111111111111111111111111'
+        '1111111111111111111111111","generation":7,"workflow":"suite.yml","job":"suite","'
+        'trust":"trusted","sandbox":"vm","mode":"required","network":"locked","network-sc'
+        'ope":"","event":"workflow_dispatch","context":"ba7816bf8f01cfea414140de5dae2223b'
+        '00361a396177a9cb410ff61f20015ad","needs":"d3c9ae8d4bf4c5ef60aa2d3e6e9d8a4c5b3f0e'
+        '1d2c3b4a5968778695a4b3c2d1","prerequisites":"build=0v6.prod,lint=0v7.lint"}'
+    ==
+=/  pinned=(unit json)  (de:json:html pinned-text)
+=/  decode
+  |=  jon=json
+  ^-  (unit manifest:ci-provenance)
+  ?.  ?=([%o *] jon)  ~
+  =/  fields=(map @t json)  p.jon
+  =/  text
+    |=  key=@t
+    ^-  @t
+    =/  v=(unit json)  (~(get by fields) key)
+    ?~  v  ''
+    ?.  ?=([%s *] u.v)  ''
+    p.u.v
+  =/  gen=(unit json)  (~(get by fields) 'generation')
+  =/  generation=@ud
+    ?.  ?=([~ %n *] gen)  0
+    (fall (rush p.u.gen dim:ag) 0)
+  :-  ~
+  :*  (parse-uv (text 'incarnation'))
+      (text 'repo')
+      (text 'ref')
+      (parse-uv (text 'candidate'))
+      (text 'oid')
+      (text 'baseline')
+      (text 'lock')
+      generation
+      (text 'workflow')
+      (text 'job')
+      (text 'trust')
+      (text 'sandbox')
+      (text 'mode')
+      (text 'network')
+      (text 'network-scope')
+      (text 'event')
+      (text 'context')
+      (text 'needs')
+      (text 'prerequisites')
+  ==
+=/  emitted-keys=(set @t)
+  ?.  ?=([%o *] rendered)  ~
+  ~(key by p.rendered)
+=/  short=json
+  ?.  ?=([%o *] rendered)  ~
+  [%o (~(del by (~(del by p.rendered) 'needs')) 'prerequisites')]
+=/  decoded=(unit manifest:ci-provenance)  (decode rendered)
+=/  decoded-short=(unit manifest:ci-provenance)  (decode short)
+=/  emits-every-field=?  =((silt signed-fields) emitted-keys)
+=/  pinned-matches=?  =(pinned `rendered)
+=/  decodes-to-signed=?  =(decoded `manifest)
+=/  decoded-verifies=?
+  ?~  decoded  %.n
+  (veri:ed:crypto sig (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce u.decoded) pub.pair)
+=/  short-refused=?
+  ?~  decoded-short  %.n
+  ?&  =('' needs.u.decoded-short)
+      =('' prerequisites.u.decoded-short)
+      !(veri:ed:crypto sig (message-bytes:ci-provenance recipient attempt 'assign' expiry nonce u.decoded-short) pub.pair)
+  ==
 =/  passed=@ud
   ;:  add
       ?:(jam-matches 1 0)
@@ -136,9 +252,14 @@
       ?:(v1-refused 1 0)
       ?:(epoch-jam-matches 1 0)
       ?:(epoch-low-refused 1 0)
+      ?:(emits-every-field 1 0)
+      ?:(pinned-matches 1 0)
+      ?:(decodes-to-signed 1 0)
+      ?:(decoded-verifies 1 0)
+      ?:(short-refused 1 0)
       (lent refused)
   ==
-=/  total=@ud  (add 6 (lent mutations))
+=/  total=@ud  (add 11 (lent mutations))
 ~&  [%manifest-id (manifest-id:ci-provenance manifest)]
 ~&  [%jam-hex jam-hex]
 ~&  [%jam-matches-go jam-matches]
@@ -149,6 +270,11 @@
 ~&  [%epoch-jam-hex epoch-jam-hex]
 ~&  [%epoch-jam-matches-go epoch-jam-matches]
 ~&  [%epoch-low-refused epoch-low-refused]
+~&  [%manifest-json-emits-every-field emits-every-field]
+~&  [%manifest-json-matches-pinned pinned-matches]
+~&  [%manifest-json-decodes-to-signed decodes-to-signed]
+~&  [%manifest-json-decoded-verifies decoded-verifies]
+~&  [%manifest-json-1b-shape-refused short-refused]
 ~&  [%mutations-refused (lent refused) %of (lent mutations)]
 ~&  [%mutations-accepted accepted]
 ~&  (crip "passed={<passed>} of={<total>}")
@@ -158,6 +284,11 @@
     v1-refused
     epoch-jam-matches
     epoch-low-refused
+    emits-every-field
+    pinned-matches
+    decodes-to-signed
+    decoded-verifies
+    short-refused
     =((lent refused) (lent mutations))
     ?=(~ accepted)
 ==

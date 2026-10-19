@@ -43,6 +43,10 @@ type Bundle struct {
 	// Images lists the locked container images staged as archives, to be
 	// loaded into the sandbox's Docker before the job (never pulled)
 	Images []LockedImage
+	// NeedsCarried counts the needs roots of the job's expressions the
+	// projection reads from the signed needs context (plan.NeedsCarrier);
+	// 0 when the job reads none and act is given no carrier
+	NeedsCarried int
 }
 
 // LockedImage is one container image the lock pinned: the reference as
@@ -68,10 +72,15 @@ type bundleManifest struct {
 	Mode          string   `json:"mode"`
 	// the event the job runs for and, for a manual run, the sha-256 of
 	// the event.json beside this file (Delivery 1A)
-	Event       string   `json:"event"`
-	EventSHA256 string   `json:"event_sha256,omitempty"`
-	Actions     []string `json:"actions"`
-	Downloads   []string `json:"downloads"`
+	Event       string `json:"event"`
+	EventSHA256 string `json:"event_sha256,omitempty"`
+	// the dependency binding the verified manifest carries (Delivery 1B):
+	// the sha-256 of the needs context act reads and the attempts it came
+	// from; absent for a job without needs
+	NeedsSHA256   string   `json:"needs_sha256,omitempty"`
+	Prerequisites string   `json:"prerequisites,omitempty"`
+	Actions       []string `json:"actions"`
+	Downloads     []string `json:"downloads"`
 }
 
 // assembleBundle builds work/bundle. Nothing from the runner's own
@@ -171,20 +180,21 @@ func (d *Daemon) assembleBundle(ctx context.Context, a *ship.Assignment, work st
 		if err != nil {
 			return nil, fmt.Errorf("workflow: %w", err)
 		}
-		projected, err := plan.ProjectImages(original, a.Job, a.Attempt, a.Workflow, images)
+		projected, err := plan.ProjectJob(original, a.Job, a.Attempt, a.Workflow, images)
 		if err != nil {
 			return nil, fmt.Errorf("projection: %w", err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "projected", a.Workflow), projected, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "projected", a.Workflow), projected.Data, 0o644); err != nil {
 			return nil, err
 		}
+		b.NeedsCarried = projected.Needs
 	}
 	// the run's event payload (Delivery 1A), a push's or a manual run's,
 	// exactly as signed, at the bundle's root: act reads it with -e at the
 	// guest's work root
-	event, eventSHA := "", ""
+	event, eventSHA, needsSHA, prerequisites := "", "", "", ""
 	if a.Manifest != nil {
-		event = a.Manifest.Event
+		event, needsSHA, prerequisites = a.Manifest.Event, a.Manifest.Needs, a.Manifest.Prerequisites
 	}
 	if a.EventPayload != "" {
 		if err := os.WriteFile(filepath.Join(dir, eventFile), []byte(a.EventPayload), 0o644); err != nil {
@@ -213,7 +223,8 @@ func (d *Daemon) assembleBundle(ctx context.Context, a *ship.Assignment, work st
 	m := bundleManifest{
 		Attempt: a.Attempt, Candidate: a.Candidate, OID: a.OID, Baseline: baseline, WorkflowsOID: b.WorkflowsOID,
 		HarnessPaths: a.HarnessPaths, ReplacedPaths: b.Replaced, Lock: lock, WorkspaceSHA: sha, Mode: mode,
-		Event: event, EventSHA256: eventSHA, Actions: actions, Downloads: downloads,
+		Event: event, EventSHA256: eventSHA, NeedsSHA256: needsSHA, Prerequisites: prerequisites,
+		Actions: actions, Downloads: downloads,
 	}
 	if m.HarnessPaths == nil {
 		m.HarnessPaths = []string{}

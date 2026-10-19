@@ -12,18 +12,23 @@
 ::    - state-1's attempts, which gain no pinned addresses (state-2);
 ::    - state-2's candidates, each a push run (state-3: a run records the
 ::      event it ran for), its locks with no manual-run inventory (none was
-::      read before state-3), its pinned addresses kept.
-::  The current state (state-3) reloads unchanged, a manual run's event
-::  and a lock's inventory with it.  An unknown version, an atom, a
-::  malformed %0, a corrupt %0, %1, %2 or %3, a state-1 tagged %2, a
-::  state-2 tagged %1 or %3 and a state-3 tagged %2 are refused, and so is
-::  an ambiguous classification.  Every case names the verdict it expects;
+::      read before state-3), its pinned addresses kept;
+::    - state-3 (Delivery 1B): a manual run's event and inputs and a lock's
+::      inventory kept; a planned job's %output-eq gate kept at its
+::      admitted meaning with its declared outputs not known; an attempt's
+::      outputs by name become step outputs of no named step; a running
+::      attempt stays running with no decision, needs context or resolved
+::      outputs.
+::  The current state (state-4) reloads unchanged.  An unknown version, an
+::  atom, a malformed %0, a corrupt %0, %1, %2, %3 or %4, a state-1 tagged
+::  %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4 and a state-4
+::  tagged %3 are refused, and so is an ambiguous classification.  Every case names the verdict it expects;
 ::  the intentionally FALSE cases are refusals.  Prints `passed=N of=M`
 ::  and ends in a loobean.
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -205,7 +210,7 @@
 ::  state-3: a manual run, its event and typed inputs as admitted, and a
 ::  lock with the manual-run inventory its resolver read
 ::
-=/  manual-cand=candidate:ci
+=/  manual-cand=candidate:ci-state-3
   :*  0v3.mmmmm  'erpit'  'refs/heads/master'  0xa1  0xa1  `0xa1  %.n
       %pending  ~  ~  ~  ~  ~zod  %session  %trusted  ~
       ~2026.10.15  ~2026.10.15
@@ -219,18 +224,35 @@
           '{"inputs":{"dry_run":"false","count":"0","level":"warning"}}'
           'request-1'
       ==  ==
-=/  lock-3=lock:ci
+=/  lock-3=lock:ci-state-3
   :*  0x88  'erpit'  0xb1  ~  ~2026.10.15  0v1.aaaaa  0  ~
       `~[['manual.yml' 'Manual release' ~[['dry_run' %boolean '' %.n `'false' ~]] ~]]
   ==
 =/  s2-unlocked  s2-state(locks ~)
-=/  manual-state=state-3:ci
-  ;;  state-3:ci
+=/  manual-state=state-3:ci-state-3
+  ;;  state-3:ci-state-3
   :*  %3
       (my ~[[id.manual-cand manual-cand]])
       +>.s2-unlocked
   ==
 =.  locks.manual-state  (my ~[[0x88 lock-3]])
+::  state-3 with a plan: a job gated by an %output-eq on another, and its
+::  running attempt with the outputs it recorded by name
+::
+=/  job-a-3=job:ci-state-3  ['a' 'chain.yml' 'chain' 0 ~ ~ ~ ~ ~]
+=/  job-b-3=job:ci-state-3  ['b' 'chain.yml' 'chain' 1 ~['a'] `[%output-eq 'a' 'go' 'true'] ~ ~ `5]
+=/  planned-3=candidate:ci-state-3
+  %=  manual-cand
+    id  0v3.ppppp
+    mode  %required
+    trigger  [%push ~]
+    attempts  ~[0v7.aaaaa]
+    plan  `~[job-a-3 job-b-3]
+  ==
+=/  running-3=attempt:ci-state-3
+  ;;(attempt:ci-state-3 r-running-2(outputs (my ~[['go' 'true'] ['n' '0']])))
+=/  planned-state=state-3:ci-state-3  manual-state(candidates (my ~[[0v3.ppppp planned-3]]))
+=.  attempts.planned-state  (my ~[[0v7.aaaaa running-3]])
 ::  every load that must succeed
 ::
 =/  b  (load:ci-migrate base-state)
@@ -240,6 +262,20 @@
 =/  c  (load:ci-migrate new.q)
 =/  t  (load:ci-migrate s2-state)
 =/  m  (load:ci-migrate manual-state)
+=/  p  (load:ci-migrate planned-state)
+=/  p-cand  (~(got by candidates.new.p) 0v3.ppppp)
+=/  p-running  (~(got by attempts.new.p) 0v7.aaaaa)
+=/  m-cand  (~(got by candidates.new.m) id.manual-cand)
+::  a state-4 attempt as state-3 held it: its step outputs by name
+::
+=/  attempt-as-3
+  |=  a=attempt:ci
+  :*  id.a  candidate.a  assignment.a  daemon.a  trust.a  kind.a  workflow.a  job.a
+      status.a  events.a
+      (malt (turn step-outputs.a |=(o=step-output:ci [name.o value.o])))
+      job-result.a  result.a  reason.a  projection-name.a  log.a  started.a  finished.a
+      generation.a  mode.a  manifest.a  sandbox.a  network.a  approval.a  outcome.a  pinned.a
+  ==
 =/  s-running  (~(got by attempts.new.s) 0v7.aaaaa)
 =/  t-running  (~(got by attempts.new.t) 0v7.aaaaa)
 ::  a state-3 candidate's state-2 fields, and a lock's
@@ -301,40 +337,56 @@
     ['overrides, roles, environments, baselines and the audit are kept' %.y &(=(overrides.r6-state overrides.new.r) =(roles.r6-state roles.new.r) =(environments.r6-state environments.new.r) =(baselines.r6-state baselines.new.r) =(audit.r6-state audit.new.r))]
     ['review 06 daemons are kept whole' %.y =(daemons.r6-state daemons.new.r)]
     ['review 06 candidates are kept whole, each a push run' %.y (kept-as-push candidates.r6-state candidates.new.r)]
-    ['a review 06 attempt is kept whole, unpinned' %.y =(want-attempts attempts.new.r)]
+    ['a review 06 attempt is kept whole, unpinned' %.y =(want-attempts (~(run by attempts.new.r) attempt-as-3))]
     ['no retention report and no recovery command yet' %.y &(=(~ recovery-reports.new.r) =(~ recovery-commands.new.r))]
     ::  the Q11 schema
     ['the Q11 schema loads as its own shape' %.y =(%q11 shape.q)]
     ['the Q11 daemons and assignments are kept' %.y =([daemons assignments]:q11-state [daemons assignments]:new.q)]
     ['the Q11 candidates are kept, each a push run' %.y (kept-as-push candidates.q11-state candidates.new.q)]
     ['the Q11 fields after the attempts are kept' %.y =(+63.q11-state +63.new.q)]
-    ['a Q11 attempt is kept whole, with no pinned addresses' %.y =(want-attempts attempts.new.q)]
+    ['a Q11 attempt is kept whole, with no pinned addresses' %.y =(want-attempts (~(run by attempts.new.q) attempt-as-3))]
     ['an open and a final recovery command are kept' %.y =(recovery-commands.q11-state recovery-commands.new.q)]
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %3 once converted' %.y =(%3 -.new.s)]
+    ['state-1 is tagged %4 once converted' %.y =(%4 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %3 once converted' %.y =(%3 -.new.t)]
+    ['state-2 is tagged %4 once converted' %.y =(%4 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
     ['a state-2 lock has no manual-run inventory, which is not an empty one' %.y =(~ inventory.t-lock)]
-    ['a state-2 attempt keeps its pinned addresses and everything else' %.y &(=(pins pinned.t-running) =(attempts.s2-state attempts.new.t))]
+    ['a state-2 attempt keeps its pinned addresses and everything else' %.y &(=(pins pinned.t-running) =(attempts.s2-state (~(run by attempts.new.t) attempt-as-3)))]
     ['every other state-2 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:s2-state [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.t)]
     ::  the current state
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
-    ['a manual run and a lock\'s inventory reload unchanged' %.y &(=(%current shape.m) =(manual-state new.m))]
+    ::  state-3
+    ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
+    ['state-3 is tagged %4 once converted' %.y =(%4 -.new.m)]
+    ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
+    ['a manual run keeps every other field' %.y =(+.manual-cand +.m-cand)]
+    ['a lock keeps its manual-run inventory' %.y =(lock-3 (~(got by locks.new.m) 0x88))]
+    ['every other state-3 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:manual-state [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.m)]
+    ['a planned job keeps its output-eq gate, its declared outputs not known' %.y =(plan.p-cand `~[['a' 'chain.yml' 'chain' 0 ~ ~ ~ ~ ~ ~] ['b' 'chain.yml' 'chain' 1 ~['a'] `[%output-eq 'a' 'go' 'true'] ~ ~ `5 ~]])]
+    ['a planned job gains declared outputs it never read' %.n !=(~ outputs:(snag 1 (need plan.p-cand)))]
+    ['an attempt\'s outputs become step outputs of no named step, each kept' %.y =((silt step-outputs.p-running) (silt `(list step-output:ci)`~[[~ 'go' 'true' %.n] [~ 'n' '0' %.n]]))]
+    ['a running attempt stays running with no decision, needs context or resolved outputs' %.y &(=(%running status.p-running) =(~ decision.p-running) =(~ needs.p-running) =(~ job-outputs.p-running))]
+    ['every other field of the attempt is kept' %.y =(running-3 (attempt-as-3 p-running))]
+    ::  the current state
+    ['state-4 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%4 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%5 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]
     ['a state-3 tagged %2 is refused' %.y (refused [%2 +.manual-state])]
     ['a %2 state with a corrupt candidates map is refused' %.y (refused [%2 5 +>.s2-state])]
     ['a %3 state with a corrupt candidates map is refused' %.y (refused [%3 5 +>.manual-state])]
+    ['a state-3 tagged %4 is refused' %.y (refused [%4 +.planned-state])]
+    ['a state-4 tagged %3 is refused' %.y (refused [%3 +.new.p])]
+    ['a %4 state with a corrupt attempts map is refused' %.y (refused new.p(attempts [5 ~]))]
     ['an atom is refused' %.y (refused 0)]
     ['a malformed %0 is refused' %.y (refused [%0 1 2 3])]
     ['a %0 state with a corrupt candidates map is refused' %.y (refused [%0 5 +>.q11-state])]

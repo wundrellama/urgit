@@ -1,0 +1,13 @@
+name: Evaluation error
+on:
+  workflow_dispatch:
+jobs:
+  broken:
+    if: fromJSON('not json').ready
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"
+  independent:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo independent

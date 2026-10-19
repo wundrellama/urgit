@@ -1,15 +1,17 @@
 ::  Plan validation and job-level evaluation: the pure rules %urgit-ci
 ::  applies to the plan a daemon posts and to the attempts recorded
 ::  against it.  nothing here scries or parses expression syntax: the
-::  daemon compiles every job-level `if` to a versioned structure
-::  (CI-EXPR-1) and the ship checks that structure and evaluates it.
+::  daemon compiles every job-level `if` and declared output to a
+::  versioned structure (CI-EXPR-2) and the ship checks that structure
+::  (lib/ci-expr) and evaluates it.
 ::
 ::    every refusal is a reason cord, never a crash and never `false`: a
 ::    plan the ship cannot validate fails the candidate with the reason
-::    (R1-A), and a condition the ship cannot evaluate skips the job with
-::    the reason, recorded on a %skipped attempt (R2.2-A).
+::    (R1-A); a condition that cannot be evaluated refuses its job, which
+::    is recorded failed with the reason and never runs (R2.2-A).
 ::
 /-  ci
+/+  ci-expr
 |%
 ::  jobs are keyed by [workflow id]: `needs` never crosses a workflow
 ::  file, and ERPit has a `plan` job in both of its workflows
@@ -30,7 +32,8 @@
       name=@t
       stage=@ud
       needs=(list @t)
-      cond=(unit cond:ci)
+      cond=(unit condition:ci)
+      outputs=(list declared-output:ci)
       matrix=?
       events=(list @t)
       environment=(unit @t)
@@ -130,8 +133,10 @@
     p.u.value
   =/  events=(unit (list @t))  (string-list-field fields 'events')
   ?~  events  [%| (rap 3 ~[name ': events is not a list'])]
-  =/  cond=(each (unit cond:ci) @t)  (parse-cond fields name)
+  =/  cond=(each (unit condition:ci) @t)  (parse-cond fields name)
   ?:  ?=(%| -.cond)  cond
+  =/  outputs=(each (list declared-output:ci) @t)  (parse-outputs fields name)
+  ?:  ?=(%| -.outputs)  outputs
   =/  workflow-name=@t  (fall (string-field fields 'name') '')
   ::  the job's `environment:` name, for %env-scoped credentials (D4);
   ::  absent or empty means the job names none
@@ -165,40 +170,68 @@
     =/  parsed=(unit @ud)  (rush p.u.value dim:ag)
     ?~  parsed  ~
     ?:(=(0 u.parsed) ~ parsed)
-  [%& u.id u.workflow workflow-name u.stage u.needs p.cond matrix u.events environment runs-on timeout]
+  [%& u.id u.workflow workflow-name u.stage u.needs p.cond p.outputs matrix u.events environment runs-on timeout]
 ::
-::  the compiled condition: absent or null means run; otherwise exactly
-::  `{"v":1,"kind":"output-eq",job,output,literal}` or
-::  `{"v":1,"kind":"unsupported",raw}`.  any other version or kind is a
-::  plan the ship does not understand, not a false condition.
+::  the compiled condition (CI-EXPR-2): absent or null means none;
+::  otherwise version 2, its tree checked node by node (lib/ci-expr), or
+::  the compiler's own refusal.  either refusal refuses the plan with the
+::  job, the text and where the workflow wrote it: a condition the ship
+::  cannot evaluate is never read as false
 ::
 ++  parse-cond
   |=  [fields=(map @t json) name=@t]
-  ^-  (each (unit cond:ci) @t)
+  ^-  (each (unit condition:ci) @t)
   =/  value=(unit json)  (~(get by fields) 'cond')
   ?~  value  [%& ~]
   ?:  ?=(~ u.value)  [%& ~]
-  ?.  ?=([%o *] u.value)
-    [%| (rap 3 ~[name ': condition is not an object'])]
-  =/  inner=(map @t json)  p.u.value
-  =/  version=(unit json)  (~(get by inner) 'v')
-  ?.  ?&(?=(^ version) ?=([%n *] u.version) =('1' p.u.version))
-    [%| (rap 3 ~[name ': unknown condition version'])]
-  =/  kind=(unit @t)  (string-field inner 'kind')
-  ?~  kind  [%| (rap 3 ~[name ': unknown condition version'])]
-  ?+  u.kind  [%| (rap 3 ~[name ': unknown condition version'])]
-      %output-eq
-    =/  job=(unit @t)  (string-field inner 'job')
-    =/  output=(unit @t)  (string-field inner 'output')
-    =/  literal=(unit @t)  (string-field inner 'literal')
-    ?:  |(?=(~ job) ?=(~ output) ?=(~ literal))
-      [%| (rap 3 ~[name ': output-eq condition is missing job, output or literal'])]
-    [%& `[%output-eq u.job u.output u.literal]]
-  ::
-      %unsupported
-    =/  raw=(unit @t)  (string-field inner 'raw')
-    [%& `[%unsupported (fall raw '')]]
-  ==
+  =/  parsed=(each condition:ci @t)  (parse-condition:ci-expr u.value)
+  ?:  ?=(%| -.parsed)
+    [%| (rap 3 ~[name ': if ' (written u.value) 'is refused: ' p.parsed])]
+  [%& `p.parsed]
+::
+::  where a compiled field was written, for a refusal: its text (at most
+::  200 bytes) and line and column, when the wire names them
+::
+++  written
+  |=  jon=json
+  ^-  @t
+  ?.  ?=([%o *] jon)  ''
+  =/  text=(unit @t)  (string-field p.jon 'text')
+  =/  line=(unit json)  (~(get by p.jon) 'line')
+  =/  col=(unit json)  (~(get by p.jon) 'col')
+  ?~  text  ''
+  =/  place=@t
+    ?.  ?&(?=([~ %n *] line) ?=([~ %n *] col))  ''
+    (rap 3 ~['(line ' p.u.line ', column ' p.u.col ') '])
+  (rap 3 ~[(quote (shown:ci-expr u.text)) ' ' place])
+::
+::  the declared outputs (CI-EXPR-2): a list the compiler always sends,
+::  empty for a job that declares none; at most 64, each name once, each
+::  checked; a refused one refuses the plan
+::
+++  parse-outputs
+  |=  [fields=(map @t json) name=@t]
+  ^-  (each (list declared-output:ci) @t)
+  =/  value=(unit json)  (~(get by fields) 'outputs')
+  ?.  ?=([~ %a *] value)
+    [%| (rap 3 ~[name ': the plan carries no outputs list; the runner\'s compiler predates declared outputs'])]
+  =/  items=(list json)  p.u.value
+  =/  count=@ud  (lent items)
+  ?:  (gth count max-outputs:ci-expr)
+    [%| (rap 3 ~[name ' declares ' (crip (a-co:co count)) ' outputs; the bound is 64'])]
+  =|  out=(list declared-output:ci)
+  =|  names=(set @t)
+  |-
+  ?~  items  [%& (flop out)]
+  =/  label=@t
+    ?.  ?=([%o *] i.items)  ''
+    (fall (string-field p.i.items 'name') '')
+  =/  one=(each declared-output:ci @t)  (parse-output:ci-expr i.items)
+  ?:  ?=(%| -.one)
+    [%| (rap 3 ~[name ': output ' label ' ' (written i.items) 'is refused: ' p.one])]
+  ?:  (~(has in names) name.p.one)
+    [%| (rap 3 ~[name ': output ' name.p.one ' is declared twice'])]
+  $(items t.items, out [p.one out], names (~(put in names) name.p.one))
 ::
 ++  string-field
   |=  [fields=(map @t json) name=@t]
@@ -332,12 +365,20 @@
     |=(need=@t !(~(has in ids) [workflow.wire-job need]))
   ?^  missing
     `(rap 3 ~[name ' needs ' u.missing ', which is not a job in ' workflow.wire-job])
-  ?:  ?=([~ %unsupported *] cond.wire-job)
-    `(rap 3 ~[name ': unsupported if expression ' (quote raw.u.cond.wire-job)])
-  ?:  ?&  ?=([~ %output-eq *] cond.wire-job)
-          !(lien needs.wire-job |=(need=@t =(need job.u.cond.wire-job)))
-      ==
-    `(rap 3 ~[name ': if references needs.' job.u.cond.wire-job ', which is not in needs'])
+  ::  a condition or an output reads needs.<id> of a job it does not
+  ::  need: GitHub's linter refuses it, and the ship would read null
+  ::
+  =/  named=(list [where=@t id=@t])
+    (named-needs:ci-expr cond.wire-job outputs.wire-job)
+  =/  stray=(unit [where=@t id=@t])
+    =/  items  named
+    |-
+    ?~  items  ~
+    ?.  (lien needs.wire-job |=(need=@t =((cass (trip need)) (cass (trip id.i.items)))))
+      `i.items
+    $(items t.items)
+  ?^  stray
+    `(rap 3 ~[name ': ' where.u.stray ' references needs.' id.u.stray ', which is not in needs'])
   $(remaining t.remaining, seen (~(put in seen) k))
 ::
 ++  to-job
@@ -345,7 +386,7 @@
   ^-  job:ci
   :*  id.wire-job  workflow.wire-job  name.wire-job  stage.wire-job
       needs.wire-job  cond.wire-job  environment.wire-job
-      runs-on.wire-job  timeout.wire-job
+      runs-on.wire-job  timeout.wire-job  `outputs.wire-job
   ==
 ::
 ::  whether a label carries a `${{` expression opener
@@ -366,51 +407,188 @@
   ?:  (test i.items)  `i.items
   $(items t.items)
 ::
-::  what to do with a job whose own attempt has not been recorded: run it,
-::  skip it with a reason, or wait.  every job in `needs` must stand
-::  terminal first.  a failed or unfinished need skips the dependent with
-::  the reason.  other independent jobs can still run.  a
-::  skipped need skips it too, as on GitHub.  an output-eq condition reads
-::  the need's recorded outputs: an output never set is a skip with the
-::  reason, never a crash and never true.
+::  what to do with a job whose own attempt has not been recorded: wait
+::  while any job it needs is open, then decide (CI-EXPR-2):
+::    - no condition is GitHub's implicit success(): it runs when every
+::      ancestor (its needs, and theirs) succeeded, else it is skipped
+::      naming the first that did not;
+::    - a condition with a status function (success, failure, always,
+::      cancelled) is evaluated as written, whatever the needs did, so a
+::      failed or skipped need never suppresses it;
+::    - a condition without one is success() && (condition), short-
+::      circuited: the condition is not read once success() is false;
+::    - a value that cannot be computed refuses the job with the reason
+::      (%error), never false.
+::  a need's result is success, failure or skipped as GitHub names them;
+::  an infrastructure error is never success: it reads as failure.  a
+::  state-3 plan's %output-eq keeps the meaning it was admitted under.
 ::
 +$  decision
-  $%  [%run ~]
-      [%skip reason=@t]
-      [%wait ~]
-      [%invalid reason=@t]
+  $%  [%run reason=@t value=(unit @t)]
+      [%skip reason=@t value=(unit @t)]
+      [%error reason=@t]
+      [%wait reason=@t]
+  ==
+::
+::  the run a decision reads: its event and payload, ref, source and
+::  actor (the github context), its typed inputs, and whether it was
+::  cancelled
+::
++$  run-context
+  $:  event=@t
+      payload=@t
+      ref=@t
+      sha=@t
+      actor=@t
+      inputs=val:ci-expr
+      cancelled=?
+  ==
+::
+++  result-word
+  |=  =standing
+  ^-  @t
+  ?+  standing  'failure'
+    %passed  'success'
+    %skipped  'skipped'
+  ==
+::
+++  standing-text
+  |=  =standing
+  ^-  @t
+  ?-  standing
+    %passed  'succeeded'
+    %failed  'failed'
+    %skipped  'was skipped'
+    %unknown  'had an infrastructure error'
+    %running  'is running'
+    %pending  'is pending'
+  ==
+::
+::  a job's ancestors in its workflow: its needs first, then theirs
+::
+++  ancestors
+  |=  [=job:ci plan=(list job:ci)]
+  ^-  (list @t)
+  =/  by-id=(map @t job:ci)
+    %-  malt
+    %+  turn  (skim plan |=(j=job:ci =(workflow.j workflow.job)))
+    |=(j=job:ci [id.j j])
+  =|  seen=(set @t)
+  =|  order=(list @t)
+  =/  todo=(list @t)  needs.job
+  |-
+  ?~  todo  (flop order)
+  ?:  (~(has in seen) i.todo)  $(todo t.todo)
+  =/  found=(unit job:ci)  (~(get by by-id) i.todo)
+  %=  $
+    todo  (weld t.todo ?~(found ~ needs.u.found))
+    seen  (~(put in seen) i.todo)
+    order  [i.todo order]
+  ==
+::
+::  the entries of a job's direct needs, in its needs order
+::
+++  direct-entries
+  |=  [=job:ci entries=(map key need-entry:ci)]
+  ^-  (list need-entry:ci)
+  (murn needs.job |=(need=@t (~(get by entries) [workflow.job need])))
+::
+::  the scope a job's condition reads
+::
+++  job-scope
+  |=  [=job:ci entries=(map key need-entry:ci) =run-context status=[success=? failure=?]]
+  ^-  scope:ci-expr
+  :*  %:  github-of:ci-expr
+        event.run-context  payload.run-context  ref.run-context
+        sha.run-context  actor.run-context  name.job  id.job
+      ==
+      (needs-of:ci-expr (direct-entries job entries))
+      [%obj ~]
+      inputs.run-context
+      [%obj ~]
+      success.status
+      failure.status
+      cancelled.run-context
   ==
 ::
 ++  decide
-  |=  [=job:ci standings=(map key standing) outputs=(map key (map @t @t))]
+  |=  $:  =job:ci
+          plan=(list job:ci)
+          standings=(map key standing)
+          entries=(map key need-entry:ci)
+          =run-context
+      ==
   ^-  decision
+  =/  open=(unit @t)
+    %+  find-first  needs.job
+    |=  need=@t
+    ?=(?(%pending %running) (~(gut by standings) [workflow.job need] %pending))
+  ?^  open  [%wait (rap 3 ~['waiting for ' u.open])]
+  =/  family=(list @t)  (ancestors job plan)
+  =/  word
+    |=  id=@t
+    ^-  @t
+    (result-word (~(gut by standings) [workflow.job id] %pending))
+  =/  succeeded=?  (levy family |=(id=@t =('success' (word id))))
+  =/  failed=?  (lien family |=(id=@t =('failure' (word id))))
+  =/  blocker=@t
+    =/  first=(unit @t)  (find-first family |=(id=@t !=('success' (word id))))
+    ?~  first  ''
+    (rap 3 ~[u.first ' ' (standing-text (~(gut by standings) [workflow.job u.first] %pending))])
+  ?~  cond.job
+    ?:  succeeded
+      [%run ?~(needs.job 'no prerequisites' 'every prerequisite succeeded') ~]
+    [%skip (rap 3 ~['skipped: ' blocker]) ~]
+  =/  cond=summary:ci-expr  (summarize:ci-expr u.cond.job)
+  ?-  -.cond
+      %refused
+    [%error (rap 3 ~['if ' (quote (shown:ci-expr text.cond)) ' is refused: ' reason.cond])]
+  ::
+      %output-eq  (legacy job cond standings entries)
+  ::
+      %if
+    =/  shown=@t  (quote (shown:ci-expr text.cond))
+    ?:  ?&(!status.cond !succeeded)
+      [%skip (rap 3 ~['skipped: ' blocker '; the if has no status function, so success() applies first']) ~]
+    =/  value=(each val:ci-expr @t)
+      (eval-condition:ci-expr u.cond.job (job-scope job entries run-context [succeeded failed]))
+    ?:  ?=(%| -.value)
+      [%error (rap 3 ~['if ' shown ' could not be evaluated: ' p.value])]
+    =/  seen=@t  (render:ci-expr p.value)
+    ?:  (truthy:ci-expr p.value)  [%run (rap 3 ~['if ' shown ' is ' seen]) `seen]
+    [%skip (rap 3 ~['if ' shown ' is ' seen]) `seen]
+  ==
+::
+::  a state-3 plan's gate, as it was admitted (CI-EXPR-1): every need
+::  passed, then the named output the need recorded equals the literal
+::  exactly; an output never set is a skip with the reason
+::
+++  legacy
+  |=  [=job:ci cond=summary:ci-expr standings=(map key standing) entries=(map key need-entry:ci)]
+  ^-  decision
+  ?>  ?=(%output-eq -.cond)
   =/  needs=(list @t)  needs.job
   |-
   ?^  needs
     =/  standing=standing  (~(gut by standings) [workflow.job i.needs] %pending)
-    ?-  standing
-      %pending  [%wait ~]
-      %running  [%wait ~]
-      %failed  [%skip (rap 3 ~['needs ' i.needs ' failed'])]
-      %unknown  [%skip (rap 3 ~['needs ' i.needs ' did not complete'])]
-      %skipped  [%skip (rap 3 ~['needs ' i.needs ' was skipped'])]
+    ?+  standing  [%wait (rap 3 ~['waiting for ' i.needs])]
+      %failed  [%skip (rap 3 ~['needs ' i.needs ' failed']) ~]
+      %unknown  [%skip (rap 3 ~['needs ' i.needs ' did not complete']) ~]
+      %skipped  [%skip (rap 3 ~['needs ' i.needs ' was skipped']) ~]
       %passed  $(needs t.needs)
     ==
-  ?~  cond.job  [%run ~]
-  ?-  -.u.cond.job
-      %unsupported
-    [%invalid (rap 3 ~['unsupported if expression ' (quote raw.u.cond.job)])]
-  ::
-      %output-eq
-    =/  reference=@t
-      (rap 3 ~['needs.' job.u.cond.job '.outputs.' output.u.cond.job])
-    =/  recorded=(map @t @t)  (~(gut by outputs) [workflow.job job.u.cond.job] ~)
-    =/  value=(unit @t)  (~(get by recorded) output.u.cond.job)
-    ?~  value  [%skip (rap 3 ~['output not set: ' reference])]
-    ?:  =(u.value literal.u.cond.job)  [%run ~]
-    :-  %skip
-    (rap 3 ~['if false: ' reference ' is ' (quote u.value) ', not ' (quote literal.u.cond.job)])
-  ==
+  =/  reference=@t  (rap 3 ~['needs.' job.cond '.outputs.' output.cond])
+  =/  entry=(unit need-entry:ci)  (~(get by entries) [workflow.job job.cond])
+  =/  value=(unit @t)
+    ?~  entry  ~
+    =/  hits  (skim outputs.u.entry |=([k=@t v=@t] =(k output.cond)))
+    ?~(hits ~ `+.i.hits)
+  ?~  value  [%skip (rap 3 ~['output not set: ' reference]) ~]
+  ?:  =(u.value literal.cond)
+    [%run (rap 3 ~[reference ' is ' (quote u.value)]) `(quote u.value)]
+  :+  %skip
+    (rap 3 ~['if false: ' reference ' is ' (quote u.value) ', not ' (quote literal.cond)])
+  `(quote u.value)
 ::
 ::  keep the candidate pending while any job is open, so the scheduler
 ::  can finish independent jobs after a failure.  pending never permits

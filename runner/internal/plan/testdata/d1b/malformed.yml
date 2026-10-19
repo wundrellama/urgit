@@ -1,0 +1,9 @@
+name: Malformed condition
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    if: github.ref == "refs/heads/master"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"

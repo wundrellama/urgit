@@ -1,0 +1,51 @@
+name: Typed conditions
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: A boolean left false
+        type: boolean
+        default: false
+      count:
+        description: A number left zero
+        type: number
+        default: 0
+      payload:
+        description: JSON text
+        type: string
+        default: '{"level":0,"tags":["a"]}'
+jobs:
+  typed:
+    # false and zero arrive typed: a boolean and a number, not text, not missing
+    if: inputs.dry_run == false && toJSON(inputs.dry_run) == 'false' && inputs.count == 0 && toJSON(inputs.count) == '0'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo typed
+  coercion:
+    # loose equality: '' and '0' are the number 0; strings compare without case
+    if: inputs.count == '' && inputs.count == '0' && 'ABC' == 'abc' && !(inputs.count == 'zero')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo coerced
+  short-circuit:
+    # && stops at false: the invalid JSON on its right is never read
+    if: inputs.dry_run && fromJSON('not json')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"
+  json:
+    if: fromJSON(inputs.payload).level == inputs.count && contains(fromJSON(inputs.payload).tags, 'A')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo json
+  event-text:
+    # github.event.inputs carries a boolean as the text 'false', which is truthy
+    if: github.event.inputs.dry_run == 'false' && github.event.inputs.dry_run
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo text
+  zero-is-false:
+    if: inputs.count
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"

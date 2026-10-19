@@ -1,0 +1,48 @@
+name: Status functions
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      fail:
+        description: Make the build fail
+        type: boolean
+        default: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          FAIL: ${{ inputs.fail }}
+        run: |
+          echo "fail=$FAIL"
+          test "$FAIL" != true
+  test:
+    # an ordinary dependent: skipped when build fails
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo testing
+  deploy:
+    # needs a job that was skipped: skipped too
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploying
+  report:
+    # a reporting job: runs whatever its prerequisites did
+    needs: [build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          BUILD: ${{ needs.build.result }}
+          TEST: ${{ needs.test.result }}
+        run: echo "build=$BUILD test=$TEST"
+  notify:
+    # runs only when an ancestor failed, through the skipped deploy and test
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "an ancestor failed"

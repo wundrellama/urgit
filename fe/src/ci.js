@@ -1,3 +1,5 @@
+import { jobDetailsModel } from './ciJobs.js'
+
 // The CI tab's pure helpers (BRIEF-CI-P2 D6): the log renderer over the
 // raw act jsonl the store serves, the shapes the candidate list and the
 // candidate page derive from the ci/* routes, and the action bodies the
@@ -7,15 +9,25 @@ export const shortOid = (oid) => (oid ? String(oid).slice(0, 8) : '—')
 
 export const branchLabel = (ref) => (ref ? String(ref).replace('refs/heads/', '') : '—')
 
-// the candidate statuses and the one word the list shows for each
-export const statusLabel = {
+// the candidate statuses and the one word the list shows for each: a
+// candidate skipped was superseded by a newer one for its ref
+export const candidateStatusLabel = {
   passed: 'passed',
   failed: 'failed',
   pending: 'pending',
   skipped: 'superseded',
   unknown: 'unknown',
+}
+
+// a job attempt's statuses (correction 01): an attempt skipped was not run,
+// its condition false or a need not met, and is never "superseded"
+export const attemptStatusLabel = {
+  passed: 'passed',
+  failed: 'failed',
+  skipped: 'skipped',
   running: 'running',
   reoffered: 're-offered',
+  cancelled: 'cancelled',
   'infrastructure-error': 'infra error',
 }
 
@@ -57,7 +69,7 @@ export function attemptPips(attempts = []) {
     .filter((attempt) => attempt.kind === 'job')
     .slice()
     .reverse()
-    .map((attempt) => ({ id: attempt.attempt, status: attempt.status, job: attempt.job || '' }))
+    .map((attempt) => ({ id: attempt.attempt, status: attempt.status, statusText: attemptStatusLabel[attempt.status] || attempt.status, job: attempt.job || '' }))
 }
 
 // one row of the candidate list
@@ -69,6 +81,7 @@ export function candidateRow(candidate, nowSeconds = Date.now() / 1000) {
     head: shortOid(candidate.head),
     actor: candidate.actor || '',
     status: candidate.status,
+    statusText: candidateStatusLabel[candidate.status] || candidate.status,
     trust: candidate.trust,
     pull: candidate.pull ?? null,
     reason: candidate.verdictReason || '',
@@ -96,10 +109,13 @@ export function duration(started, finished) {
 
 // the candidate page's job rows: the plan attempts first (the ship's
 // planning step), then every job attempt newest first, each with the
-// fields the table shows, the job's runs-on from the plan (P3 D2b) and
-// whether a log can be opened
+// fields the table shows, the job's runs-on from the plan (P3 D2b),
+// whether a log can be opened, and (Delivery 1B) its job details: why it
+// ran or did not, its prerequisites and its outputs
 export function attemptRows(attempts = [], plan = []) {
-  const runsOn = new Map((Array.isArray(plan) ? plan : []).map((job) => [`${job.workflow}/${job.id}`, Array.isArray(job.runsOn) ? job.runsOn : []]))
+  const jobs = Array.isArray(plan) ? plan : []
+  const runsOn = new Map(jobs.map((job) => [`${job.workflow}/${job.id}`, Array.isArray(job.runsOn) ? job.runsOn : []]))
+  const planned = new Map(jobs.map((job) => [`${job.workflow}/${job.id}`, job]))
   return attempts.map((attempt) => ({
     id: attempt.attempt,
     kind: attempt.kind,
@@ -108,6 +124,7 @@ export function attemptRows(attempts = [], plan = []) {
     runsOn: attempt.kind === 'job' ? runsOn.get(`${attempt.workflow}/${attempt.job}`) || [] : [],
     daemon: attempt.daemon ? String(attempt.daemon).slice(0, 12) : (attempt.status === 'skipped' ? '—' : ''),
     status: attempt.status,
+    statusText: attemptStatusLabel[attempt.status] || attempt.status,
     trust: attempt.trust,
     started: attempt.started || null,
     finished: attempt.finished || null,
@@ -115,6 +132,7 @@ export function attemptRows(attempts = [], plan = []) {
     reason: attempt.reason || '',
     hasLog: Boolean(attempt.log),
     pinned: pinnedRows(attempt.pinned),
+    details: attempt.kind === 'job' ? jobDetailsModel(attempt, planned.get(`${attempt.workflow}/${attempt.job}`) || null) : null,
   }))
 }
 

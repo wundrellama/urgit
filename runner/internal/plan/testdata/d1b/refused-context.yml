@@ -1,0 +1,9 @@
+name: Refused context
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    if: env.DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"

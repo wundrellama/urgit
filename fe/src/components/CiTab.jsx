@@ -1,6 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, createElement, useCallback, useEffect, useRef, useState } from 'react'
 import { ci, publicApi } from '../api'
-import { approveHint, attemptRows, candidateRow, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, shortOid, statusLabel } from '../ci'
+import { approveHint, attemptRows, candidateRow, candidateStatusLabel, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, shortOid } from '../ci'
+import { renderJobDetails, renderWaitingJobs, waitingRows } from '../ciJobs'
 import { eventRows } from '../ciDispatch'
 import { applyCandidateFactToPage, feedPip, mergeCandidateFact, mergeRunnerCount } from '../ciLive'
 import { probeClass, probeMessage, probeStore } from '../storageProbe'
@@ -26,7 +27,7 @@ const statusClass = (status) => ({ passed: 'good', failed: 'bad', 'infrastructur
 
 function Pips({ pips }) {
   if (!pips.length) return <small className="quiet">no jobs yet</small>
-  return <span className="ci-pips">{pips.map((pip) => <span key={pip.id} className={`ci-pip ${statusClass(pip.status)}`} title={`${pip.job}: ${statusLabel[pip.status] || pip.status}`} />)}</span>
+  return <span className="ci-pips">{pips.map((pip) => <span key={pip.id} className={`ci-pip ${statusClass(pip.status)}`} title={`${pip.job}: ${pip.statusText}`} />)}</span>
 }
 
 // the storage pip (P3 D5): the ship names the store's endpoint and a probe
@@ -119,7 +120,7 @@ function CandidateList({ feed, onOpen }) {
           <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}</span>
           <code>{row.head}</code>
           <span>{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
-          <span className={`status ${statusClass(row.status)}`} title={row.reason}>{statusLabel[row.status] || row.status}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
+          <span className={`status ${statusClass(row.status)}`} title={row.reason}>{row.statusText}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
           <span title={row.reason}>{relativeTime(Date.now() / 1000 - row.ageSeconds)}</span>
           <Pips pips={row.pips} />
         </button>
@@ -214,7 +215,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
   const rows = attemptRows(data.attempts || [], c.plan || [])
   return (
     <div className="ci-candidate-page">
-      <div className="form-actions split"><button className="text-button" onClick={onBack}>← Candidates</button><span className={`status ${statusClass(c.status)}`}>{statusLabel[c.status] || c.status}</span></div>
+      <div className="form-actions split"><button className="text-button" onClick={onBack}>← Candidates</button><span className={`status ${statusClass(c.status)}`}>{candidateStatusLabel[c.status] || c.status}</span></div>
       <dl className="ci-facts">
         <div><dt>Ref</dt><dd>{c.ref}{c.pull != null && <> · pull request #{c.pull}</>}</dd></div>
         <div><dt>Head</dt><dd><code>{c.head}</code></dd></div>
@@ -232,6 +233,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
         {c.status !== 'pending' && c.mode !== 'manual' && <button className="button" disabled={busy !== ''} onClick={() => act('rerun', ciActions.rerun(c.id))}>{busy === 'rerun' ? 'Staging…' : 'Re-run'}</button>}
         {c.mode === 'manual' && <small className="quiet">A manual run is not re-run in place: run the workflow again from Run workflow, which admits its inputs under the policy now.</small>}
       </div>
+      {renderWaitingJobs(createElement, waitingRows(c))}
       <div className="ci-list">
         <div className="table-head ci-attempt-row"><span>Job</span><span>Daemon</span><span>Status</span><span>Started</span><span>Finished</span><span>Log</span></div>
         {rows.map((row) => (
@@ -239,7 +241,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
           <div className={`ci-attempt-row${row.pinned.length ? ' has-pins' : ''}`} title={row.reason}>
             <span className="ci-job-cell"><strong>{row.job}</strong>{(row.workflow || row.runsOn.length > 0) && <small className="quiet ci-job-meta">{row.workflow}{row.workflow && row.runsOn.length > 0 && ' · '}{row.runsOn.length > 0 && <span className="ci-runs-on" title="runs-on">{row.runsOn.join(', ')}</span>}</small>}</span>
             <code>{row.daemon}</code>
-            <span className={`status ${statusClass(row.status)}`}>{statusLabel[row.status] || row.status}{row.reason && <small className="quiet"> · {row.reason}</small>}</span>
+            <span className={`status ${statusClass(row.status)}`}>{row.statusText}{row.reason && <small className="quiet"> · {row.reason}</small>}</span>
             <span>{row.started ? exactTime(row.started) : '—'}</span>
             <span>{row.finished ? `${exactTime(row.finished)}${row.elapsed ? ` (${row.elapsed})` : ''}` : '—'}</span>
             <span>{row.hasLog ? <button className="text-button" onClick={() => setLog(row.id)}>log</button> : <small className="quiet">—</small>}</span>
@@ -250,6 +252,11 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate }) {
               {row.pinned.map((pin) => <small key={pin.name}><strong>{pin.name}</strong> → <span className="ci-pin-addrs">{pin.addrs.join(', ')}</span></small>)}
             </div>
           )}
+          {/* what the ship decided for the job and, apart from it, what
+              the attempt shows happened, its prerequisites and outputs
+              (Delivery 1B): a details area below the row, so the job cell
+              keeps its two lines */}
+          {row.details && renderJobDetails(createElement, row.details)}
           </Fragment>
         ))}
         {!rows.length && <div className="empty">No attempts yet{c.trust === 'untrusted' ? ': an untrusted revision waits for approval unless the repository runs restricted checks.' : '.'}</div>}

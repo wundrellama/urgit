@@ -218,7 +218,7 @@ jobs:
     if: needs.a.outputs.go == 'true'
     steps:
       - name: gated step
-        run: echo "b ran because a said go"
+        run: echo "b ran because a said ${{ needs.a.outputs.go }}"
 `
 
 // a store that only records what it is sent, and refuses a PUT without
@@ -263,17 +263,22 @@ var jobManifest = sig.Manifest{
 	Incarnation: "0v1.inc", Repo: "r", Ref: "refs/heads/master", Candidate: "0v1.cand", OID: "0000000000000000000000000000000000000001",
 	Baseline: "", Lock: "", Generation: 1, Workflow: "fixture-chain.yml", Job: "b", Trust: "trusted", Sandbox: "container", Mode: "required", Network: "locked",
 	Event: "push", Context: payloadDigest(pushPayload),
+	Needs: payloadDigest(chainNeeds), Prerequisites: "a=0v1.prod",
 }
+
+// job a's accepted attempt as job b's needs context: the ship renders it,
+// the manifest binds its digest (Delivery 1B)
+const chainNeeds = `{"a":{"outputs":{"go":"true"},"result":"success"}}`
 
 var jobAssignment = &ship.Assignment{
 	ID: "0v1.asg", Attempt: "0v1.att", Candidate: "0v1.cand", Repo: "r", Ref: "refs/heads/master",
 	OID: "0000000000000000000000000000000000000001", Kind: "job", Workflow: "fixture-chain.yml", Job: "b",
-	PrereqOutputs: map[string]map[string]string{"a": {"go": "true"}}, DeadlineSeconds: 60,
-	Manifest: &jobManifest, EventPayload: pushPayload,
+	DeadlineSeconds: 60, Manifest: &jobManifest, EventPayload: pushPayload, NeedsContext: chainNeeds,
 }
 
 // a job: prepare, copy the checkout, the act binary and the projection in,
-// run act on the projection with the isolated network and the prereq env,
+// run act on the projection with the isolated network and the signed
+// needs context as the variable its rewritten expressions read,
 // relay, claim the stream's jobResult, destroy; nothing touches the
 // sandbox after Run except Destroy
 func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
@@ -292,7 +297,7 @@ func TestJobNeverReadsSandboxAfterRun(t *testing.T) {
 		"prepare ci-0v1.att image=img",
 		"copy bundle -> /work",
 		"copy sh -> /usr/local/bin/act",
-		"run /usr/local/bin/act push -W /work/projected/fixture-chain.yml -j b -e /work/event.json --actor ~zod -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --container-daemon-socket unix:///run/user/1000/test/docker.sock --action-cache-path /work/actions --action-offline-mode --container-options -v /work/downloads:/urgit/downloads:ro --env URGIT_CI_DOWNLOADS=/urgit/downloads --cache-server-addr 10.9.8.7 --artifact-server-addr 10.9.8.7 --env NEEDS_A_OUTPUTS_GO=true env=",
+		"run /usr/local/bin/act push -W /work/projected/fixture-chain.yml -j b -e /work/event.json --actor ~zod -P ubuntu-latest=img --network ci-0v1.att --json --pull=false --cache-server-path /work/cache --artifact-server-path /work/artifacts --container-daemon-socket unix:///run/user/1000/test/docker.sock --action-cache-path /work/actions --action-offline-mode --container-options -v /work/downloads:/urgit/downloads:ro --env URGIT_CI_DOWNLOADS=/urgit/downloads --cache-server-addr 10.9.8.7 --artifact-server-addr 10.9.8.7 --var URGIT_NEEDS={\"a\":{\"outputs\":{\"go\":\"true\"},\"result\":\"success\"}} env=",
 		"destroy ci-0v1.att",
 	}
 	if strings.Join(box.ops, "\n") != strings.Join(want, "\n") {
@@ -377,9 +382,9 @@ func TestLockedImageLoadedFromArchiveBeforeAct(t *testing.T) {
 	}
 	a := *jobAssignment
 	a.Workflow, a.Job = "fixture-image.yml", "b"
-	a.PrereqOutputs = nil
+	a.NeedsContext = ""
 	m := jobManifest
-	m.Workflow = "fixture-image.yml"
+	m.Workflow, m.Needs, m.Prerequisites = "fixture-image.yml", "", ""
 	a.Manifest = &m
 	a.Downloads = []ship.Download{
 		{URL: "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662", Uses: "container:docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662", Kind: "container", SHA256: archive, Size: int64(tarBuf.Len()), Mirror: "store", Path: "ci/downloads/" + archive, Digest: "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662", ID: id},
@@ -585,8 +590,11 @@ func TestPlanAssignment(t *testing.T) {
 	if !strings.Contains(sh.plans[0], `"name":"fixture-chain"`) {
 		t.Fatalf("the plan must carry the real workflow name: %s", sh.plans[0])
 	}
+	// the gate compiled (CI-EXPR-2) where the workflow wrote it, and job
+	// a's declared output beside it
 	if string(posted.Jobs[0].Cond) != "null" || posted.Jobs[1].Needs[0] != "a" ||
-		!strings.Contains(string(posted.Jobs[1].Cond), `"kind":"output-eq"`) || !strings.Contains(string(posted.Jobs[1].Cond), `"v":1`) {
+		!strings.Contains(string(posted.Jobs[1].Cond), `"v":2,"text":"needs.a.outputs.go == 'true'","line":15,"col":9,"expr":{"k":"cmp"`) ||
+		!strings.Contains(sh.plans[0], `"outputs":[{"name":"go","v":2,"text":"${{ steps.emit.outputs.go }}"`) {
 		t.Fatalf("%s", sh.plans[0])
 	}
 	if !strings.Contains(strings.Join(box.ops, "\n"), "run sh -c /usr/local/bin/act -l -W '.github/workflows/fixture-chain.yml' 2>&1") {
@@ -739,6 +747,46 @@ func TestVerifyAssignment(t *testing.T) {
 		if err := d.verifyAssignment(&a); err == nil {
 			t.Fatalf("manifest mutation %s verified with the original signature", name)
 		}
+	}
+	// the needs context is bound like the event payload (Delivery 1B): a
+	// changed value, a context from another producer attempt, a stripped
+	// one and one the manifest never bound are each a tampered assignment
+	needsCases := map[string]func(a *ship.Assignment){
+		"altered needs value": func(a *ship.Assignment) {
+			a.NeedsContext = `{"a":{"outputs":{"go":"false"},"result":"success"}}`
+		},
+		"altered needs result": func(a *ship.Assignment) {
+			a.NeedsContext = `{"a":{"outputs":{"go":"true"},"result":"failure"}}`
+		},
+		"needs context dropped": func(a *ship.Assignment) { a.NeedsContext = "" },
+		"stale producer attempt": func(a *ship.Assignment) {
+			m := *a.Manifest
+			m.Prerequisites = "a=0v9.stale"
+			a.Manifest = &m
+		},
+		"unbound needs context": func(a *ship.Assignment) {
+			m := *a.Manifest
+			m.Needs, m.Prerequisites = "", ""
+			a.Manifest = &m
+		},
+	}
+	for name, mutate := range needsCases {
+		a := *jobAssignment
+		m := jobManifest
+		a.Manifest = &m
+		mutate(&a)
+		a.Sig = good.Sig
+		if err := d.verifyAssignment(&a); err == nil {
+			t.Fatalf("%s verified", name)
+		}
+	}
+	unbound := *jobAssignment
+	mu := jobManifest
+	mu.Needs, mu.Prerequisites = "", ""
+	unbound.Manifest = &mu
+	unbound.Sig = sign(priv, "0v1.daemon", unbound.Attempt, "assign", later, mu)
+	if err := d.verifyAssignment(&unbound); err == nil || !strings.Contains(err.Error(), "does not bind") {
+		t.Fatalf("a needs context the signed manifest does not bind must be refused by name: %v", err)
 	}
 	tampered := *jobAssignment
 	tampered.Sig = good.Sig

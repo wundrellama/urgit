@@ -127,15 +127,15 @@
 ?>  ?=([~ %summary *] command.summary)
 ?>  =('### structural pins' (end [3 19] body.u.command.summary))
 ::  a set-output in the $GITHUB_OUTPUT shape act 0.2.89 emits lands in
-::  the attempt's outputs
+::  the attempt's step outputs under its step (Delivery 1B)
 ::
 =/  output-line=@t
   '{"arg":"true","command":"set-output","dryrun":false,"job":"fixture-pass/pass","jobID":"pass","level":"info","matrix":{},"msg":"  ⚙  ::set-output:: suite=true","name":"suite","stage":"Main","step":"emit suite output","stepID":["emit"],"time":"2026-09-12T17:03:50-05:00"}'
 =/  output=(each event:ci refusal:ci-event)  (parse output-line)
 ?>  ?=(%& -.output)
 ?>  =(`[%set-output 'suite' 'true'] command.p.output)
-=/  outputs=(map @t @t)  (record-output:ci-event ~ p.output)
-?>  =(`'true' (~(get by outputs) 'suite'))
+=/  outputs=(list step-output:ci)  (need (record-output:ci-event ~ p.output %.n))
+?>  =(~[[~['emit'] 'suite' 'true' %.n]] outputs)
 ::  the ::set-output:: workflow-command shape lands too
 ::
 =/  kv-line=@t
@@ -143,12 +143,31 @@
 =/  kv=(each event:ci refusal:ci-event)  (parse kv-line)
 ?>  ?=(%& -.kv)
 ?>  =(`[%set-output 'replay' 'true'] command.p.kv)
-=.  outputs  (record-output:ci-event outputs p.kv)
-?>  =(2 ~(wyt by outputs))
+=.  outputs  (need (record-output:ci-event outputs p.kv %.n))
+?>  =(2 (lent outputs))
+::  another step's output of the same name is its own entry; the same
+::  step's later value replaces its own
+::
+=/  again=event:ci  p.output(step-id ~['other'])
+=.  outputs  (need (record-output:ci-event outputs again %.n))
+?>  =(3 (lent outputs))
+=/  later=event:ci  p.output(command `[%set-output 'suite' 'false'])
+=.  outputs  (need (record-output:ci-event outputs later %.n))
+?>  =(3 (lent outputs))
+?>  =(~['false'] (murn outputs |=(o=step-output:ci ?.(&(=(~['emit'] step.o) =('suite' name.o)) ~ `value.o))))
+::  past 256 entries a set-output is not recorded (~)
+::
+=/  full=(list step-output:ci)
+  (turn (gulf 1 256) |=(n=@ud `step-output:ci`[~[(scot %ud n)] 'x' 'y' %.n]))
+?>  =(~ (record-output:ci-event full p.output %.n))
 ::  nothing but a set-output touches outputs: the spike log has none
 ::
-=/  spike-outputs=(map @t @t)
-  (roll parsed |=([=event:ci acc=(map @t @t)] (record-output:ci-event acc event)))
+=/  spike-outputs=(list step-output:ci)
+  =/  items=(list event:ci)  parsed
+  =|  acc=(list step-output:ci)
+  |-
+  ?~  items  acc
+  $(items t.items, acc (need (record-output:ci-event acc i.items %.n)))
 ?>  =(~ spike-outputs)
 ::  a set-output without a name is refused
 ::
@@ -248,5 +267,5 @@
 ?>  =('leak=***' msg.scrubbed)
 ?>  =(`[%set-output 'leak' '***'] command.scrubbed)
 ?>  =(p.leaky (scrub:ci-event p.leaky ~))
-?>  =((~(put by *(map @t @t)) 'leak' '***') (record-output:ci-event ~ scrubbed))
+?>  =(`~[[~ 'leak' '***' %.y]] (record-output:ci-event ~ scrubbed %.y))
 %.y

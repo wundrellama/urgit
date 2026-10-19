@@ -1,6 +1,8 @@
 ::  ci-plan vectors: the plan parser and validator on the wire shape the
-::  daemon posts, and the evaluator on the standings a candidate records.
-::  every negative asserts the exact reason text.
+::  daemon posts (CI-EXPR-2: compiled conditions and declared outputs),
+::  and the decision on the standings a candidate records.  every negative
+::  asserts the exact reason text.  ci-expr-vector holds the expression
+::  semantics and the Delivery 1B fixtures.
 ::
 /-  ci
 /+  ci-plan
@@ -9,8 +11,14 @@
 :-  %noun
 =/  oid=@t  '587258b028c9bcc01e497386f0f85c48d0b82762'
 =/  tree=(list @t)  ~['chain.yml' 'pass.yml' 'README.md']
+::  the compiler's wire for `needs.a.outputs.go == 'true'` (fixture-chain)
+::
 =/  cond-eq=@t
-  '{"v":1,"kind":"output-eq","job":"a","output":"go","literal":"true"}'
+  %+  rap  3
+  :~  '{"v":2,"text":"needs.a.outputs.go == \'true\'","line":15,"col":9,"expr":{"k":"cmp","op":"eq",'
+      '"l":{"k":"prop","of":{"k":"prop","of":{"k":"prop","of":{"k":"ctx","name":"needs"},"name":"a"},'
+      '"name":"outputs"},"name":"go"},"r":{"k":"str","s":"true"}}}'
+  ==
 =/  plan-json
   |=  jobs=@t
   ^-  json
@@ -26,7 +34,7 @@
   %-  rap
   :-  3
   :~  '{"id":"'  id  '","workflow":"'  workflow  '","name":"wf","stage":'  stage
-      ',"needs":'  needs  ',"cond":'  cond  ',"events":["push"]'  extra  '}'
+      ',"needs":'  needs  ',"cond":'  cond  ',"outputs":[],"events":["push"]'  extra  '}'
   ==
 ::  parse then validate, giving the plan or the reason
 ::
@@ -63,10 +71,24 @@
 =/  sibling-plan=(list job:ci)
   ~[(snag 0 chain-plan) job-b job-pass(workflow 'chain.yml')]
 =/  key-sibling=key:ci-plan  ['chain.yml' 'pass']
+::  a push run's context: the github context b's condition does not read
+::
+=/  push-ctx=run-context:ci-plan
+  ['push' '' 'refs/heads/master' oid '~zod' [%obj ~] %.n]
 =/  decide-b
   |=  [standings=(map key:ci-plan standing:ci-plan) outputs=(map key:ci-plan (map @t @t))]
   ^-  decision:ci-plan
-  (decide:ci-plan job-b standings outputs)
+  =/  entries=(map key:ci-plan need-entry:ci)
+    %-  malt
+    %+  turn  ~(tap by standings)
+    |=  [k=key:ci-plan s=standing:ci-plan]
+    :-  k
+    :*  id.k  0v1
+        ?+(s %running %passed %passed, %failed %failed, %skipped %skipped, %unknown %infrastructure-error)
+        (result-word:ci-plan s)
+        ~(tap by (~(gut by outputs) k ~))
+    ==
+  (decide:ci-plan job-b chain-plan standings entries push-ctx)
 ::  standings and outputs from literal lists, typed as the maps the
 ::  evaluator reads
 ::
@@ -88,7 +110,7 @@
   %-  rap
   :-  3
   :~  '{"id":"'  id  '","workflow":"'  workflow  '","name":"wf","stage":0'
-      ',"needs":'  needs  ',"cond":null,"events":'  events  extra  '}'
+      ',"needs":'  needs  ',"cond":null,"outputs":[],"events":'  events  extra  '}'
   ==
 =/  plan-3
   |=  jobs=@t
@@ -124,10 +146,14 @@
   :~  :-  'chain: three jobs planned, keyed by [workflow id]'
       =(3 (lent chain-plan))
     ::
-      :-  'chain: b needs a, condition output-eq a.go == true, real workflow name carried'
+      :-  'chain: b needs a, its compiled condition and place carried, real workflow name carried'
       ?&  =(~['a'] needs.job-b)
-          =(`[%output-eq 'a' 'go' 'true'] cond.job-b)
+          ?=(^ cond.job-b)
+          ?=(%if -.+.cond.job-b)
+          .=  [%if 'needs.a.outputs.go == \'true\'' 15 9]
+          [-.+.cond.job-b +<.+.cond.job-b +>-.+.cond.job-b +>+<.+.cond.job-b]
           =('wf' name.job-b)
+          =(`~ outputs.job-b)
       ==
     ::
       :-  'duplicate job id'
@@ -154,8 +180,8 @@
         3
       ~[(job-json 'pass' 'pass.yml' '0' '[]' 'null' '') ',' (job-json 'b' 'chain.yml' '1' '["pass"]' 'null' '')]
     ::
-      :-  'unsupported if expression'
-      .=  'job b in chain.yml: unsupported if expression "github.event_name == \'push\'"'
+      :-  'a condition the compiler refused refuses the plan, by name and place'
+      .=  'job b in chain.yml: if "env.X == \'1\'" (line 7, column 9) is refused: context env is not available in a job-level if (github, needs, vars and inputs are)'
       %-  reason
       %-  plan-json
       %-  rap
@@ -166,10 +192,40 @@
             'chain.yml'
             '1'
             '["a"]'
-            '{"v":1,"kind":"unsupported","raw":"github.event_name == \'push\'"}'
+            '{"v":2,"text":"env.X == \'1\'","line":7,"col":9,"refusal":"context env is not available in a job-level if (github, needs, vars and inputs are)"}'
             ''
           ==
       ==
+    ::
+      :-  'an output the compiler refused refuses the plan'
+      .=  'job a in chain.yml: output url "${{ env.URL }}" (line 4, column 12) is refused: context env is not available to a job output on the ship in this release (github, needs, vars, inputs and steps.<id>.outputs are)'
+      %-  reason
+      %-  plan-json
+      %^  job-json  'a'  'chain.yml'
+      :^  '0'  '[]'  'null'
+      ',"outputs":[{"name":"url","v":2,"text":"${{ env.URL }}","line":4,"col":12,"refusal":"context env is not available to a job output on the ship in this release (github, needs, vars, inputs and steps.<id>.outputs are)"}]'
+    ::
+      :-  'a plan without an outputs list predates declared outputs and is refused'
+      .=  'job a in chain.yml: the plan carries no outputs list; the runner\'s compiler predates declared outputs'
+      %-  reason
+      %-  plan-json
+      '{"id":"a","workflow":"chain.yml","name":"wf","stage":0,"needs":[],"cond":null,"events":["push"]}'
+    ::
+      :-  'an output declared twice is refused'
+      .=  'job a in chain.yml: output x is declared twice'
+      %-  reason
+      %-  plan-json
+      %^  job-json  'a'  'chain.yml'
+      :^  '0'  '[]'  'null'
+      ',"outputs":[{"name":"x","v":2,"text":"1","line":4,"col":10,"parts":[{"lit":"1"}]},{"name":"x","v":2,"text":"2","line":5,"col":10,"parts":[{"lit":"2"}]}]'
+    ::
+      :-  'an output reading needs of a job it does not need is refused'
+      .=  'job a in chain.yml: output y references needs.b, which is not in needs'
+      %-  reason
+      %-  plan-json
+      %^  job-json  'a'  'chain.yml'
+      :^  '0'  '[]'  'null'
+      ',"outputs":[{"name":"y","v":2,"text":"${{ needs.b.result }}","line":4,"col":10,"parts":[{"expr":{"k":"prop","of":{"k":"prop","of":{"k":"ctx","name":"needs"},"name":"b"},"name":"result"}}]}]'
     ::
       :-  'matrix unsupported in P1'
       .=  'matrix unsupported in P1 (job a in chain.yml)'
@@ -226,8 +282,8 @@
       ?.  ?=(%& -.planned)  %.n
       =(~ timeout:(snag 0 p.planned))
     ::
-      :-  'unknown condition version (v 2)'
-      .=  'job b in chain.yml: unknown condition version'
+      :-  'a condition of another version (the state-3 v1 wire) is refused'
+      .=  'job b in chain.yml: if is refused: the condition is not version 2'
       %-  reason
       %-  plan-json
       %-  rap
@@ -238,19 +294,19 @@
             'chain.yml'
             '1'
             '["a"]'
-            '{"v":2,"kind":"output-eq","job":"a","output":"go","literal":"true"}'
+            '{"v":1,"kind":"output-eq","job":"a","output":"go","literal":"true"}'
             ''
           ==
       ==
     ::
-      :-  'unknown condition version (unknown kind)'
-      .=  'job b in chain.yml: unknown condition version'
+      :-  'a condition with a node the ship does not know is refused'
+      .=  'job b in chain.yml: if "x" (line 1, column 1) is refused: unknown expression node always'
       %-  reason
       %-  plan-json
       %-  rap
       :-  3
       :~  (job-json 'a' 'chain.yml' '0' '[]' 'null' '')  ','
-          (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":1,"kind":"always","job":"a"}' '')
+          (job-json 'b' 'chain.yml' '1' '["a"]' '{"v":2,"text":"x","line":1,"col":1,"expr":{"k":"always"}}' '')
       ==
     ::
       :-  'if references a job that is not in needs'
@@ -291,7 +347,7 @@
       %-  rap
       :-  3
       :~  '{"oid":"'  oid  '","workflows":["chain.yml","pass.yml"],"jobs":['
-          '{"id":"a","workflow":"chain.yml","stage":0,"needs":[],"cond":null,"events":["workflow_dispatch"]}]}'
+          '{"id":"a","workflow":"chain.yml","stage":0,"needs":[],"cond":null,"outputs":[],"events":["workflow_dispatch"]}]}'
       ==
     ::
       :-  'the daemon reporting an error is the reason'
@@ -307,23 +363,31 @@
       :-  'evaluate: if true runs'
       =(%run -:(decide-b (st ~[[key-a %passed]]) (ou ~[[key-a (malt ~[['go' 'true']])]])))
     ::
-      :-  'evaluate: if false skips with the reason'
-      .=  [%skip 'if false: needs.a.outputs.go is "false", not "true"']
+      :-  'evaluate: if false skips with the reason and the value'
+      .=  [%skip 'if "needs.a.outputs.go == \'true\'" is false' `'false']
       (decide-b (st ~[[key-a %passed]]) (ou ~[[key-a (malt ~[['go' 'false']])]]))
     ::
-      :-  'evaluate: unset output skips with the reason'
-      .=  [%skip 'output not set: needs.a.outputs.go']
+      :-  'evaluate: an output never published reads as null, which is not \'true\''
+      .=  [%skip 'if "needs.a.outputs.go == \'true\'" is false' `'false']
       (decide-b (st ~[[key-a %passed]]) ~)
     ::
-      :-  'evaluate: a failed need skips'
-      =([%skip 'needs a failed'] (decide-b (st ~[[key-a %failed]]) ~))
+      :-  'evaluate: a failed need skips: the if has no status function, so success() applies'
+      .=  [%skip 'skipped: a failed; the if has no status function, so success() applies first' ~]
+      (decide-b (st ~[[key-a %failed]]) ~)
     ::
-      :-  'evaluate: an unfinished need skips'
-      =([%skip 'needs a did not complete'] (decide-b (st ~[[key-a %unknown]]) ~))
+      :-  'evaluate: an infrastructure error is never success'
+      .=  [%skip 'skipped: a had an infrastructure error; the if has no status function, so success() applies first' ~]
+      (decide-b (st ~[[key-a %unknown]]) ~)
     ::
-      :-  'evaluate: an unsupported condition is invalid, never false'
-      .=  [%invalid 'unsupported if expression "always()"']
-      (decide:ci-plan job-b(cond `[%unsupported 'always()']) (st ~[[key-a %passed]]) ~)
+      :-  'evaluate: a refused condition refuses its job, never false'
+      .=  [%error 'if "always()" is refused: unsupported']
+      %:  decide:ci-plan
+        job-b(cond `[%refused 'always()' 'unsupported'])
+        chain-plan
+        (st ~[[key-a %passed]])
+        ~
+        push-ctx
+      ==
     ::
       :-  'verdict: fan-out pending while any job is open'
       =([%pending ~] (verdict:ci-plan chain-plan (st ~[[key-a %passed] [key-pass %running]])))

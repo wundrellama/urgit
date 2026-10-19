@@ -197,8 +197,16 @@ func jobRefusal(data []byte, top *yaml.Node) string {
 				return "job " + id + ": a runs-on expression is not supported in this release"
 			}
 		}
-		if info.Cond != nil && info.Cond.Kind != "output-eq" {
-			return "job " + id + ": the job-level if " + info.Cond.Raw + " is not supported in this release"
+		if info.Cond != nil && info.Cond.Refusal != "" {
+			return "job " + id + ": the job-level if " + info.Cond.Text + " is refused: " + info.Cond.Refusal
+		}
+		if len(info.Outputs) > MaxJobOutputs {
+			return fmt.Sprintf("job %s declares %d outputs; the bound is %d", id, len(info.Outputs), MaxJobOutputs)
+		}
+		for _, o := range info.Outputs {
+			if o.Refusal != "" {
+				return "job " + id + ": output " + o.Name + " is refused: " + o.Refusal
+			}
 		}
 	}
 	return ""

@@ -99,7 +99,6 @@ type Assignment struct {
 	Kind            string                       `json:"kind"`
 	Workflow        string                       `json:"workflow"`
 	Job             string                       `json:"job"`
-	PrereqOutputs   map[string]map[string]string `json:"prereq-outputs"`
 	DeadlineSeconds int                          `json:"deadline-seconds"`
 	Assigned        string                       `json:"assigned"`
 	Grants          []Grant                      `json:"grants"`
@@ -127,6 +126,42 @@ type Assignment struct {
 	// a manual run's; the signed manifest's context is its sha-256. ''
 	// for a resolve
 	EventPayload string `json:"event-payload"`
+	// NeedsContext is the needs context of a job's expressions (Delivery
+	// 1B): `{"<job>": {"outputs": {...}, "result": "..."}}` for each job
+	// it needs, rendered by the ship from their accepted attempts; the
+	// signed manifest's needs is its sha-256. '' when the job needs none
+	NeedsContext string `json:"needs-context"`
+	// ManifestOmits names the signed fields the `manifest` object did not
+	// carry (decoding left them empty): the runner refuses such an
+	// assignment by name, before its signature (Delivery 1B correction 01)
+	ManifestOmits []string `json:"-"`
+}
+
+// UnmarshalJSON decodes an assignment and notes every signed manifest
+// field its `manifest` object omits: a missing key decodes as empty text,
+// which is a different signed noun, not the one the ship meant.
+func (a *Assignment) UnmarshalJSON(data []byte) error {
+	type plain Assignment
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	var raw struct {
+		Manifest map[string]json.RawMessage `json:"manifest"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*a = Assignment(p)
+	a.ManifestOmits = nil
+	if raw.Manifest != nil {
+		for _, field := range sig.ManifestFields() {
+			if _, ok := raw.Manifest[field]; !ok {
+				a.ManifestOmits = append(a.ManifestOmits, field)
+			}
+		}
+	}
+	return nil
 }
 
 // Mapping is one explicit import mapping: From (a prefix) is read from To.

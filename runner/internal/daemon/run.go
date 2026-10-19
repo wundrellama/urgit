@@ -410,7 +410,10 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		Name        string     `json:"name"`
 		Stage       int        `json:"stage"`
 		Needs       []string   `json:"needs"`
-		Cond        *plan.Cond `json:"cond"`
+		Cond        *plan.Condition `json:"cond"`
+		// the job's declared outputs, compiled (CI-EXPR-2): the ship
+		// resolves them from the accepted attempt at the end of the job
+		Outputs []plan.Output `json:"outputs"`
 		Matrix      bool       `json:"matrix"`
 		Events      []string   `json:"events"`
 		Environment string     `json:"environment,omitempty"`
@@ -460,9 +463,12 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			if info.RunsOn == nil {
 				info.RunsOn = []string{}
 			}
+			if info.Outputs == nil {
+				info.Outputs = []plan.Output{}
+			}
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
-				Cond: info.Cond, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
+				Cond: info.Cond, Outputs: info.Outputs, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
 				RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes,
 			})
 		}
@@ -608,8 +614,20 @@ func (d *Daemon) runJob(ctx, daemonCtx context.Context, a *ship.Assignment, h sa
 		return
 	}
 	argv = append(argv, "--cache-server-addr", env.ServerAddr, "--artifact-server-addr", env.ServerAddr)
-	for _, e := range plan.PrereqEnv(a.PrereqOutputs) {
-		argv = append(argv, "--env", e)
+	// the job's needs context (Delivery 1B): the projection reads every
+	// needs root of its expressions from this variable, as data; the
+	// value is the context the signed manifest binds, verified when the
+	// assignment arrived ({} for a job that needs none). act's --var is
+	// read ahead of any .vars file of the checkout, and no step can change
+	// a variable. the log names its digest, not its values
+	shown := []string(nil)
+	if bundle.NeedsCarried > 0 {
+		needs := a.NeedsContext
+		if needs == "" {
+			needs = "{}"
+		}
+		shown = append(append(shown, argv...), "--var", plan.NeedsCarrier+"=<needs context sha-256 "+eventContext(needs)+">")
+		argv = append(argv, "--var", plan.NeedsCarrier+"="+needs)
 	}
 	for _, e := range env.Env {
 		argv = append(argv, "--env", e)
@@ -619,7 +637,11 @@ func (d *Daemon) runJob(ctx, daemonCtx context.Context, a *ship.Assignment, h sa
 	// the manifest is refused here and the job runs without it. the
 	// values are scrubbed from every line before the relay and before
 	// the saved stream.
-	shown := append([]string(nil), argv...)
+	if shown == nil {
+		shown = append([]string(nil), argv...)
+	} else {
+		shown = append(shown, argv[len(shown):]...)
+	}
 	var values []string
 	for _, g := range d.usableGrants(a, logf) {
 		argv = append(argv, "--secret", g.Name+"="+g.Value)

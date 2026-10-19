@@ -1,0 +1,64 @@
+name: Outputs across jobs
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+jobs:
+  producer:
+    runs-on: ubuntu-latest
+    outputs:
+      # a declared output named differently from the step output it maps
+      verdict: ${{ steps.emit.outputs.raw }}
+      # two steps emit `same`: each mapping names its own step
+      first: ${{ steps.one.outputs.same }}
+      second: ${{ steps.two.outputs.same }}
+      empty: ${{ steps.emit.outputs.blank }}
+      quoted: ${{ steps.emit.outputs.quoted }}
+      json: ${{ steps.emit.outputs.json }}
+      composed: release-${{ steps.one.outputs.same }}
+    steps:
+      - id: emit
+        run: |
+          echo "raw=go" >> "$GITHUB_OUTPUT"
+          echo "blank=" >> "$GITHUB_OUTPUT"
+          echo "undeclared=never published" >> "$GITHUB_OUTPUT"
+          {
+            echo "quoted<<URGIT_EOF"
+            echo "it's \"quoted\""
+            echo "second line"
+            echo "URGIT_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo 'json={"n":0,"ok":false,"list":["a","b"]}' >> "$GITHUB_OUTPUT"
+      - id: one
+        run: echo "same=from-one" >> "$GITHUB_OUTPUT"
+      - id: two
+        run: echo "same=from-two" >> "$GITHUB_OUTPUT"
+  consumer:
+    needs: producer
+    if: needs.producer.outputs.verdict == 'go' && needs.producer.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: read the producer's outputs
+        env:
+          VERDICT: ${{ needs.producer.outputs.verdict }}
+          FIRST: ${{ needs.producer.outputs.first }}
+          SECOND: ${{ needs.producer.outputs.second }}
+          EMPTY_JSON: ${{ toJSON(needs.producer.outputs.empty) }}
+          QUOTED: ${{ needs.producer.outputs.quoted }}
+          JSON_N: ${{ fromJSON(needs.producer.outputs.json).n }}
+          UNDECLARED_JSON: ${{ toJSON(needs.producer.outputs.undeclared) }}
+          COMPOSED: ${{ needs.producer.outputs.composed }}
+          RESULT: ${{ needs.producer.result }}
+        run: |
+          printf 'verdict=%s first=%s second=%s empty=%s json.n=%s undeclared=%s composed=%s result=%s\n' "$VERDICT" "$FIRST" "$SECOND" "$EMPTY_JSON" "$JSON_N" "$UNDECLARED_JSON" "$COMPOSED" "$RESULT"
+          printf 'quoted=%s\n' "$QUOTED"
+          test "$VERDICT" = go && test "$FIRST" = from-one && test "$SECOND" = from-two
+      - name: a step condition reads needs too
+        if: needs.producer.outputs.first == 'from-one'
+        run: echo "step if saw first=${{ needs.producer.outputs.first }}"
+  stopped-consumer:
+    needs: producer
+    if: needs.producer.outputs.verdict == 'stop'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "must not run"

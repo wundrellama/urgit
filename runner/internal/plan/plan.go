@@ -1,14 +1,16 @@
-// Package plan is the daemon's YAML walk: the job-level `needs` and `if`
-// act -l does not print, compiled to the versioned structure the ship
-// evaluates (CI-EXPR-1), the matrix flag, and the single-job projection
-// act runs on (CI-PROJECT-1). The walk reads YAML; it executes nothing.
+// Package plan is the daemon's YAML walk: the job-level `needs`, `if` and
+// `outputs` act -l does not print, compiled to the versioned structure the
+// ship evaluates (CI-EXPR-2), the matrix flag, and the single-job
+// projection act runs on (CI-PROJECT-1), which carries the job's signed
+// needs context. The walk reads YAML; it executes nothing.
 package plan
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,20 +18,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Cond is the wire form of a compiled job-level condition, version 1.
-type Cond struct {
-	V       int    `json:"v"`
-	Kind    string `json:"kind"`
-	Job     string `json:"job,omitempty"`
-	Output  string `json:"output,omitempty"`
-	Literal string `json:"literal,omitempty"`
-	Raw     string `json:"raw,omitempty"`
-}
-
 // JobInfo is what the walk learns about one job that act -l omits.
 type JobInfo struct {
-	Needs       []string
-	Cond        *Cond
+	Needs []string
+	// the job-level if, compiled (CI-EXPR-2); nil when the job has none
+	Cond *Condition
+	// the job's declared outputs (jobs.<id>.outputs), compiled, in
+	// declaration order; the ship resolves them from the accepted attempt
+	Outputs     []Output
 	Matrix      bool
 	Environment string // the job's `environment:` name, "" when none
 	// the job's `runs-on` (a string or a list; the ship treats a string
@@ -38,26 +34,8 @@ type JobInfo struct {
 	TimeoutMinutes int
 }
 
-var outputEq = regexp.MustCompile(`^needs\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\s*==\s*'([^']*)'$`)
-
-// CompileIf turns a job-level `if` into the one supported shape,
-// `needs.<job>.outputs.<name> == '<literal>'` (optionally inside
-// `${{ }}`), or an %unsupported record carrying the raw text. The ship
-// never sees the raw text as a condition.
-func CompileIf(expr string) Cond {
-	trimmed := strings.TrimSpace(expr)
-	inner := trimmed
-	if strings.HasPrefix(inner, "${{") && strings.HasSuffix(inner, "}}") {
-		inner = strings.TrimSpace(inner[3 : len(inner)-2])
-	}
-	if m := outputEq.FindStringSubmatch(inner); m != nil {
-		return Cond{V: 1, Kind: "output-eq", Job: m[1], Output: m[2], Literal: m[3]}
-	}
-	return Cond{V: 1, Kind: "unsupported", Raw: trimmed}
-}
-
 // Walk reads one workflow file's jobs: needs (string or list), the
-// compiled if, and whether strategy.matrix is present.
+// compiled if and outputs, and whether strategy.matrix is present.
 func Walk(data []byte) (map[string]JobInfo, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -85,9 +63,27 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 					}
 				}
 			}
-			if cond := mappingValue(job, "if"); cond != nil && cond.Kind == yaml.ScalarNode {
-				c := CompileIf(cond.Value)
+			// an empty if is no condition, as act reads it; one that is not a
+			// single value is refused, never read as true
+			if cond := mappingValue(job, "if"); cond != nil && !isNull(cond) {
+				c := Condition{V: ExprVersion, Line: cond.Line, Col: cond.Column, Refusal: "the if is not a single expression"}
+				if cond.Kind == yaml.ScalarNode {
+					c = CompileCondition(cond.Value, cond.Line, cond.Column)
+				}
 				info.Cond = &c
+			}
+			if outputs := mappingValue(job, "outputs"); outputs != nil && !isNull(outputs) {
+				if outputs.Kind != yaml.MappingNode {
+					info.Outputs = []Output{{V: ExprVersion, Line: outputs.Line, Col: outputs.Column, Refusal: "outputs is not a mapping of output names"}}
+				}
+				for i := 0; outputs.Kind == yaml.MappingNode && i+1 < len(outputs.Content); i += 2 {
+					name, value := outputs.Content[i].Value, outputs.Content[i+1]
+					if value.Kind != yaml.ScalarNode {
+						info.Outputs = append(info.Outputs, Output{Name: name, V: ExprVersion, Line: value.Line, Col: value.Column, Refusal: "output " + name + " is not a single value"})
+						continue
+					}
+					info.Outputs = append(info.Outputs, CompileOutput(name, value.Value, value.Line, value.Column))
+				}
 			}
 			if strategy := mappingValue(job, "strategy"); strategy != nil && strategy.Kind == yaml.MappingNode {
 				if mappingValue(strategy, "matrix") != nil {
@@ -137,32 +133,6 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 	return out, nil
 }
 
-// PrereqEnv maps the ship's prereq-outputs to act --env assignments:
-// NEEDS_<JOB>_OUTPUTS_<NAME>=<value>, upper-cased, non-alphanumerics
-// replaced by `_`. Carried for a later phase; no ERPit step reads one.
-func PrereqEnv(outputs map[string]map[string]string) []string {
-	var env []string
-	for job, values := range outputs {
-		for name, value := range values {
-			env = append(env, "NEEDS_"+envToken(job)+"_OUTPUTS_"+envToken(name)+"="+value)
-		}
-	}
-	sort.Strings(env)
-	return env
-}
-
-func envToken(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(s) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
-}
-
 // SafeFilename is act's own directory naming for a `uses:` string in its
 // action cache (pkg/runner/step_action_remote.go safeFilename, 0.2.89):
 // the bundle materializes each locked action under exactly this name.
@@ -204,13 +174,36 @@ func Project(data []byte, jobID, attempt, fileName string) ([]byte, error) {
 // locked bytes and never asks a registry (P03). Nothing else on those
 // lines changes; a reference the lock does not name is left as written.
 func ProjectImages(data []byte, jobID, attempt, fileName string, images map[string]string) ([]byte, error) {
+	p, err := ProjectJob(data, jobID, attempt, fileName, images)
+	return p.Data, err
+}
+
+// Projection is a job's single-job projection, and how many of its
+// expressions' `needs` roots read the signed needs context from the
+// carrier act is given as the variable NeedsCarrier (0: the job reads no
+// needs, and act needs no carrier).
+type Projection struct {
+	Data  []byte
+	Needs int
+}
+
+// ProjectJob is ProjectImages, carrying the job's needs context. act
+// gives a projected job no `needs` context of its own — it builds one only
+// from upstream jobs of the same run, and the projection never holds one —
+// so every `needs` root in the job's expressions is rewritten to read the
+// ship's signed needs context from the NeedsCarrier variable, as data
+// (RewriteNeedsExpression). Such a job is re-encoded from its YAML tree
+// with only those expressions changed, and the result is decoded again
+// and compared with the intended job before it is used; a job that reads
+// no needs keeps the byte-for-byte cut.
+func ProjectJob(data []byte, jobID, attempt, fileName string, images map[string]string) (Projection, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
+		return Projection{}, err
 	}
 	top := topMapping(&doc)
 	if top == nil {
-		return nil, errors.New("workflow is not a mapping")
+		return Projection{}, errors.New("workflow is not a mapping")
 	}
 	lines := strings.SplitAfter(string(data), "\n")
 	total := len(lines)
@@ -228,7 +221,7 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 		}
 	}
 	if jobsKey == nil || jobsVal.Kind != yaml.MappingNode {
-		return nil, errors.New("workflow has no jobs mapping")
+		return Projection{}, errors.New("workflow has no jobs mapping")
 	}
 	// each job's block: from its key line to the line before the next
 	// job's key (or the end of the jobs block)
@@ -255,21 +248,54 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 		}
 	}
 	if chosen == nil {
-		return nil, fmt.Errorf("job %q is not in the workflow", jobID)
+		return Projection{}, fmt.Errorf("job %q is not in the workflow", jobID)
 	}
 	if chosen.value.Kind != yaml.MappingNode || chosen.value.Style&yaml.FlowStyle != 0 || len(chosen.value.Content) == 0 {
-		return nil, fmt.Errorf("job %q is not a block mapping: the projection names the job's run on a line of its own", jobID)
+		return Projection{}, fmt.Errorf("job %q is not a block mapping: the projection names the job's run on a line of its own", jobID)
 	}
 	// the job's run name: the attempt, then the job's own name (act
 	// interpolates it, so an expression is kept as written) or its id
 	runName := jobID
 	if name := mappingValue(chosen.value, "name"); name != nil {
 		if name.Kind != yaml.ScalarNode {
-			return nil, fmt.Errorf("job %q: name is not a string", jobID)
+			return Projection{}, fmt.Errorf("job %q: name is not a string", jobID)
 		}
 		runName = name.Value
 	}
-	nameLine := strings.Repeat(" ", chosen.value.Content[0].Column-1) + "name: " + yamlQuoted(ProjectionName(attempt, runName)) + "\n"
+	// the job as act will run it: no needs, no job-level if, its own name
+	// replaced, and every needs root of its expressions read from the
+	// carrier
+	job := copyNode(chosen.value)
+	dropKeys(job, "needs", "if", "name")
+	carried, err := rewriteJob(job)
+	if err != nil {
+		return Projection{}, fmt.Errorf("job %q: %w", jobID, err)
+	}
+	runName, named, err := RewriteNeedsTemplate(runName)
+	if err != nil {
+		return Projection{}, fmt.Errorf("job %q: name: %w", jobID, err)
+	}
+	carried += named
+	indent := strings.Repeat(" ", chosen.value.Content[0].Column-1)
+	nameLine := indent + "name: " + yamlQuoted(ProjectionName(attempt, runName)) + "\n"
+	var body []string
+	if carried > 0 {
+		renameImageNodes(job, images)
+		var buf bytes.Buffer
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		if err := enc.Encode(job); err != nil {
+			return Projection{}, fmt.Errorf("job %q: %w", jobID, err)
+		}
+		if err := enc.Close(); err != nil {
+			return Projection{}, fmt.Errorf("job %q: %w", jobID, err)
+		}
+		for _, line := range strings.SplitAfter(buf.String(), "\n") {
+			if line != "" {
+				body = append(body, indent+line)
+			}
+		}
+	}
 	// lines to drop inside the chosen job: needs, if and its own name,
 	// each from its key line to the line before the next key of the job
 	// mapping
@@ -300,7 +326,18 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 		if l >= jobsKey.Line && l < jobsEnd {
 			// inside the jobs block: keep only the chosen job's lines, its
 			// run name right after its key
-			if l < chosen.start || l >= chosen.end || drop[l] {
+			if l < chosen.start || l >= chosen.end {
+				continue
+			}
+			if l == chosen.start {
+				out.WriteString(lines[l])
+				out.WriteString(nameLine)
+				for _, line := range body {
+					out.WriteString(line)
+				}
+				continue
+			}
+			if carried > 0 || drop[l] {
 				continue
 			}
 			line := lines[l]
@@ -308,14 +345,186 @@ func ProjectImages(data []byte, jobID, attempt, fileName string, images map[stri
 				line = renameImage(line, images)
 			}
 			out.WriteString(line)
-			if l == chosen.start {
-				out.WriteString(nameLine)
-			}
 			continue
 		}
 		out.WriteString(lines[l])
 	}
-	return []byte(out.String()), nil
+	projected := []byte(out.String())
+	if carried > 0 {
+		if err := sameJob(projected, jobID, ProjectionName(attempt, runName), job); err != nil {
+			return Projection{}, fmt.Errorf("job %q: %w", jobID, err)
+		}
+	}
+	return Projection{Data: projected, Needs: carried}, nil
+}
+
+// sameJob decodes the projection and checks that it holds exactly the one
+// job, named for the attempt, equal as data to the intended tree
+func sameJob(projected []byte, jobID, runName string, want *yaml.Node) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(projected, &doc); err != nil {
+		return fmt.Errorf("the projection is not YAML: %w", err)
+	}
+	jobs := mappingValue(topMapping(&doc), "jobs")
+	if jobs == nil || jobs.Kind != yaml.MappingNode || len(jobs.Content) != 2 || jobs.Content[0].Value != jobID {
+		return errors.New("the projection does not hold exactly its one job")
+	}
+	var got, expected map[string]any
+	if err := jobs.Content[1].Decode(&got); err != nil {
+		return err
+	}
+	if err := want.Decode(&expected); err != nil {
+		return err
+	}
+	if got["name"] != runName {
+		return errors.New("the projection does not name the attempt's run")
+	}
+	delete(got, "name")
+	if !reflect.DeepEqual(got, expected) {
+		return errors.New("the re-encoded job is not the job with its needs carried")
+	}
+	return nil
+}
+
+func copyNode(n *yaml.Node) *yaml.Node {
+	c := *n
+	c.Content = make([]*yaml.Node, len(n.Content))
+	for i, child := range n.Content {
+		c.Content[i] = copyNode(child)
+	}
+	return &c
+}
+
+func dropKeys(m *yaml.Node, names ...string) {
+	var kept []*yaml.Node
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		dropped := false
+		for _, name := range names {
+			if m.Content[i].Value == name {
+				dropped = true
+			}
+		}
+		if !dropped {
+			kept = append(kept, m.Content[i], m.Content[i+1])
+		}
+	}
+	m.Content = kept
+}
+
+// rewriteJob carries the needs context in every expression of a job's
+// tree: a step's `if` is one expression when it has no ${{ }}, every
+// other value (and key) a template
+func rewriteJob(job *yaml.Node) (int, error) {
+	total := 0
+	for i := 0; i+1 < len(job.Content); i += 2 {
+		k, v := job.Content[i], job.Content[i+1]
+		n, err := rewriteValue(k, false)
+		if err != nil {
+			return 0, err
+		}
+		total += n
+		if k.Value == "steps" && v.Kind == yaml.SequenceNode {
+			for _, step := range v.Content {
+				if step.Kind != yaml.MappingNode {
+					n, err = rewriteValue(step, false)
+				} else {
+					n, err = rewriteStep(step)
+				}
+				if err != nil {
+					return 0, err
+				}
+				total += n
+			}
+			continue
+		}
+		if n, err = rewriteValue(v, false); err != nil {
+			return 0, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func rewriteStep(step *yaml.Node) (int, error) {
+	total := 0
+	for i := 0; i+1 < len(step.Content); i += 2 {
+		k, v := step.Content[i], step.Content[i+1]
+		n, err := rewriteValue(k, false)
+		if err != nil {
+			return 0, err
+		}
+		total += n
+		if n, err = rewriteValue(v, k.Value == "if"); err != nil {
+			return 0, fmt.Errorf("step %s: %w", k.Value, err)
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func rewriteValue(n *yaml.Node, condition bool) (int, error) {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var text string
+		var count int
+		var err error
+		if condition && !strings.Contains(n.Value, "${{") {
+			text, count, err = RewriteNeedsExpression(n.Value)
+		} else {
+			text, count, err = RewriteNeedsTemplate(n.Value)
+		}
+		if err != nil {
+			return 0, err
+		}
+		if count > 0 {
+			n.Value, n.Tag = text, "!!str"
+		}
+		return count, nil
+	case yaml.MappingNode, yaml.SequenceNode:
+		total := 0
+		for _, child := range n.Content {
+			count, err := rewriteValue(child, false)
+			if err != nil {
+				return 0, err
+			}
+			total += count
+		}
+		return total, nil
+	}
+	return 0, nil
+}
+
+// renameImageNodes is renameImage on a tree: a locked `container:`,
+// `image:` or `uses: docker://` reference becomes its loaded name
+func renameImageNodes(n *yaml.Node, images map[string]string) {
+	if len(images) == 0 {
+		return
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if v.Kind == yaml.ScalarNode {
+				switch k.Value {
+				case "container", "image":
+					if tag, ok := images[v.Value]; ok {
+						v.Value = tag
+					}
+				case "uses":
+					if ref := strings.TrimPrefix(v.Value, "docker://"); ref != v.Value {
+						if tag, ok := images[ref]; ok {
+							v.Value = "docker://" + tag
+						}
+					}
+				}
+			}
+			renameImageNodes(v, images)
+		}
+	case yaml.SequenceNode:
+		for _, child := range n.Content {
+			renameImageNodes(child, images)
+		}
+	}
 }
 
 // yamlQuoted is s as a YAML double-quoted scalar: a JSON string is one,

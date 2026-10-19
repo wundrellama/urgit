@@ -635,6 +635,12 @@ func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
 	if a.Manifest == nil {
 		return errors.New("assignment carries no execution manifest")
 	}
+	// every signed field must arrive (Delivery 1B correction 01): one the
+	// ship's emission left out decodes empty and would only surface as a
+	// signature that does not verify
+	if len(a.ManifestOmits) > 0 {
+		return fmt.Errorf("the signed manifest omits %s, which its signature binds", strings.Join(a.ManifestOmits, ", "))
+	}
 	if a.Sig.Recipient != d.daemonID {
 		return fmt.Errorf("signed for daemon %s, not this one", a.Sig.Recipient)
 	}
@@ -666,6 +672,15 @@ func (d *Daemon) verifyAssignment(a *ship.Assignment) error {
 		}
 	} else if eventContext(a.EventPayload) != a.Manifest.Context {
 		return errors.New("the event payload does not match the signed context")
+	}
+	// the needs context too (Delivery 1B): a job's expressions read only
+	// the values the ship signed for, from the attempts it names
+	if a.Manifest.Needs == "" {
+		if a.NeedsContext != "" {
+			return errors.New("the assignment carries a needs context the signed manifest does not bind")
+		}
+	} else if eventContext(a.NeedsContext) != a.Manifest.Needs {
+		return errors.New("the needs context does not match the signed manifest")
 	}
 	// verified: from here the assignment is its atoms, in the one spelling
 	// the ship writes — the claim, the sandbox, the launcher's record and

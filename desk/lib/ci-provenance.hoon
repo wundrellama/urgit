@@ -11,10 +11,11 @@
 /+  git-codec
 |%
 ::  the manifest message version (contract §5; 3 binds the run's event,
-::  Delivery 1A).  a verifier of another version fails closed on both
-::  sides.
+::  Delivery 1A; 4 binds a job's needs context and the attempts it came
+::  from, Delivery 1B).  a verifier of another version fails closed on
+::  both sides.
 ::
-++  manifest-version  3
+++  manifest-version  4
 ::
 ::  bounds (D4; the brief's proposed S0 bounds, adopted)
 ::
@@ -53,9 +54,15 @@
       ::  as a manual run's; '' for a resolve, which runs no job
       event=@t
       context=@t
+      ::  a job's needs context (Delivery 1B): the sha-256, 64 hex, of the
+      ::  text its expressions read (lib/ci-expr needs-text), '' for a job
+      ::  with no needs and for a plan or a resolve; and the accepted
+      ::  attempt of each need, `<job>=<attempt>` by job id, comma-joined
+      needs=@t
+      prerequisites=@t
   ==
 ::
-::  the signed noun: [3 recipient attempt operation expiry nonce manifest]
+::  the signed noun: [4 recipient attempt operation expiry nonce manifest]
 ::  — the manifest's cells continue the tuple, exactly as the daemon's
 ::  Tuple(…, manifest) nests them
 ::
@@ -68,6 +75,37 @@
   |=  [recipient=@uv attempt=@uv operation=@t expiry=@ud nonce=@uv =manifest]
   ^-  @
   (jam (message-noun recipient attempt operation expiry nonce manifest))
+::
+::  the manifest as an assignment carries it, its `manifest` object
+::  (contract §5): every field the signature binds, under the name the
+::  runner decodes (runner/internal/sig Manifest).  the one serializer the
+::  controller emits a manifest with: a field missing here decodes empty on
+::  the runner, which refuses the assignment (Delivery 1B correction 01)
+::
+++  manifest-json
+  |=  m=manifest
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['incarnation' s+(scot %uv incarnation.m)]
+      ['repo' s+repo.m]
+      ['ref' s+ref.m]
+      ['candidate' s+(scot %uv candidate.m)]
+      ['oid' s+oid.m]
+      ['baseline' s+baseline.m]
+      ['lock' s+lock.m]
+      ['generation' (numb:enjs:format generation.m)]
+      ['workflow' s+workflow.m]
+      ['job' s+job.m]
+      ['trust' s+trust.m]
+      ['sandbox' s+sandbox.m]
+      ['mode' s+mode.m]
+      ['network' s+network.m]
+      ['network-scope' s+scope.m]
+      ['event' s+event.m]
+      ['context' s+context.m]
+      ['needs' s+needs.m]
+      ['prerequisites' s+prerequisites.m]
+  ==
 ::
 ::  a candidate's manifest digest as the attempt records it: the sham of
 ::  the manifest noun (an identity for display and binding, not the

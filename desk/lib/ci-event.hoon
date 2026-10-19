@@ -10,6 +10,9 @@
 ++  max-line  65.536
 ++  max-msg  4.096
 ++  max-events  50.000
+::  an attempt's step outputs: entries, and bytes of values
+++  max-step-outputs  256
+++  max-output-bytes  1.048.576
 ::
 +$  refusal  [status=@ud message=@t]
 ::
@@ -208,14 +211,33 @@
   event
 ::
 ::  the one per-event effect that persists: a set-output lands in the
-::  attempt's outputs.  everything else is relayed and forgotten.
+::  attempt's step outputs under the step act names it by (its stepID:
+::  [id] for a job's step, [id sub] for a composite action's own step).
+::  a later value of the same step and name replaces the earlier, as act
+::  records it; another step's output of the same name is an entry of its
+::  own, never overwritten.  .redacted says the ship's credential fence
+::  changed the value.  ~ past the bounds: the output is not recorded.
+::  everything else of an event is relayed and forgotten.
 ::
 ++  record-output
-  |=  [outputs=(map @t @t) =event:ci]
-  ^-  (map @t @t)
-  ?~  command.event  outputs
-  ?.  ?=(%set-output -.u.command.event)  outputs
-  (~(put by outputs) name.u.command.event value.u.command.event)
+  |=  [outputs=(list step-output:ci) =event:ci redacted=?]
+  ^-  (unit (list step-output:ci))
+  ?~  command.event  `outputs
+  ?.  ?=(%set-output -.u.command.event)  `outputs
+  =/  name=@t  name.u.command.event
+  =/  kept=(list step-output:ci)
+    (skip outputs |=(o=step-output:ci &(=(step.o step-id.event) =(name.o name))))
+  =/  next=(list step-output:ci)
+    (snoc kept [step-id.event name value.u.command.event redacted])
+  ?:  (gth (lent next) max-step-outputs)  ~
+  =/  bytes=@ud
+    =/  items=(list step-output:ci)  next
+    =|  sum=@ud
+    |-
+    ?~  items  sum
+    $(items t.items, sum (add sum (met 3 value.i.items)))
+  ?:  (gth bytes max-output-bytes)  ~
+  `next
 ::
 ::  RFC 3339: YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM), as act
 ::  emits it.  the result is the UTC instant.

@@ -9,31 +9,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// the needs/if walk on both ERPit workflows: the four job-level gates,
-// their needs lists, no matrix anywhere (suite.yml:13 says so); every
-// ERPit job runs on ubuntu-latest and declares its timeout-minutes (P3:
-// the ship matches the label and bounds the deadline with the timeout)
+// the needs/if walk on both ERPit workflows: the four job-level gates
+// compiled where they were written, their needs lists, the plan jobs'
+// declared outputs, no matrix anywhere (suite.yml:13 says so); every ERPit
+// job runs on ubuntu-latest and declares its timeout-minutes (P3: the ship
+// matches the label and bounds the deadline with the timeout)
 func TestWalkERPit(t *testing.T) {
 	ubuntu := []string{"ubuntu-latest"}
+	type summary struct {
+		Needs          []string
+		If             string
+		Outputs        []string
+		RunsOn         []string
+		TimeoutMinutes int
+	}
 	cases := []struct {
 		file string
-		want map[string]JobInfo
+		want map[string]summary
 	}{
-		{"suite.yml", map[string]JobInfo{
-			"plan":       {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
+		{"suite.yml", map[string]summary{
+			"plan":       {Needs: []string{}, Outputs: []string{"suite=${{ steps.decide.outputs.suite }}"}, RunsOn: ubuntu, TimeoutMinutes: 5},
 			"structural": {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 10},
-			"suite":      {Needs: []string{"plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "suite", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 45},
+			"suite":      {Needs: []string{"plan"}, If: "needs.plan.outputs.suite == 'true'", RunsOn: ubuntu, TimeoutMinutes: 45},
 		}},
-		{"fixtures.yml", map[string]JobInfo{
+		{"fixtures.yml", map[string]summary{
 			"pins":    {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
-			"plan":    {Needs: []string{}, RunsOn: ubuntu, TimeoutMinutes: 5},
-			"replay":  {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "replay", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
-			"erasure": {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "erasure", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
-			"duo":     {Needs: []string{"pins", "plan"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "plan", Output: "duo", Literal: "true"}, RunsOn: ubuntu, TimeoutMinutes: 60},
+			"plan":    {Needs: []string{}, Outputs: []string{"replay=${{ steps.decide.outputs.replay }}", "erasure=${{ steps.decide.outputs.erasure }}", "duo=${{ steps.decide.outputs.duo }}"}, RunsOn: ubuntu, TimeoutMinutes: 5},
+			"replay":  {Needs: []string{"pins", "plan"}, If: "needs.plan.outputs.replay == 'true'", RunsOn: ubuntu, TimeoutMinutes: 60},
+			"erasure": {Needs: []string{"pins", "plan"}, If: "needs.plan.outputs.erasure == 'true'", RunsOn: ubuntu, TimeoutMinutes: 60},
+			"duo":     {Needs: []string{"pins", "plan"}, If: "needs.plan.outputs.duo == 'true'", RunsOn: ubuntu, TimeoutMinutes: 60},
 		}},
-		{"fixture-chain.yml", map[string]JobInfo{
-			"a": {Needs: []string{}, RunsOn: ubuntu},
-			"b": {Needs: []string{"a"}, Cond: &Cond{V: 1, Kind: "output-eq", Job: "a", Output: "go", Literal: "true"}, RunsOn: ubuntu},
+		{"fixture-chain.yml", map[string]summary{
+			"a": {Needs: []string{}, Outputs: []string{"go=${{ steps.emit.outputs.go }}"}, RunsOn: ubuntu},
+			"b": {Needs: []string{"a"}, If: "needs.a.outputs.go == 'true'", RunsOn: ubuntu},
 		}},
 	}
 	for _, c := range cases {
@@ -41,13 +49,42 @@ func TestWalkERPit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := Walk(data)
+		walked, err := Walk(data)
 		if err != nil {
 			t.Fatalf("%s: %v", c.file, err)
+		}
+		got := map[string]summary{}
+		for id, info := range walked {
+			s := summary{Needs: info.Needs, RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes}
+			if info.Cond != nil {
+				if info.Cond.Refusal != "" || info.Cond.Expr == nil {
+					t.Errorf("%s %s: the gate does not compile: %+v", c.file, id, info.Cond)
+				}
+				s.If = info.Cond.Text
+			}
+			for _, o := range info.Outputs {
+				if o.Refusal != "" {
+					t.Errorf("%s %s: output %s refused: %s", c.file, id, o.Name, o.Refusal)
+				}
+				s.Outputs = append(s.Outputs, o.Name+"="+o.Text)
+			}
+			if info.Matrix {
+				t.Errorf("%s %s: a matrix", c.file, id)
+			}
+			got[id] = s
 		}
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %+v, want %+v", c.file, got, c.want)
 		}
+	}
+}
+
+// a matrix is flagged, never compiled
+func TestWalkFlagsMatrix(t *testing.T) {
+	data := []byte("on: [push]\njobs:\n  m:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        n: [1, 2]\n    steps:\n      - run: echo\n")
+	walked, err := Walk(data)
+	if err != nil || !walked["m"].Matrix {
+		t.Fatalf("matrix not flagged: %+v %v", walked, err)
 	}
 }
 
@@ -63,36 +100,6 @@ func TestWalkRunsOnList(t *testing.T) {
 	}
 	if want := []string{"${{ matrix.os }}"}; !reflect.DeepEqual(got["expr"].RunsOn, want) {
 		t.Errorf("expr: got %+v", got["expr"])
-	}
-}
-
-func TestCompileIf(t *testing.T) {
-	cases := map[string]Cond{
-		"needs.plan.outputs.suite == 'true'":        {V: 1, Kind: "output-eq", Job: "plan", Output: "suite", Literal: "true"},
-		"${{ needs.a.outputs.go == 'yes' }}":        {V: 1, Kind: "output-eq", Job: "a", Output: "go", Literal: "yes"},
-		"github.event_name == 'push'":               {V: 1, Kind: "unsupported", Raw: "github.event_name == 'push'"},
-		"always()":                                  {V: 1, Kind: "unsupported", Raw: "always()"},
-		"needs.a.outputs.go == 'true' && success()": {V: 1, Kind: "unsupported", Raw: "needs.a.outputs.go == 'true' && success()"},
-		"needs.a.outputs.go == \"true\"":            {V: 1, Kind: "unsupported", Raw: "needs.a.outputs.go == \"true\""},
-	}
-	for in, want := range cases {
-		if got := CompileIf(in); got != want {
-			t.Errorf("%q: got %+v, want %+v", in, got, want)
-		}
-	}
-	// a matrix is flagged, never compiled
-	data := []byte("on: [push]\njobs:\n  m:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        n: [1, 2]\n    steps:\n      - run: echo\n")
-	walked, err := Walk(data)
-	if err != nil || !walked["m"].Matrix {
-		t.Fatalf("matrix not flagged: %+v %v", walked, err)
-	}
-}
-
-func TestPrereqEnv(t *testing.T) {
-	got := PrereqEnv(map[string]map[string]string{"plan": {"suite": "true", "run-it": "no"}, "pins": {}})
-	want := []string{"NEEDS_PLAN_OUTPUTS_RUN_IT=no", "NEEDS_PLAN_OUTPUTS_SUITE=true"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 

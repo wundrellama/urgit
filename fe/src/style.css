@@ -780,3 +780,14 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-input-row { display: grid; grid-template-columns: minmax(120px, 1fr) 110px minmax(160px, 2fr) 120px; gap: 8px; align-items: baseline; padding: 4px 0; }
 .ci-input-row code { overflow-wrap: anywhere; }
 .ci-manual-tag { white-space: nowrap; }
+
+/* Delivery 1B: a job's decision, prerequisites and outputs, in a details
+   area under its row; the plan's jobs that have no attempt yet */
+.ci-job-details { margin: 0 0 6px 12px; padding: 4px 8px; border-left: 2px solid var(--border, #e2e2e2); }
+.ci-job-details > summary { cursor: pointer; }
+.ci-job-outcome { margin-left: 12px; }
+.ci-job-details ul { margin: 2px 0 4px 16px; padding: 0; }
+.ci-job-condition, .ci-job-section { margin: 4px 0; overflow-wrap: anywhere; }
+.ci-job-condition code, .ci-job-section code { white-space: pre-wrap; }
+.ci-waiting-jobs { margin-bottom: 8px; }
+.ci-waiting-row { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) 3fr; gap: 8px; align-items: baseline; }

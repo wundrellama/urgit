@@ -1,0 +1,1 @@
+[{"id":"broken","needs":[],"cond":{"v":2,"text":"fromJSON('not json').ready","line":6,"col":9,"expr":{"k":"prop","of":{"k":"call","fn":"fromjson","args":[{"k":"str","s":"not json"}]},"name":"ready"}},"outputs":[]},{"id":"independent","needs":[],"cond":null,"outputs":[]}]

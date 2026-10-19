@@ -45,6 +45,14 @@
 ::    evidence; a privileged attempt whose outcome is uncertain is marked
 ::    unknown and never retried; shadow candidates land nothing.
 ::
+::    Delivery 1B adds job conditions and outputs across jobs: each job's
+::    `if` and declared outputs arrive compiled (CI-EXPR-2) and are checked
+::    and evaluated here with GitHub's status semantics — a job waits for
+::    its needs, then runs, skips or is refused with the reason recorded —
+::    and a job's declared outputs are resolved from its accepted attempt
+::    when it closes; a dependent's needs context is that snapshot, bound
+::    to its attempt by the signed manifest.
+::
 ::    Delivery 1A adds manual runs: an operator dispatches one workflow
 ::    that declares workflow_dispatch at a ref's promoted baseline, with
 ::    typed inputs admitted against the declaration the resolver's pinned
@@ -53,14 +61,14 @@
 ::    inputs and the payload act reads — every attempt's signed manifest
 ::    binds.
 ::
-::    persisted state is state-3 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-2, state-1, and the three tagged
-::    %0 — is converted to it explicitly on load by lib/ci-migrate, or
-::    refused with its reason.
+::    persisted state is state-4 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-3, state-2, state-1, and the three
+::    tagged %0 — is converted to it explicitly on load by lib/ci-migrate,
+::    or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-dispatch, ci-event, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-storage, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -110,7 +118,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-3:ci
+=|  state-4:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -143,7 +151,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-3, or converted to it explicitly, or refused with its
+    ::  current state-4, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::
     =/  loaded  (load:ci-migrate q.old)
@@ -153,7 +161,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-3")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-4")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [~[connect-card:hc keys-card:hc] this(polls ~)]
@@ -2696,10 +2704,24 @@
   ::  a resolve is host-side parsing on a resolver (D4): it needs no
   ::  sandbox, so it carries the container need (satisfied by any runner)
   =/  need=sandbox-need:ci  ?:(?=(%resolve kind) %container (sandbox-for found privileged))
+  ::  a job runs on its decision (CI-EXPR-2): why it runs, and the needs
+  ::  context it is given — each need's accepted attempt, result and
+  ::  published outputs — fixed here and bound by its signed manifest; an
+  ::  operator's %assign of a job its plan would not run says so
+  ::
+  =/  decided=[decision=(unit decision:ci) needs=(list need-entry:ci)]
+    ?.  ?=(%job kind)  [~ ~]
+    =/  planned=(unit job:ci)  (planned-job found workflow job)
+    ?~  planned  [`[%run 'assigned by hand: the job is not in the plan' ~] ~]
+    =/  now  (job-decision found u.planned)
+    :_  needs.now
+    ?:  ?=(%run -.decision.now)  `[%run reason.decision.now value.decision.now]
+    `[%run 'assigned by hand' ~]
   =/  =attempt:ci
     :*  attempt-id  candidate  assignment-id  daemon
         trust.found  kind  workflow  job  %running  0  ~  ~  ~  ~  ~  ~  now.bowl  ~
         generation.found  mode.found  0v0  need  profile.net  approval  %known  ~
+        decision.decided  needs.decided  ~
     ==
   =/  =attempt:ci  attempt(manifest (manifest-id:ci-provenance (manifest-of found attempt)))
   =/  =assignment:ci
@@ -2781,7 +2803,19 @@
       ::  a resolve runs none
       name.event
       ?:(=('' payload.event) '' (context-digest:ci-dispatch payload.event))
+      ::  a job's needs context (Delivery 1B): the digest of the text its
+      ::  expressions read, and the attempt each need was accepted from
+      ?~(needs.a '' (context-digest:ci-dispatch (needs-text:ci-expr needs.a)))
+      (prerequisites-text needs.a)
   ==
+::
+::  `<job>=<attempt>` for each need, by job id, comma-joined
+::
+++  prerequisites-text
+  |=  needs=(list need-entry:ci)
+  ^-  @t
+  =/  sorted=(list need-entry:ci)  (sort needs |=([x=need-entry:ci y=need-entry:ci] (aor id.x id.y)))
+  (join:ci-plan (turn sorted |=(n=need-entry:ci (rap 3 ~[id.n '=' (scot %uv attempt.n)]))) ',')
 ::
 ::  the event an attempt's job receives (Delivery 1A), as act is told it:
 ::  its name and the payload act reads with -e, both bound by the signed
@@ -2812,11 +2846,13 @@
     actor.c
   ==
 ::
-::  a decided skip is recorded as an attempt no daemon ran: %skipped, with
-::  the reason, so the candidate's record shows why the job did not run
+::  a decided skip or refusal is recorded as an attempt no daemon ran: a
+::  skip %skipped, a condition that could not be evaluated %failed (the
+::  job did not run, and the run cannot pass), each with its decision,
+::  the reason, and the needs context it was decided on
 ::
-++  record-skip
-  |=  [candidate=candidate-id:ci =job:ci reason=@t]
+++  record-decision
+  |=  [candidate=candidate-id:ci =job:ci =decision:ci needs=(list need-entry:ci)]
   ^-  _state
   =/  found=candidate:ci  (~(got by candidates) candidate)
   =/  attempt-id=attempt-id:ci
@@ -2827,17 +2863,18 @@
         %job
         `workflow.job
         `id.job
-        %skipped
+        ?:(?=(%error verdict.decision) %failed %skipped)
         0
         ~
         ~
         ~
-        `reason
+        `reason.decision
         ~
         ~
         now.bowl
         `now.bowl
         generation.found  mode.found  0v0  sandbox.found  'locked'  ~  %known  ~
+        `decision  needs  ~
     ==
   =.  attempts  (~(put by attempts) attempt-id attempt)
   =.  candidates
@@ -3340,13 +3377,14 @@
   =/  found=(unit attempt:ci)  (~(get by attempts) id)
   ?&(?=(^ found) ?=(%plan kind.u.found) =(%running status.u.found))
 ::
-::  the newest job attempt per [workflow id] is that job's standing; its
-::  recorded set-outputs are what a dependent's `if` reads.  a re-offered
-::  attempt stands for nothing: the job is owed a fresh one.
+::  the newest job attempt per [workflow id] is that job's standing, and
+::  the accepted attempt a dependent's decision and needs context read.  a
+::  re-offered or cancelled attempt stands for nothing: the job is owed a
+::  fresh one.
 ::
 ++  standings
   |=  =candidate:ci
-  ^-  [standings=(map key:ci-plan standing:ci-plan) outputs=(map key:ci-plan (map @t @t))]
+  ^-  [standings=(map key:ci-plan standing:ci-plan) newest=(map key:ci-plan attempt:ci)]
   =/  newest=(map key:ci-plan attempt:ci)
     %+  roll  (flop attempts.candidate)
     |=  [id=attempt-id:ci acc=(map key:ci-plan attempt:ci)]
@@ -3360,29 +3398,125 @@
     ::  evidence from another generation stands for nothing (P11)
     ?.  =(generation.u.found generation.candidate)  acc
     (~(put by acc) [u.workflow.u.found u.job.u.found] u.found)
-  :-  %-  ~(run by newest)
-      |=  =attempt:ci
-      ^-  standing:ci-plan
-      ?-  status.attempt
-        %passed  %passed
-        %failed  %failed
-        %skipped  %skipped
-        %running  %running
-        %reoffered  %pending
-        %cancelled  %pending
-        %infrastructure-error  %unknown
+  :_  newest
+  %-  ~(run by newest)
+  |=  =attempt:ci
+  ^-  standing:ci-plan
+  ?-  status.attempt
+    %passed  %passed
+    %failed  %failed
+    %skipped  %skipped
+    %running  %running
+    %reoffered  %pending
+    %cancelled  %pending
+    %infrastructure-error  %unknown
+  ==
+::
+::  the run a candidate's decisions read (CI-EXPR-2): its event, the
+::  payload act reads, ref, source and actor, and its typed inputs.  no
+::  decision is taken in a cancelled run in this release (+cancel-run
+::  supersedes the candidate and +settle stops there), so cancelled() is
+::  false in every decision
+::
+++  run-context
+  |=  c=candidate:ci
+  ^-  run-context:ci-plan
+  :*  ?-(-.trigger.c %push 'push', %dispatch 'workflow_dispatch')
+      ?-(-.trigger.c %push (push-payload-of c), %dispatch payload.trigger.c)
+      ref.c
+      (oid-hex:ci-provenance candidate.c)
+      (scot %p actor.c)
+      ?-(-.trigger.c %push [%obj ~], %dispatch (inputs-of:ci-expr inputs.trigger.c))
+      %.n
+  ==
+::
+::  every terminal job's entry as its dependents' decisions and needs
+::  contexts read it: the accepted attempt, its status and result, and the
+::  outputs it published
+::
+++  need-entries
+  |=  $:  c=candidate:ci
+          newest=(map key:ci-plan attempt:ci)
+          standings=(map key:ci-plan standing:ci-plan)
       ==
-  (~(run by newest) |=(=attempt:ci outputs.attempt))
+  ^-  (map key:ci-plan need-entry:ci)
+  %-  malt
+  %+  turn  ~(tap by newest)
+  |=  [k=key:ci-plan att=attempt:ci]
+  ^-  [key:ci-plan need-entry:ci]
+  :-  k
+  :*  id.k
+      id.att
+      status.att
+      (result-word:ci-plan (~(gut by standings) k %pending))
+      (published-outputs (planned-job c `workflow.k `id.k) att)
+  ==
+::
+::  what an attempt published to its dependents: its declared outputs as
+::  resolved when it closed; for a job of a plan saved before state-4,
+::  every output it recorded, by name, the meaning that plan was admitted
+::  under (its declarations were never read)
+::
+++  published-outputs
+  |=  [planned=(unit job:ci) a=attempt:ci]
+  ^-  (list [name=@t value=@t])
+  ?:  ?&(?=(^ planned) ?=(~ outputs.u.planned))
+    (legacy-outputs step-outputs.a)
+  ?~  job-outputs.a  ~
+  %+  murn  u.job-outputs.a
+  |=  o=job-output:ci
+  ?.  ?=(%& -.value.o)  ~
+  `[name.o p.value.o]
+::
+++  legacy-outputs
+  |=  outputs=(list step-output:ci)
+  ^-  (list [name=@t value=@t])
+  ~(tap by (malt (turn outputs |=(o=step-output:ci [name.o value.o]))))
+::
+::  a job's decision now, and the needs context it would be given
+::
+++  job-decision
+  |=  [c=candidate:ci =job:ci]
+  ^-  [=decision:ci-plan needs=(list need-entry:ci)]
+  ?~  plan.c  [[%wait 'the run has no plan yet'] ~]
+  =/  known  (standings c)
+  =/  entries=(map key:ci-plan need-entry:ci)  (need-entries c newest.known standings.known)
+  :-  (decide:ci-plan job u.plan.c standings.known entries (run-context c))
+  (direct-entries:ci-plan job entries)
 ::
 ++  runnable-jobs
   |=  =candidate:ci
   ^-  (list job:ci)
   ?~  plan.candidate  ~
   =/  known  (standings candidate)
+  =/  entries=(map key:ci-plan need-entry:ci)  (need-entries candidate newest.known standings.known)
+  =/  context=run-context:ci-plan  (run-context candidate)
   %+  skim  u.plan.candidate
   |=  =job:ci
   ?:  (~(has by standings.known) [workflow.job id.job])  %.n
-  =(%run -:(decide:ci-plan job standings.known outputs.known))
+  =(%run -:(decide:ci-plan job u.plan.candidate standings.known entries context))
+::
+::  one pass of a candidate's undecided jobs: a skip or a refusal its
+::  plan decides is recorded with the reason and the needs context
+::
+++  decide-pass
+  |=  id=candidate-id:ci
+  ^-  _state
+  =/  found=candidate:ci  (~(got by candidates) id)
+  ?~  plan.found  state
+  =/  known  (standings found)
+  =/  entries=(map key:ci-plan need-entry:ci)  (need-entries found newest.known standings.known)
+  =/  context=run-context:ci-plan  (run-context found)
+  %+  roll  u.plan.found
+  |=  [=job:ci acc=_state]
+  =.  state  acc
+  ?:  (~(has by standings.known) [workflow.job id.job])  state
+  =/  =decision:ci-plan  (decide:ci-plan job u.plan.found standings.known entries context)
+  =/  needs=(list need-entry:ci)  (direct-entries:ci-plan job entries)
+  ?+  -.decision  state
+    %skip  (record-decision id job [%skip reason.decision value.decision] needs)
+    %error  (record-decision id job [%error reason.decision ~] needs)
+  ==
 ::
 ::  one candidate's verdict from its record: over the plan when it has
 ::  one (skips decided now are recorded first), else from its newest
@@ -3399,18 +3533,19 @@
   ::
   ?:  =(%skipped status.u.found)  (emit ~)
   =/  before=candidate-status:ci  status.u.found
+  ::  skips and refusals the plan decides now, until none is left: a skip
+  ::  decides its dependents' skips in the same event (at most one round
+  ::  per job)
+  ::
   =.  state
     ?~  plan.u.found  state
-    =/  known  (standings u.found)
-    %+  roll  u.plan.u.found
-    |=  [=job:ci acc=_state]
-    =.  state  acc
-    ?:  (~(has by standings.known) [workflow.job id.job])  state
-    =/  =decision:ci-plan  (decide:ci-plan job standings.known outputs.known)
-    ?+  -.decision  state
-      %skip  (record-skip id job reason.decision)
-      %invalid  (record-skip id job reason.decision)
-    ==
+    =/  rounds=@ud  (lent u.plan.u.found)
+    |-
+    ?:  =(0 rounds)  state
+    =/  count=@ud  (lent attempts:(~(got by candidates) id))
+    =.  state  (decide-pass id)
+    ?:  =(count (lent attempts:(~(got by candidates) id)))  state
+    $(rounds (dec rounds))
   =/  =candidate:ci  (~(got by candidates) id)
   =/  verdict=[status=candidate-status:ci reason=(unit @t)]
     ?^  plan.candidate
@@ -3654,11 +3789,13 @@
   ?~  found  daemons
   (~(put by daemons) id u.found(last-seen `now.bowl))
 ::
-::  the assignment as the daemon reads it.  a job assignment carries the
-::  ship's recorded outputs of every job in its `needs` (CI-PROJECT-1):
-::  the daemon runs act on a single-job projection, so act never sees the
-::  prerequisites; the ship, which admitted the job, hands their outputs
-::  down as `{"<job>": {"<name>": "<value>"}}`.
+::  the assignment as the daemon reads it.  a job assignment carries its
+::  needs context (Delivery 1B): the text its expressions read, rendered
+::  from the needs snapshot fixed when the attempt was created — each
+::  need's accepted attempt, result and published outputs — and bound by
+::  the signed manifest's needs digest and prerequisites; '' for a job
+::  that needs none.  the daemon runs act on a single-job projection that
+::  reads every needs root from it (runner/internal/plan ProjectJob).
 ::
 ++  assignment-json
   |=  [=assignment:ci =candidate:ci =attempt:ci]
@@ -3666,29 +3803,9 @@
   =/  oid=@t
     ?~  candidate.candidate  ''
     (oid-text:git-codec u.candidate.candidate)
-  =/  prereq-outputs=json
-    ?.  ?=(%job kind.assignment)  ~
-    ?~  workflow.assignment  ~
-    ?~  job.assignment  ~
-    ?~  plan.candidate  ~
-    =/  planned=(unit job:ci)
-      =/  wf=@t  u.workflow.assignment
-      =/  id=@t  u.job.assignment
-      |-
-      ?~  u.plan.candidate  ~
-      ?:  &(=(wf workflow.i.u.plan.candidate) =(id id.i.u.plan.candidate))
-        `i.u.plan.candidate
-      $(u.plan.candidate t.u.plan.candidate)
-    ?~  planned  ~
-    =/  known  (standings candidate)
-    %-  pairs:enjs:format
-    %+  turn  needs.u.planned
-    |=  need=@t
-    ^-  [@t json]
-    :-  need
-    %-  pairs:enjs:format
-    %+  turn  ~(tap by (~(gut by outputs.known) [u.workflow.assignment need] ~))
-    |=([name=@t value=@t] [name s+value])
+  =/  needs-context=@t
+    ?~  needs.attempt  ''
+    (needs-text:ci-expr needs.attempt)
   ::  the credentials released to this attempt (D4; P4 D6, rider 02): a
   ::  trusted REQUIRED job gets every %job-scoped credential of its
   ::  repository; a privileged job (one naming an environment) gets only
@@ -3762,26 +3879,6 @@
         ['nonce' s+(scot %uv nonce.grant)]
         ['sig' s+(hex-bytes sig.grant 64)]
     ==
-  =/  manifest-json=json
-    %-  pairs:enjs:format
-    :~  ['incarnation' s+(scot %uv incarnation.manifest)]
-        ['repo' s+repo.manifest]
-        ['ref' s+ref.manifest]
-        ['candidate' s+(scot %uv candidate.manifest)]
-        ['oid' s+oid.manifest]
-        ['baseline' s+baseline.manifest]
-        ['lock' s+lock.manifest]
-        ['generation' (numb:enjs:format generation.manifest)]
-        ['workflow' s+workflow.manifest]
-        ['job' s+job.manifest]
-        ['trust' s+trust.manifest]
-        ['sandbox' s+sandbox.manifest]
-        ['mode' s+mode.manifest]
-        ['network' s+network.manifest]
-        ['network-scope' s+scope.manifest]
-        ['event' s+event.manifest]
-        ['context' s+context.manifest]
-    ==
   =/  base=(unit baseline:ci)  (~(get by baselines) [repo.candidate ref.candidate])
   =/  lock-json=json
     ?~  lock.candidate  ~
@@ -3836,12 +3933,14 @@
       ['kind' s+kind.assignment]
       ['workflow' ?~(workflow.assignment ~ s+u.workflow.assignment)]
       ['job' ?~(job.assignment ~ s+u.job.assignment)]
-      ['prereq-outputs' prereq-outputs]
+      ['needs-context' s+needs-context]
       ['deadline-seconds' (numb:enjs:format (div deadline.assignment ~s1))]
       ['assigned' s+(scot %da assigned.assignment)]
       ['grants' grants-json]
       ['sig' sig-json]
-      ['manifest' manifest-json]
+      ::  every signed field (Delivery 1B correction 01): the shared
+      ::  serializer, so the object always carries what the signature binds
+      ['manifest' (manifest-json:ci-provenance manifest)]
       ['harness-paths' [%a ?~(base ~ (turn harness-paths.u.base |=(p=@t s+p)))]]
       ['workflows-oid' s+?:(=(%trial mode.candidate) oid (oid-hex:ci-provenance baseline.candidate))]
       ['baseline-ref' ?~(base ~ s+(baseline-ref repo.candidate ref.candidate))]
@@ -4514,6 +4613,9 @@
   ::  anything of the event is kept
   ::
   =/  =event:ci  (scrub:ci-event p.parsed (credential-values (candidate-repo candidate.u.found)))
+  =/  redacted=?
+    ?.  ?&(?=([~ %set-output *] command.p.parsed) ?=([~ %set-output *] command.event))  %.n
+    !=(value.u.command.p.parsed value.u.command.event)
   ::  the tripwire for the daemon's single-job projection (CI-PROJECT-1):
   ::  a line from any job but the assigned one means act ran more than
   ::  the ship admitted
@@ -4527,10 +4629,17 @@
   =/  seen-under=(unit @t)
     ?^  projection-name.u.found  projection-name.u.found
     `job.event
+  ::  a step output lands under the step act names it by (Delivery 1B);
+  ::  past the attempt's bound it is refused, never silently dropped
+  ::
+  =/  recorded=(unit (list step-output:ci))
+    (record-output:ci-event step-outputs.u.found event redacted)
+  ?~  recorded
+    (emit (give-error eyre-id 413 'the attempt\'s step outputs exceed their bound (256 outputs, 1 MiB)'))
   =/  next=attempt:ci
     %=  u.found
       events  +(events.u.found)
-      outputs  (record-output:ci-event outputs.u.found event)
+      step-outputs  u.recorded
       job-result  ?^(job-result.event job-result.event job-result.u.found)
       projection-name  seen-under
     ==
@@ -4629,6 +4738,12 @@
     =/  with-log=attempt:ci  u.found(log p.named)
     =.  attempts  (~(put by attempts) id.with-log with-log)
     =.  state  (close-attempt with-log [%job-result u.result])
+    ::  its declared outputs, resolved at the end of the job from what it
+    ::  recorded (Delivery 1B): what its dependents' needs contexts read
+    ::
+    =.  attempts
+      =/  closed=attempt:ci  (~(got by attempts) id.u.found)
+      (~(put by attempts) id.closed closed(job-outputs (resolve-outputs closed)))
     =/  closed=out  (after-close candidate.u.found)
     =.  state  state.closed
     =.  polls  polls.closed
@@ -4642,6 +4757,47 @@
     %-  emit
     (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found))))
   (emit (give-error eyre-id 422 'job-result or infrastructure-error is required'))
+::
+::  a closed job attempt's declared outputs (Delivery 1B), resolved as
+::  GitHub does at the end of the job: each template evaluated over the
+::  steps' outputs the attempt recorded, its own needs context, the run's
+::  github and inputs.  a value that cannot be resolved keeps its reason;
+::  every value is scrubbed of the repository's credentials (D4).  a plan
+::  saved before state-4 declared nothing the ship read: ~
+::
+++  resolve-outputs
+  |=  a=attempt:ci
+  ^-  (unit (list job-output:ci))
+  ?.  ?=(%job kind.a)  ~
+  =/  c=(unit candidate:ci)  (~(get by candidates) candidate.a)
+  ?~  c  ~
+  =/  planned=(unit job:ci)  (planned-job u.c workflow.a job.a)
+  ?~  planned  ~
+  ?~  outputs.u.planned  ~
+  =/  context=run-context:ci-plan  (run-context u.c)
+  =/  =scope:ci-expr
+    :*  %:  github-of:ci-expr
+          event.context  payload.context  ref.context  sha.context
+          actor.context  name.u.planned  id.u.planned
+        ==
+        (needs-of:ci-expr needs.a)
+        [%obj ~]
+        inputs.context
+        (steps-of:ci-expr step-outputs.a)
+        %.y
+        %.n
+        %.n
+    ==
+  =/  values=(list @t)  (credential-values repo.u.c)
+  =/  fenced=?  (lien step-outputs.a |=(o=step-output:ci redacted.o))
+  :-  ~
+  %+  turn  (resolve:ci-expr u.outputs.u.planned scope)
+  |=  [name=@t r=(each @t @t)]
+  ^-  job-output:ci
+  ?:  ?=(%| -.r)  [name [%| p.r] %.n]
+  =/  clean=@t  (scrub-text:ci-event p.r values)
+  :+  name  [%& clean]
+  ?|(!=(clean p.r) &(fenced ?=(^ (find "***" (trip clean)))))
 ::
 ::  the log a result names (D1): `log: {size, sha256}` records the handle
 ::  of the finished act stream the daemon uploaded under log.jsonl before
@@ -4776,6 +4932,125 @@
       ['approval' ?~(approval.attempt ~ s+(scot %uv u.approval.attempt))]
       ['outcome' s+outcome.attempt]
       ['pinned' (pinned-json pinned.attempt)]
+      ::  Delivery 1B: why the job ran or did not, the needs context it
+      ::  was given, what its steps recorded and what it published
+      ['decision' (decision-json decision.attempt)]
+      ['needs' (needs-json needs.attempt)]
+      ['stepOutputs' (step-outputs-json step-outputs.attempt)]
+      ['stepOutputCount' (numb:enjs:format (lent step-outputs.attempt))]
+      ['jobOutputs' (job-outputs-json job-outputs.attempt)]
+  ==
+::
+::  a decision, a needs context and outputs as the CI tab reads them
+::  (Delivery 1B): text only.  the values are what the ship recorded,
+::  scrubbed of the repository's credentials when they were recorded; a
+::  value is shown up to 1 KiB and says when it was cut, and at most 64
+::  step outputs are listed (stepOutputCount counts them all)
+::
+++  decision-json
+  |=  d=(unit decision:ci)
+  ^-  json
+  ?~  d  ~
+  %-  pairs:enjs:format
+  :~  ['verdict' s+verdict.u.d]
+      ['reason' s+reason.u.d]
+      ['value' ?~(value.u.d ~ s+u.value.u.d)]
+  ==
+::
+++  shown-value
+  |=  value=@t
+  ^-  [text=@t cut=?]
+  ?:  (lte (met 3 value) 1.024)  [value %.n]
+  [(end [3 1.024] value) %.y]
+::
+++  needs-json
+  |=  needs=(list need-entry:ci)
+  ^-  json
+  :-  %a
+  %+  turn  needs
+  |=  n=need-entry:ci
+  %-  pairs:enjs:format
+  :~  ['job' s+id.n]
+      ['attempt' s+(scot %uv attempt.n)]
+      ['status' s+status.n]
+      ['result' s+result.n]
+      :-  'outputs'
+      :-  %a
+      %+  turn  outputs.n
+      |=  [name=@t value=@t]
+      =/  v  (shown-value value)
+      (pairs:enjs:format ~[['name' s+name] ['value' s+text.v] ['cut' b+cut.v]])
+  ==
+::
+++  step-outputs-json
+  |=  outputs=(list step-output:ci)
+  ^-  json
+  :-  %a
+  %+  turn  (scag 64 outputs)
+  |=  o=step-output:ci
+  =/  v  (shown-value value.o)
+  %-  pairs:enjs:format
+  :~  ['step' [%a (turn step.o |=(id=@t s+id))]]
+      ['name' s+name.o]
+      ['value' s+text.v]
+      ['cut' b+cut.v]
+      ['redacted' b+redacted.o]
+  ==
+::
+++  job-outputs-json
+  |=  outputs=(unit (list job-output:ci))
+  ^-  json
+  ?~  outputs  ~
+  :-  %a
+  %+  turn  u.outputs
+  |=  o=job-output:ci
+  %-  pairs:enjs:format
+  ?:  ?=(%| -.value.o)
+    :~  ['name' s+name.o]  ['value' ~]  ['error' s+p.value.o]
+        ['cut' b+%.n]  ['redacted' b+redacted.o]
+    ==
+  =/  v  (shown-value p.value.o)
+  :~  ['name' s+name.o]  ['value' s+text.v]  ['error' ~]
+      ['cut' b+cut.v]  ['redacted' b+redacted.o]
+  ==
+::
+::  a job's condition as written, where, and whether it is a plan's from
+::  before state-4
+::
+++  condition-json
+  |=  cond=(unit condition:ci)
+  ^-  json
+  ?~  cond  ~
+  =/  c=(unit summary:ci-expr)  `(summarize:ci-expr u.cond)
+  ?>  ?=(^ c)
+  ?-  -.u.c
+      %if
+    %-  pairs:enjs:format
+    :~  ['text' s+text.u.c]  ['line' (numb:enjs:format line.u.c)]
+        ['col' (numb:enjs:format col.u.c)]  ['legacy' b+%.n]  ['refusal' ~]
+    ==
+  ::
+      %output-eq
+    %-  pairs:enjs:format
+    :~  ['text' s+(rap 3 ~['needs.' job.u.c '.outputs.' output.u.c ' == \'' literal.u.c '\''])]
+        ['line' ~]  ['col' ~]  ['legacy' b+%.y]  ['refusal' ~]
+    ==
+  ::
+      %refused
+    %-  pairs:enjs:format
+    :~  ['text' s+text.u.c]  ['line' ~]  ['col' ~]  ['legacy' b+%.y]
+        ['refusal' s+reason.u.c]
+    ==
+  ==
+::
+++  decision-reason
+  |=  d=decision:ci-plan
+  ^-  @t
+  ?-  -.d
+    %run  reason.d
+    %skip  reason.d
+    %error  reason.d
+    %wait  reason.d
   ==
 ::
 ++  candidate-json
@@ -4803,16 +5078,41 @@
       ['planned' b+?=(^ plan.candidate)]
       :-  'plan'
       ?~  plan.candidate  ~
+      ::  each job's condition and declared outputs (Delivery 1B), and for
+      ::  a job of a pending run with no attempt yet, its decision now:
+      ::  waiting for a need, about to run, or a skip or refusal the next
+      ::  settle records
+      ::
+      =/  known  (standings candidate)
+      =/  entries=(map key:ci-plan need-entry:ci)  (need-entries candidate newest.known standings.known)
+      =/  context=run-context:ci-plan  (run-context candidate)
       :-  %a
       %+  turn  u.plan.candidate
       |=  =job:ci
+      =/  live=json
+        ?:  (~(has by standings.known) [workflow.job id.job])  ~
+        ?.  =(%pending status.candidate)  ~
+        =/  d=decision:ci-plan  (decide:ci-plan job u.plan.candidate standings.known entries context)
+        (pairs:enjs:format ~[['verdict' s+-.d] ['reason' s+(decision-reason d)]])
       %-  pairs:enjs:format
       :~  ['id' s+id.job]
           ['workflow' s+workflow.job]
+          ['name' s+name.job]
           ['stage' (numb:enjs:format stage.job)]
           ['needs' [%a (turn needs.job |=(need=@t s+need))]]
           ['runsOn' [%a (turn (sort ~(tap in runs-on.job) aor) |=(l=@t s+l))]]
           ['timeoutMinutes' ?~(timeout.job ~ (numb:enjs:format u.timeout.job))]
+          ['if' (condition-json cond.job)]
+          :-  'outputs'
+          ?~  outputs.job  ~
+          :-  %a
+          %+  turn  (output-places:ci-expr u.outputs.job)
+          |=  [name=@t text=@t line=@ud col=@ud]
+          %-  pairs:enjs:format
+          :~  ['name' s+name]  ['text' s+text]
+              ['line' (numb:enjs:format line)]  ['col' (numb:enjs:format col)]
+          ==
+          ['decision' live]
       ==
       ['created' (numb:enjs:format (unix-seconds created.candidate))]
       ['updated' (numb:enjs:format (unix-seconds updated.candidate))]

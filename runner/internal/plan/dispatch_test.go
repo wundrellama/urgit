@@ -100,7 +100,8 @@ func TestDispatchOfRefusals(t *testing.T) {
 		{"inputs not a mapping", "on:\n  workflow_dispatch:\n    inputs: [x]\n" + job, "workflow_dispatch inputs must be a mapping of input ids"},
 		{"input not a mapping", "on:\n  workflow_dispatch:\n    inputs:\n      x: yes\n" + job, "input x: must be a mapping"},
 		{"options not a list", "on:\n  workflow_dispatch:\n    inputs:\n      x:\n        type: choice\n        options: one\n" + job, "input x: options must be a list of values"},
-		{"job if", "on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.go }}\n    steps: [{run: true}]\n", "job a: the job-level if ${{ inputs.go }} is not supported in this release"},
+		{"job if", "on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    if: ${{ env.GO }}\n    steps: [{run: true}]\n", "job a: the job-level if ${{ env.GO }} is refused: context env is not available in a job-level if (github, needs, vars and inputs are)"},
+		{"job output", "on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    outputs:\n      url: ${{ env.URL }}\n    steps: [{run: true}]\n", "job a: output url is refused: context env is not available to a job output on the ship in this release (github, needs, vars, inputs and steps.<id>.outputs are)"},
 		{"matrix", "on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        os: [x]\n    steps: [{run: true}]\n", "job a: a matrix strategy is not supported in this release"},
 	}
 	for _, c := range cases {
@@ -114,12 +115,15 @@ func TestDispatchOfRefusals(t *testing.T) {
 	}
 }
 
-// a supported output-eq gate is no refusal
+// a gate the ship evaluates is no refusal: an output comparison, a typed
+// input, a status function
 func TestDispatchOfSupportedGate(t *testing.T) {
-	data := []byte("on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps: [{run: true}]\n  b:\n    needs: a\n    if: needs.a.outputs.go == 'true'\n    runs-on: ubuntu-latest\n    steps: [{run: true}]\n")
-	got, err := DispatchOf(data, "w.yml")
-	if err != nil || got == nil || got.Refusal != "" {
-		t.Fatalf("got %+v, %v", got, err)
+	for _, cond := range []string{"needs.a.outputs.go == 'true'", "${{ inputs.go }}", "always() && !inputs.dry"} {
+		data := []byte("on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps: [{run: true}]\n  b:\n    needs: a\n    if: " + cond + "\n    runs-on: ubuntu-latest\n    steps: [{run: true}]\n")
+		got, err := DispatchOf(data, "w.yml")
+		if err != nil || got == nil || got.Refusal != "" {
+			t.Fatalf("%s: got %+v, %v", cond, got, err)
+		}
 	}
 }
 

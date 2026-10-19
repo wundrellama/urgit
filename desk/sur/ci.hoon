@@ -25,7 +25,12 @@
 ::    is frozen byte for byte as sur/ci-state-2.  state-3, tagged %3
 ::    (Delivery 1A, manual runs), is state-2 with each candidate's
 ::    trigger — the event it runs for, a push or a manual dispatch with
-::    its admitted inputs — and each lock's manual-run inventory.
+::    its admitted inputs — and each lock's manual-run inventory; it is
+::    frozen byte for byte as sur/ci-state-3.  state-4, tagged %4
+::    (Delivery 1B), gives a planned job its compiled condition and its
+::    declared outputs, and an attempt its step outputs by step, the
+::    decision that ran or skipped it, the needs context it was given and
+::    the declared outputs resolved when it closed.
 ::    every earlier shape shared the tag %0 and is frozen byte for byte in
 ::    a sur file of its own — ci-state-base, ci-state-review06 and
 ::    ci-state-q11 — and every shape is converted explicitly by
@@ -295,15 +300,81 @@
 ::
 +$  via  ?(%session %token)
 ::
-::  a job-level condition, compiled OUTSIDE the ship by the daemon's YAML
-::  walk (CI-EXPR-1, R2.2-A): the wire form is versioned `v:1`; this is the
-::  v1 shape.  the ship evaluates %output-eq structurally and refuses
-::  %unsupported with the raw expression quoted.  it never parses one.
+::  a job expression, compiled OUTSIDE the ship by the pinned compiler
+::  (CI-EXPR-2, R2.1-A/R2.2-A; runner/internal/plan expr.go) and checked
+::  here node by node (lib/ci-expr).  the ship evaluates the tree and never
+::  parses expression text.  %ctx names a context in lower case; %prop a
+::  property as written (property names are read without case); %star is
+::  the object filter `.*`; a number is a double.
 ::
-+$  cond
-  $%  [%output-eq job=@t output=@t literal=@t]
-      [%unsupported raw=@t]
++$  expr
+  $~  [%null ~]
+  $%  [%null ~]
+      [%bool p=?]
+      [%num p=@rd]
+      [%str p=@t]
+      [%ctx p=@t]
+      [%prop of=expr name=@t]
+      [%index of=expr at=expr]
+      [%star of=expr]
+      [%not p=expr]
+      [%cmp op=?(%eq %ne %lt %le %gt %ge) l=expr r=expr]
+      [%and l=expr r=expr]
+      [%or l=expr r=expr]
+      [%call fn=@t args=(list expr)]
   ==
+::
+::  a template: text with ${{ }} expressions interpolated as text
+::
++$  part  $%([%lit p=@t] [%expr p=expr])
++$  template  [text=@t line=@ud col=@ud parts=(list part)]
+::
+::  a job's condition.  %if is a compiled `if` with the text and place the
+::  workflow wrote it at, for diagnosis only.  %output-eq and %refused are
+::  the two state-3 shapes (CI-EXPR-1) a plan saved before state-4 may
+::  hold, kept with the meaning they were admitted under: %output-eq reads
+::  the named output a need recorded, after every need passed; a %refused
+::  one never runs its job
+::
++$  condition
+  $%  [%if text=@t line=@ud col=@ud =expr]
+      [%output-eq job=@t output=@t literal=@t]
+      [%refused text=@t reason=@t]
+  ==
+::
+::  a declared job output (`jobs.<id>.outputs.<name>`), compiled
+::
++$  declared-output  [name=@t =template]
+::
+::  a step output an attempt recorded, by the step act names it under:
+::  [id] for a job's step, [id sub] for a composite action's own step,
+::  ~ for an output recorded before state-4, which named no step.
+::  .redacted says the ship's credential fence changed the value
+::
++$  step-output  [step=(list @t) name=@t value=@t redacted=?]
+::
+::  a declared output resolved when its attempt closed: the value, or why
+::  it could not be resolved
+::
++$  job-output  [name=@t value=(each @t @t) redacted=?]
+::
+::  one need of a job as the job's decision and its needs context saw it:
+::  the accepted attempt, its status, the result expressions read
+::  (success, failure, skipped; an infrastructure error reads as failure)
+::  and its resolved declared outputs
+::
++$  need-entry
+  $:  id=@t
+      attempt=attempt-id
+      status=attempt-status
+      result=@t
+      outputs=(list [name=@t value=@t])
+  ==
+::
+::  why a job ran, was skipped, or was refused at its condition; .value is
+::  the condition's value as shown, ~ when no condition was evaluated
+::
++$  decision  [verdict=?(%run %skip %error) reason=@t value=(unit @t)]
 ::
 ::  manual runs (Delivery 1A).  a workflow that declares
 ::  `on.workflow_dispatch` is listed with its declared inputs as the
@@ -380,16 +451,20 @@
 ::  cover it (CI-P3-SCHED-A).  .timeout is the job's `timeout-minutes`,
 ::  which bounds the attempt's deadline (CI-DELIVERY-1.1) when declared.
 ::
+::  .outputs are the declared outputs (state-4), ~ for a plan saved
+::  before they were read, which is not a job that declares none.
+::
 +$  job
   $:  id=@t
       workflow=@t
       name=@t
       stage=@ud
       needs=(list @t)
-      cond=(unit cond)
+      cond=(unit condition)
       environment=(unit @t)
       runs-on=(set @t)
       timeout=(unit @ud)
+      outputs=(unit (list declared-output))
   ==
 ::
 ::  a staged head for a CI-protected ref.  .candidate is the exact
@@ -535,8 +610,8 @@
   ==
 ::
 ::  one execution of a candidate on one daemon.  the event stream is not
-::  stored; only the count, the recorded outputs, the relayed jobResult
-::  and the claimed result enter state.  the full log is an object in the
+::  stored; only the count, the recorded step outputs, the relayed
+::  jobResult and the claimed result enter state.  the full log is an object in the
 ::  store the daemon uploaded before it posted the result (D1); .log is
 ::  its handle, ~ until a result names one.
 ::
@@ -551,7 +626,7 @@
       job=(unit @t)
       status=attempt-status
       events=@ud
-      outputs=(map @t @t)
+      step-outputs=(list step-output)
       job-result=(unit result)
       result=(unit attempt-result)
       reason=(unit @t)
@@ -573,6 +648,14 @@
       ::  this run, as the daemon reported it when the VM started; ~ for
       ::  a run granted no name, and for every run before state-2
       pinned=(list pin)
+      ::  state-4 (Delivery 1B): why the job ran or did not (~ before
+      ::  state-4, and for a plan or a resolve); the needs context it was
+      ::  given, each need's accepted attempt; and its declared outputs as
+      ::  resolved when it closed (~ while it runs, when it had no result,
+      ::  and before state-4)
+      decision=(unit decision)
+      needs=(list need-entry)
+      job-outputs=(unit (list job-output))
   ==
 ::
 ::  one granted DNS name and the IPv4 addresses the launcher pinned it to
@@ -580,8 +663,8 @@
 ::
 +$  pin  [name=@t addrs=(list @t)]
 ::
-+$  state-3
-  $:  %3
++$  state-4
+  $:  %4
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)

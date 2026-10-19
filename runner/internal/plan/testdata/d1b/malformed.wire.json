@@ -1,0 +1,1 @@
+[{"id":"deploy","needs":[],"cond":{"v":2,"text":"github.ref == \"refs/heads/master\"","line":6,"col":9,"refusal":"syntax error at column 15: double quotes are not string delimiters; use single quotes"},"outputs":[]}]

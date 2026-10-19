@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { approveHint, attemptPips, attemptRows, candidateRow, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, pinnedNote, pinnedRows, renderLog, stagedEditNote } from './ci.js'
+import { readFileSync } from 'node:fs'
+import { approveHint, attemptPips, attemptRows, attemptStatusLabel, candidateRow, candidateStatusLabel, ciActions, credentialFormError, duration, lineText, noRunnerMessage, parseEnvs, pinnedNote, pinnedRows, renderLog, stagedEditNote } from './ci.js'
+import { capturedConsumer, capturedPlan, capturedProducer, capturedStoppedConsumer } from './ciJobsCaptured.js'
 
 const jobA = { attempt: '0v1.a', kind: 'job', job: 'a', status: 'passed', started: 100, finished: 130, log: { key: 'k', size: 1, sha256: 'x' } }
 const jobB = { attempt: '0v2.b', kind: 'job', job: 'b', status: 'running', started: 130, finished: null, log: null }
@@ -104,4 +106,32 @@ test('a run row carries the addresses each granted name was pinned to, text only
   assert.deepEqual(pinnedRows('91.189.91.82'), [])
   assert.deepEqual(pinnedRows([null, { name: 7, addrs: [] }, { name: 'a.example' }, { name: 'b.example', addrs: ['1.1.1.1', 9] }]), [{ name: 'b.example', addrs: ['1.1.1.1'] }])
   assert.match(pinnedNote, /shared CDN/)
+})
+
+// correction 01 (R3): `skipped` means two things. A candidate skipped is
+// superseded; a job attempt skipped was not run because its condition was
+// false or a need did not succeed. The parent's captured run (verbatim):
+// the false-condition sibling's row must read skipped
+test('a skipped job attempt reads as skipped, a skipped candidate as superseded', () => {
+  const rows = attemptRows([capturedConsumer, capturedStoppedConsumer, capturedProducer], capturedPlan)
+  assert.deepEqual(rows.map((r) => [r.job, r.statusText]), [['consumer', 'infra error'], ['stopped-consumer', 'skipped'], ['producer', 'passed']])
+  assert.deepEqual(attemptPips([capturedStoppedConsumer]).map((p) => p.statusText), ['skipped'])
+  const superseded = candidateRow({ id: '0v1', ref: 'refs/heads/master', head: 'a'.repeat(40), actor: '~nec', status: 'skipped', created: 1, attempts: [capturedStoppedConsumer] }, 2)
+  assert.equal(superseded.statusText, 'superseded')
+  assert.equal(superseded.pips[0].statusText, 'skipped')
+  assert.equal(candidateStatusLabel.skipped, 'superseded')
+  assert.equal(attemptStatusLabel.skipped, 'skipped')
+  assert.equal(candidateRow({ id: '0v2', status: 'unknown', created: 1 }, 2).statusText, 'unknown')
+  assert.equal(attemptRows([{ ...capturedProducer, status: 'reoffered' }], capturedPlan)[0].statusText, 're-offered')
+})
+
+// STATIC, on the source: the tab shows each status at its own scope. Rows
+// and pips show the statusText their model gave them (an attempt's by its
+// attempt label, the list's by its candidate label); only the candidate
+// page's own status is looked up, by the candidate label
+test('the CI tab labels attempt statuses and candidate statuses apart', () => {
+  const tab = readFileSync(new URL('./components/CiTab.jsx', import.meta.url), 'utf8')
+  assert.match(tab, /title=\{`\$\{pip\.job\}: \$\{pip\.statusText\}`\}/)
+  assert.equal((tab.match(/\{row\.statusText\}/g) || []).length, 2)
+  assert.ok(!/statusLabel\[/i.test(tab.replace('candidateStatusLabel[c.status]', '')), 'a status label map is indexed outside the candidate page header')
 })

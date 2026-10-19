@@ -4,14 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"sort"
 	"strings"
 )
 
 // ManifestVersion is the execution-manifest message version (P4 D5;
-// version 3, Delivery 1A, binds the run's event). A verifier of another
-// version fails closed; there is no shim.
-const ManifestVersion = 3
+// version 3, Delivery 1A, binds the run's event; version 4, Delivery 1B,
+// binds a job's needs context and the attempts it came from). A verifier
+// of another version fails closed; there is no shim.
+const ManifestVersion = 4
 
 // Manifest is the execution manifest the ship binds an authorization to
 // (specs/ci-execution-contract.md §5): everything the attempt may act on.
@@ -37,6 +39,25 @@ type Manifest struct {
 	// manual run's; '' for a resolve, which runs no job
 	Event   string `json:"event"`
 	Context string `json:"context"`
+	// the needs context a job's expressions read (Delivery 1B): Needs is
+	// the sha-256 (64 hex) of the context text the ship renders from the
+	// accepted attempts of the job's needs, '' for a job with no needs and
+	// for a plan or a resolve; Prerequisites names those attempts, each
+	// `<job>=<attempt>`, by job id, comma-joined, '' with no needs
+	Needs         string `json:"needs"`
+	Prerequisites string `json:"prerequisites"`
+}
+
+// ManifestFields is the JSON name of every field the manifest noun signs,
+// in the noun's order: the keys an assignment's `manifest` object must
+// carry, every one of them, for the runner to rebuild the signed noun.
+func ManifestFields() []string {
+	t := reflect.TypeOf(Manifest{})
+	names := make([]string, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		names = append(names, strings.Split(t.Field(i).Tag.Get("json"), ",")[0])
+	}
+	return names
 }
 
 // ScopeText is the canonical text of a destination list: sorted,
@@ -48,7 +69,8 @@ func ScopeText(dests []string) string {
 }
 
 // Noun is [incarnation repo ref candidate oid baseline lock generation
-// workflow job trust sandbox mode network network-scope event context].
+// workflow job trust sandbox mode network network-scope event context
+// needs prerequisites].
 func (m Manifest) Noun() (*Noun, error) {
 	inc, err := ParseUV(m.Incarnation)
 	if err != nil {
@@ -61,12 +83,12 @@ func (m Manifest) Noun() (*Noun, error) {
 	return Tuple(
 		Atom(inc), Cord(m.Repo), Cord(m.Ref), Atom(cand), Cord(m.OID), Cord(m.Baseline), Cord(m.Lock),
 		Atom(new(big.Int).SetUint64(m.Generation)), Cord(m.Workflow), Cord(m.Job), Cord(m.Trust), Cord(m.Sandbox), Cord(m.Mode),
-		Cord(m.Network), Cord(m.NetworkScope), Cord(m.Event), Cord(m.Context),
+		Cord(m.Network), Cord(m.NetworkScope), Cord(m.Event), Cord(m.Context), Cord(m.Needs), Cord(m.Prerequisites),
 	), nil
 }
 
 // ManifestMessage is the authorization: the v1 fields plus the manifest,
-// signed as one noun [3 recipient attempt operation expiry nonce
+// signed as one noun [4 recipient attempt operation expiry nonce
 // manifest].
 type ManifestMessage struct {
 	Recipient string
