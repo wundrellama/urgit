@@ -27,12 +27,18 @@ CI runs the GitHub Actions workflows in the repository's `.github/workflows/` di
 - `uses:` actions. They are fetched once, when you resolve dependencies (step 4), pinned in a lock and served to every job from your ship. Pin each action to a full commit SHA where you can.
 - Secrets, set in **Settings → Credentials**; a job reads them as `${{ secrets.NAME }}`.
 
-**Not supported yet** (a workflow that uses one is refused with the reason, never run wrong)
+**Not supported yet: refused with the reason.** A workflow that uses one of these fails its plan or resolve with the reason. It is never run in a different way.
 
-- `strategy.matrix`, `concurrency`, reusable workflows (`uses:` at job level), and artifacts passed between jobs.
-- `pull_request_target` and other events not listed above.
-- `GITHUB_TOKEN` and the GitHub API. urgit is not GitHub; a step that calls GitHub's API fails.
-- Windows and macOS runners.
+- `strategy.matrix`.
+- Reusable workflows: `workflow_call`, and `uses:` at job level.
+- `pull_request_target`, and other events not listed above.
+
+**Not supported yet: ignored.** Check these yourself, because no refusal shows them.
+
+- `concurrency` and `cancel-in-progress`. The key is read and ignored. A second push to a branch does not cancel the run still in flight there, and each run goes on to its own result.
+- Artifacts passed between jobs (`actions/upload-artifact` and `actions/download-artifact`). Files stay in the job's VM.
+- `GITHUB_TOKEN` and the GitHub API. urgit is not GitHub. A step that calls the GitHub API fails at that step.
+- Windows and macOS runners. A `runs-on` that only such a runner matches waits with the reason.
 
 **Network.** Every job runs with no network unless you allow it. A job that downloads (`apt-get`, `curl`, a pinned binary, a package registry) needs a rule in **Settings → CI policy → Network policies**: the workflow file, the job id, a profile name and its `proto:host:port` destinations, for example `tcp:archive.ubuntu.com:80`. The runner and the launcher must allow the same destinations (step 3). Read your workflows and list the hosts each job reaches; a job that is refused network fails with the destination it tried.
 

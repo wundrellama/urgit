@@ -87,6 +87,12 @@ test('the setup guide covers repository preparation and the VM runner, not Docke
   for (const h of ['## Prepare your repository', '## 3. Install the runner', '## 4. Approve the workflows and require CI']) assert.ok(guide.includes(h), h)
   assert.match(guide, /urgit-vm-launcher/)
   assert.match(guide, /Not supported yet/)
+  // concurrency is read and ignored, never refused: the guide must not
+  // list it among the refused keys (hands-on review, 2026-10-19)
+  const refused = guide.slice(guide.indexOf('Not supported yet: refused'), guide.indexOf('Not supported yet: ignored'))
+  assert.ok(refused.length > 0, 'the guide separates refused from ignored keys')
+  assert.doesNotMatch(refused, /concurrency/)
+  assert.match(guide.slice(guide.indexOf('Not supported yet: ignored')), /`concurrency` and `cancel-in-progress`/)
   assert.match(guide, /Network policies/)
   assert.match(guide, /CI-required branches/)
   assert.doesNotMatch(guide, /the one backend in this release/)
