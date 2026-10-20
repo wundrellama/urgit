@@ -270,7 +270,12 @@
           "col": 3
         }
       ],
-      "refusal": ""
+      "refusal": "",
+      "concurrency": {
+        "group": null,
+        "cancelInProgress": null,
+        "refusal": ""
+      }
     }
   ],
   "zones": {

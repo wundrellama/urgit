@@ -885,3 +885,11 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-input-add { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
 .ci-input-add input { width: 100%; min-width: 0; box-sizing: border-box; }
 .ci-input-add .button { align-self: flex-start; }
+
+/* Workflow concurrency remains readable down to 320px, including arbitrary groups. */
+.ci-concurrency { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; margin-block: 16px; }
+.ci-concurrency-workflow { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.ci-concurrency-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.ci-concurrency-header > strong { flex: 1 1 12rem; min-width: 0; }
+.ci-concurrency p, .ci-concurrency code, .ci-concurrency small, .ci-concurrency strong, .ci-concurrency button { overflow-wrap: anywhere; white-space: normal; max-width: 100%; }
+.ci-concurrency button { min-height: 40px; }

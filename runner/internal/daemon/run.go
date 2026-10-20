@@ -425,6 +425,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		// resolves them from the accepted attempt at the end of the job
 		Outputs     []plan.Output `json:"outputs"`
 		Matrix      bool          `json:"matrix"`
+		Concurrency bool          `json:"concurrency"`
 		Events      []string      `json:"events"`
 		Environment string        `json:"environment,omitempty"`
 		// the job's runs-on as a list (a string is one element) and its
@@ -434,12 +435,13 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		TimeoutMinutes int      `json:"timeout-minutes,omitempty"`
 	}
 	body := struct {
-		OID          string    `json:"oid"`
-		WorkflowsOID string    `json:"workflows-oid"`
-		Workspace    string    `json:"workspace-sha256"`
-		Workflows    []string  `json:"workflows"`
-		Jobs         []wireJob `json:"jobs"`
-	}{OID: a.OID, WorkflowsOID: bundle.WorkflowsOID, Workspace: bundle.WorkspaceSHA, Workflows: files, Jobs: []wireJob{}}
+		OID          string                     `json:"oid"`
+		WorkflowsOID string                     `json:"workflows-oid"`
+		Workspace    string                     `json:"workspace-sha256"`
+		Workflows    []string                   `json:"workflows"`
+		Jobs         []wireJob                  `json:"jobs"`
+		Concurrency  []plan.WorkflowConcurrency `json:"concurrency"`
+	}{OID: a.OID, WorkflowsOID: bundle.WorkflowsOID, Workspace: bundle.WorkspaceSHA, Workflows: files, Jobs: []wireJob{}, Concurrency: []plan.WorkflowConcurrency{}}
 	for _, file := range files {
 		out, code, err := d.capture(ctx, h, env.SourceDir, []string{"sh", "-c", env.ActBinary + " -l -W '.github/workflows/" + file + "' 2>&1"}, nil)
 		if err != nil {
@@ -460,6 +462,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			d.fail(ctx, a, err.Error(), logf)
 			return
 		}
+		body.Concurrency = append(body.Concurrency, plan.ConcurrencyOf(data, file))
 		walked, err := plan.Walk(data)
 		if err != nil {
 			d.fail(ctx, a, "yaml "+file+": "+err.Error(), logf)
@@ -478,7 +481,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			}
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
-				Cond: info.Cond, Outputs: info.Outputs, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
+				Cond: info.Cond, Outputs: info.Outputs, Matrix: info.Matrix, Concurrency: info.Concurrency, Events: row.Events, Environment: info.Environment,
 				RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes,
 			})
 		}

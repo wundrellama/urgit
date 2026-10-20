@@ -13,7 +13,7 @@
 ::    filter it would decide selects its workflow, labelled.
 ::
 /-  ci, git
-/+  ci-cron, git-codec
+/+  ci-concurrency-wire, ci-cron, git-codec
 |%
 ++  catalog-version  1
 ++  max-workflows  256
@@ -118,6 +118,8 @@
   =/  where=@t  (rap 3 ~['catalog workflow ' u.file ': '])
   =/  name=@t  (fall (text-at f 'name') u.file)
   =?  name  =('' name)  u.file
+  =/  concurrency  (parse:ci-concurrency-wire (~(get by f) 'concurrency'))
+  ?:  ?=(%| -.concurrency)  [%| p.concurrency]
   =/  refusal=(unit @t)  (refusal-at f)
   =/  raw=(unit json)  (~(get by f) 'events')
   ?.  ?=([~ %a *] raw)  [%| (rap 3 ~[where 'events must be a list'])]
@@ -127,7 +129,7 @@
   =|  seen=(set @t)
   =|  out=(list trigger-event:ci)
   |-
-  ?~  items  [%& u.file name (flop out) refusal]
+  ?~  items  [%& u.file name (flop out) refusal p.concurrency]
   =/  one=(each trigger-event:ci @t)  (parse-event i.items)
   ?:  ?=(%| -.one)  [%| (rap 3 ~[where p.one])]
   ?:  (~(has in seen) event.p.one)  [%| (rap 3 ~[where 'event ' event.p.one ' twice'])]

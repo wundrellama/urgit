@@ -109,6 +109,7 @@ export function renderRunWorkflow(h, { repo, state }, actions) {
         chosenRef?.available ? `Runs on ${chosenRef.label} at ${short(chosenRef.tip)} with the workflow of its promoted baseline, under policy generation ${inventory.generation}.` : ''))),
     chosenWorkflow && !chosenWorkflow.available ? h('small', { className: 'field-error', 'data-part': 'workflow-reason' }, chosenWorkflow.reason) : null,
     chosenRef && !chosenRef.available ? h('small', { className: 'field-error', 'data-part': 'ref-reason' }, chosenRef.reason) : null,
+    definition?.concurrencyReason ? h('p', { className: 'quiet', 'data-part': 'concurrency-note' }, definition.concurrencyReason) : null,
     definition && definition.inputs.length
       ? h('div', { className: 'ci-inputs', 'data-part': 'inputs' }, definition.inputs.map((input) => inputRow(h, input, state, environments, disabled, clientErrors, actions)))
       : definition ? h('small', { className: 'quiet', 'data-part': 'no-inputs' }, 'This workflow declares no inputs.') : null,

@@ -1,7 +1,7 @@
 ::  Resolver authority and lifecycle. These pure transitions are called by
 ::  the controller, and by ci-resolve-vector. No policy is inferred from YAML.
 /-  ci, git
-/+  ci-input
+/+  ci-cancel, ci-input
 |%
 ++  purpose
   |=  c=candidate:ci
@@ -40,7 +40,7 @@
   ==
 ::
 ++  consumers
-  |=  [s=state-7:ci rid=candidate-id:ci]
+  |=  [s=state-8:ci rid=candidate-id:ci]
   ^-  (list candidate-id:ci)
   =/  record=(unit candidate:ci)  (~(get by candidates.s) rid)
   ?~  record  ~
@@ -62,7 +62,7 @@
 ::
 ::  Shared by delivery, inventory/lock receipt and read-capability use.
 ++  active
-  |=  [s=state-7:ci a=attempt:ci]
+  |=  [s=state-8:ci a=attempt:ci]
   ^-  ?
   ?.  =(%running status.a)  %.n
   ?.  =(%resolve kind.a)  %.y
@@ -77,7 +77,7 @@
   ==
 ::
 ++  accepts
-  |=  [s=state-7:ci id=candidate-id:ci aid=attempt-id:ci]
+  |=  [s=state-8:ci id=candidate-id:ci aid=attempt-id:ci]
   ^-  ?
   ?.  =(`aid (~(gut by tag-runs.s) id ~))  %.n
   =/  a=(unit attempt:ci)  (~(get by attempts.s) aid)
@@ -88,7 +88,7 @@
 ::  A reoffer is still an obligation. Its record and exclusions survive;
 ::  all other closed/missing/catalog-less outcomes remain terminal.
 ++  next
-  |=  [s=state-7:ci c=candidate:ci]
+  |=  [s=state-8:ci c=candidate:ci]
   ^-  $%  [%running ~]
           [%offer record=(unit candidate-id:ci) exclude=(set daemon-id:ci)]
           [%failed why=@t]
@@ -139,8 +139,8 @@
 ::  Rebind every still-waiting consumer, including an approved twin, to
 ::  one replacement. Completed/superseded history keeps its original attempt.
 ++  bind-attempt
-  |=  [s=state-7:ci c=candidate:ci aid=attempt-id:ci]
-  ^-  state-7:ci
+  |=  [s=state-8:ci c=candidate:ci aid=attempt-id:ci]
+  ^-  state-8:ci
   =/  a=attempt:ci  (~(got by attempts.s) aid)
   =/  ids=(list candidate-id:ci)  (consumers s candidate.a)
   =.  ids  (snoc ids id.c)
@@ -151,8 +151,8 @@
   s(tag-runs bindings)
 ::
 ++  reoffer
-  |=  [s=state-7:ci a=attempt:ci why=@t now=@da]
-  ^-  state-7:ci
+  |=  [s=state-8:ci a=attempt:ci why=@t now=@da]
+  ^-  state-8:ci
   ?.  =(%running status.a)  s
   =.  attempts.s
     (~(put by attempts.s) id.a a(status %reoffered, reason `why, finished `now))
@@ -163,23 +163,23 @@
   s
 ::
 ++  cancel
-  |=  [s=state-7:ci c=candidate:ci why=@t now=@da]
-  ^-  state-7:ci
+  |=  [s=state-8:ci c=candidate:ci why=@t now=@da]
+  ^-  state-8:ci
   ::  Remove this owner first. A shared resolver is closed only after its
   ::  final live owner disappears; history may list it on both candidates.
   =.  candidates.s
     (~(put by candidates.s) id.c c(status %skipped, verdict-reason `why, updated now))
-  =.  attempts.s
+  =.  s
     %+  roll  attempts.c
-    |=  [id=attempt-id:ci acc=_attempts.s]
-    =/  a=(unit attempt:ci)  (~(get by acc) id)
+    |=  [id=attempt-id:ci acc=_s]
+    =/  a=(unit attempt:ci)  (~(get by attempts.acc) id)
     ?~  a  acc
     ?.  =(%running status.u.a)  acc
-    =/  owner=(unit candidate:ci)  (~(get by candidates.s) candidate.u.a)
+    =/  owner=(unit candidate:ci)  (~(get by candidates.acc) candidate.u.a)
     ?:  ?&  ?=(%resolve kind.u.a)  ?=(^ owner)
-            =(%tag (purpose u.owner))  (active s u.a)
+            =(%tag (purpose u.owner))  (active acc u.a)
         ==  acc
-    (~(put by acc) id u.a(status %cancelled, reason `why, finished `now))
+    (close:ci-cancel acc u.a why now)
   =/  ended=(set attempt-id:ci)
     %-  silt
     %+  skim  attempts.c
@@ -207,8 +207,8 @@
   ==
 ::
 ++  approve
-  |=  [s=state-7:ci old=candidate:ci approved=candidate:ci now=@da]
-  ^-  state-7:ci
+  |=  [s=state-8:ci old=candidate:ci approved=candidate:ci now=@da]
+  ^-  state-8:ci
   =.  candidates.s
     %+  ~(put by candidates.s)
       id.old
@@ -222,13 +222,13 @@
 ::  automatic attempts. Assignment/attempt/event history remains immutable.
 ::  Effects are returned to the controller, which emits them in the same event.
 ++  sweep
-  |=  [s=state-7:ci now=@da]
-  ^-  [state=state-7:ci release=(list candidate-id:ci) mirrors=(set @t) stop=(list attempt-id:ci)]
+  |=  [s=state-8:ci now=@da]
+  ^-  [state=state-8:ci release=(list candidate-id:ci) mirrors=(set @t) stop=(list attempt-id:ci)]
   =|  release=(list candidate-id:ci)
   =|  stop=(list attempt-id:ci)
   =/  records=(list candidate:ci)  ~(val by candidates.s)
-  =/  retired=[state=state-7:ci release=(list candidate-id:ci) stop=(list attempt-id:ci)]
-    |-  ^-  [state=state-7:ci release=(list candidate-id:ci) stop=(list attempt-id:ci)]
+  =/  retired=[state=state-8:ci release=(list candidate-id:ci) stop=(list attempt-id:ci)]
+    |-  ^-  [state=state-8:ci release=(list candidate-id:ci) stop=(list attempt-id:ci)]
         ?~  records  [s release stop]
         =/  c=candidate:ci  i.records
         ?.  &(=(%tag (purpose c)) =(%pending status.c))

@@ -322,6 +322,24 @@
 =/  lock-as-2
   |=  l=lock:ci
   [digest.l repo.l revision.l nodes.l resolved.l resolver.l bytes.l notices.l]
+=/  inventory-as-old
+  |=  i=(unit (list dispatch-workflow:ci))
+  ^-  (unit (list dispatch-workflow:ci-state-5))
+  ?~  i  ~
+  `(turn u.i |=(w=dispatch-workflow:ci [workflow.w name.w inputs.w refusal.w]))
+=/  lock-as-3
+  |=  l=lock:ci
+  [digest.l repo.l revision.l nodes.l resolved.l resolver.l bytes.l notices.l (inventory-as-old inventory.l)]
+=/  lock-as-5
+  |=  l=lock:ci
+  ^-  lock:ci-state-5
+  :*  digest.l  repo.l  revision.l  nodes.l  resolved.l  resolver.l  bytes.l  notices.l
+      (inventory-as-old inventory.l)
+      ?~  triggers.l  ~
+      :-  ~
+      :-  (turn workflows.u.triggers.l |=(w=trigger-workflow:ci [workflow.w name.w events.w refusal.w]))
+      zones.u.triggers.l
+  ==
 ::  every candidate of a converted state is its earlier record, a push run
 ::
 =/  kept-as-push
@@ -387,11 +405,11 @@
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %7 once converted' %.y =(%7 -.new.s)]
+    ['state-1 is tagged %8 once converted' %.y =(%8 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %7 once converted' %.y =(%7 -.new.t)]
+    ['state-2 is tagged %8 once converted' %.y =(%8 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
@@ -402,14 +420,14 @@
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
     ::  state-3
     ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
-    ['state-3 is tagged %7 once converted' %.y =(%7 -.new.m)]
+    ['state-3 is tagged %8 once converted' %.y =(%8 -.new.m)]
     ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
     ::  the old candidate's every field after its id, against the new one's
     ::  same fields by name (+as-4); its added selection is checked in .added
     ['a manual run keeps every other field' %.y =(+.manual-cand +:(as-4 m-cand))]
     ::  the old lock whole, against the new lock's same fields by name; its
     ::  added trigger catalog is checked in .added
-    ['a lock keeps its manual-run inventory' %.y =(lock-3 [digest repo revision nodes resolved resolver bytes notices inventory]:m-lock)]
+    ['a lock keeps its manual-run inventory' %.y =(lock-3 (lock-as-3 m-lock))]
     ['every other state-3 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:manual-state [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.m)]
     ['a planned job keeps its output-eq gate, its declared outputs not known' %.y =(plan.p-cand `~[['a' 'chain.yml' 'chain' 0 ~ ~ ~ ~ ~ ~] ['b' 'chain.yml' 'chain' 1 ~['a'] `[%output-eq 'a' 'go' 'true'] ~ ~ `5 ~]])]
     ['a planned job gains declared outputs it never read' %.n !=(~ outputs:(snag 1 (need plan.p-cand)))]
@@ -420,7 +438,8 @@
 ::  Populated state5: keep its event run, catalog, source event, replay id
 ::  and armed schedule, plus every field inherited from the older fixture.
 =/  historical=candidate:ci-state-5
-  %=  f-cand
+  =/  old-candidate  (~(got by candidates:(from-state-4:ci-migrate s4)) 0v3.ppppp)
+  %=  old-candidate
     mode  %event
     trigger  [%event [0v91 %push 'refs/tags/v1' ~ `0xa1 ~ ~ ~zod 'tag API' ~2026.10.17 '{}']]
     selected  `['historical promoted catalog' ~[['old.yml' 'Old' %selected 'selected']] ~]
@@ -445,7 +464,9 @@
   =/  seed  (from-state-4:ci-migrate s4)
   %=  seed
     candidates  (~(put by candidates.seed) id.historical historical)
-    locks  (~(put by locks.seed) 0x88 f-lock(triggers `*trigger-catalog:ci))
+    locks
+      =/  old-lock  (~(got by locks.seed) 0x88)
+      (~(put by locks.seed) 0x88 old-lock(triggers `*trigger-catalog:ci-state-5))
     forge-events  (my ~[[0v91 event5]])
     event-ids  (my ~[[0v91 ~2026.10.17]])
     schedules  (my ~[[['erpit' 'nightly.yml' 0] sched5]])
@@ -458,12 +479,12 @@
 =/  late=(list [name=@t expect=? got=?])
   :~  ::  state-4 (Delivery 1C)
     ['state-4 loads as its own shape' %.y =(%state-4 shape.f)]
-    ['state-4 is tagged %7 once converted' %.y =(%7 -.new.f)]
+    ['state-4 is tagged %8 once converted' %.y =(%8 -.new.f)]
     ['a state-4 required run keeps every field' %.y =((~(got by candidates.s4) 0v3.ppppp) (as-4 f-cand))]
     ['a state-4 required run\'s workflow selection was never evaluated' %.y =(~ selected.f-cand)]
     ['a state-4 manual run keeps every field and its dispatch' %.y &(=((~(got by candidates.s4) id.manual-cand) (as-4 f-manual)) ?=(%dispatch -.trigger.f-manual))]
     ['a state-4 candidate becomes an event run' %.n (lien ~(val by candidates.new.f) |=(c=candidate:ci ?=(%event -.trigger.c)))]
-    ['a state-4 lock keeps every field and its inventory' %.y =((~(got by locks.s4) 0x88) [digest repo revision nodes resolved resolver bytes notices inventory]:f-lock)]
+    ['a state-4 lock keeps every field and its inventory' %.y =((~(got by locks.s4) 0x88) (lock-as-3 f-lock))]
     ['a state-4 lock\'s trigger catalog is unknown, not empty' %.y =(~ triggers.f-lock)]
     ['a state-4 lock gains a trigger catalog' %.n !=(~ triggers.f-lock)]
     ['a state-4 running attempt is kept whole and running' %.y &(=((~(got by attempts.s4) 0v7.aaaaa) (~(got by attempts.new.f) 0v7.aaaaa)) =(%running status:(~(got by attempts.new.f) 0v7.aaaaa)))]
@@ -471,18 +492,18 @@
     ['every other state-4 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:s4 [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands]:new.f)]
     ['state-4 converts as the state-3 it came from does' %.y =(new.p new.f-plain)]
     ['state5 is recognized as its own frozen shape' %.y =(%state-5 shape.fifth)]
-    ['state5 copies every field without changing any noun' %.y =([candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:s5 [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:new.fifth)]
+    ['state5 copies every field without changing any noun' %.y &(=([candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:s5 [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules]:new.fifth) =(locks.s5 (~(run by locks.new.fifth) lock-as-5)))]
     ['historical event runs gain no tagged authority' %.y =(~ tag-runs.new.fifth)]
     ['state6 keeps pending and exact resolver bindings on load' %.y &(=(%state-6 shape.sixth) =(tag-runs.s6 tag-runs.new.sixth))]
     ['state6 gains no policy snapshot evidence or runner ceiling' %.y =([~ ~ ~ ~] [automatic-inputs input-snapshots input-evidence resolver-inputs]:new.sixth)]
-    ['state6 copies EVERY old field and nested noun' %.y =([candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs]:s6 [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs]:new.sixth)]
+    ['state6 copies EVERY old field and nested noun' %.y &(=([candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs]:s6 [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs]:new.sixth) =(locks.s6 (~(run by locks.new.sixth) lock-as-5)))]
     ['truncated state6 is refused' %.y (refused [%6 +.s5])]
     ['state6 relabelled as state5 is refused' %.y (refused [%5 +.s6])]
     ['corrupt tag bindings are refused' %.y (refused s6(tag-runs [5 ~]))]
     ::  the current state
-    ['state-7 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
+    ['state-8 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%8 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%9 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]

@@ -140,7 +140,7 @@
           :~  ['dry_run' %boolean 'Rehearse' %.n `'false' ~]
               ['target' %environment '' %.n ~ ~]
           ==
-          ~
+          ~  ~
       ==  ==
 =/  cases=(list [name=@t want=? got=?])
   :~  ['a boolean false and a number zero are supplied; defaults fill the rest; no default stays absent' %.y =([%& want] admitted)]

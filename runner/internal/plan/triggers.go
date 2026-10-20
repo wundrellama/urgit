@@ -33,10 +33,11 @@ type TriggerCatalog struct {
 // them. Refusal is why its `on:` cannot be read at all; then it lists no
 // event and nothing runs it automatically.
 type TriggerWorkflow struct {
-	Workflow string         `json:"workflow"`
-	Name     string         `json:"name"`
-	Events   []TriggerEvent `json:"events"`
-	Refusal  string         `json:"refusal"`
+	Workflow    string         `json:"workflow"`
+	Name        string         `json:"name"`
+	Events      []TriggerEvent `json:"events"`
+	Refusal     string         `json:"refusal"`
+	Concurrency Concurrency    `json:"concurrency"`
 }
 
 // TriggerEvent is one event of `on:` and its configuration, compiled.
@@ -100,7 +101,7 @@ func resolved(n *yaml.Node) *yaml.Node {
 // fails: what cannot be read is a refusal of the workflow or of one event,
 // carried with its reason, so the catalog lists every file.
 func TriggersOf(data []byte, fileName string) TriggerWorkflow {
-	w := TriggerWorkflow{Workflow: fileName, Name: fileName, Events: []TriggerEvent{}}
+	w := TriggerWorkflow{Workflow: fileName, Name: fileName, Events: []TriggerEvent{}, Concurrency: ConcurrencyOf(data, fileName).Concurrency}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		w.Refusal = "the workflow is not valid YAML: " + err.Error()

@@ -21,6 +21,8 @@ CI runs the GitHub Actions workflows in the repository's `.github/workflows/` di
 
 **Supported**
 
+- Workflow-level `concurrency` (string or mapping), expressions in `group` and `cancel-in-progress`, and repository-wide groups across workflows. The new run decides cancellation; otherwise one run waits, replacing an older waiter. Cancel a run or one workflow from its CI page (owner or `ci-policy`). Cancelled required runs never land. Resolve/promote old locks again to read concurrency. Job-level `always()` cleanup can run; step-level cleanup in a killed VM cannot.
+
 - `runs-on: ubuntu-latest`, `ubuntu-22.04`, `ubuntu-24.04`, `self-hosted`, `linux`, `x64`, or a label a runner declares.
 - `needs`, job outputs, job and step `if` (including `always()`, `failure()` and `needs.<job>.result`), and the common expression functions.
 - Events: `push` (branches and tags), `pull_request` (`opened`, `synchronize`, `closed`, `reopened`), `workflow_dispatch` with typed inputs, and `schedule`; with branch, tag and path filters.
@@ -29,13 +31,13 @@ CI runs the GitHub Actions workflows in the repository's `.github/workflows/` di
 
 **Not supported yet: refused with the reason.** A workflow that uses one of these fails its plan or resolve with the reason. It is never run in a different way.
 
+- Job-level `concurrency:`.
 - `strategy.matrix`.
 - Reusable workflows: `workflow_call`, and `uses:` at job level.
 - `pull_request_target`, and other events not listed above.
 
 **Not supported yet: ignored.** Check these yourself, because no refusal shows them.
 
-- `concurrency` and `cancel-in-progress`. The key is read and ignored. A second push to a branch does not cancel the run still in flight there, and each run goes on to its own result.
 - Artifacts passed between jobs (`actions/upload-artifact` and `actions/download-artifact`). Files stay in the job's VM.
 - `GITHUB_TOKEN` and the GitHub API. urgit is not GitHub. A step that calls the GitHub API fails at that step.
 - Windows and macOS runners. A `runs-on` that only such a runner matches waits with the reason.

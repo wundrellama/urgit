@@ -7,7 +7,7 @@
 ::  expression.
 ::
 /-  ci
-/+  ci-provenance
+/+  ci-concurrency-wire, ci-provenance
 |%
 ::  GitHub's documented bound on the inputs of one run
 ::
@@ -73,6 +73,8 @@
   =/  where=@t  (rap 3 ~['dispatch workflow ' u.file ': '])
   =/  name=@t  (fall (text-at fields 'name') '')
   =?  name  =('' name)  u.file
+  =/  concurrency  (parse:ci-concurrency-wire (~(get by fields) 'concurrency'))
+  ?:  ?=(%| -.concurrency)  [%| p.concurrency]
   =/  raw=(each (list raw-input) @t)
     =/  value=(unit json)  (~(get by fields) 'inputs')
     ?~  value  [%& ~]
@@ -87,10 +89,10 @@
   ?:  ?=(%| -.raw)  [%| p.raw]
   =/  refusal=(unit @t)  (text-at fields 'refusal')
   ?:  ?&(?=(^ refusal) !=('' u.refusal))
-    [%& u.file name ~ refusal]
+    [%& u.file name ~ refusal p.concurrency]
   =/  checked=(each (list dispatch-input:ci) @t)  (definitions p.raw)
-  ?:  ?=(%| -.checked)  [%& u.file name ~ `p.checked]
-  [%& u.file name p.checked ~]
+  ?:  ?=(%| -.checked)  [%& u.file name ~ `p.checked p.concurrency]
+  [%& u.file name p.checked ~ p.concurrency]
 ::
 ++  parse-input
   |=  jon=json

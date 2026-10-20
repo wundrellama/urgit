@@ -236,9 +236,12 @@ and check each one is done:
    \`ubuntu-22.04\`, \`ubuntu-24.04\`, or a label the runner declares),
    \`needs\`, job and step \`if\`, job outputs, \`push\`, \`pull_request\`,
    \`workflow_dispatch\` with inputs, \`schedule\`, and branch, tag and path
-   filters. Refused with the reason: \`strategy.matrix\`, reusable workflows and
-   \`pull_request_target\`. Read but ignored, so check them yourself:
-   \`concurrency\` (a new push does not cancel the run in flight),
+   filters. Workflow-level \`concurrency\` and \`cancel-in-progress\` are supported,
+   including expressions and one waiting run per repository group. A newer
+   waiting run replaces the older one; the new run decides cancellation.
+   Resolve/promote old locks again to apply concurrency. Cancel in the CI run
+   view requires the owner or \`ci-policy\`. Refused with the reason: \`strategy.matrix\`, reusable workflows and
+   \`pull_request_target\` and job-level \`concurrency:\`. Read but ignored, so check them yourself:
    artifacts between jobs, \`GITHUB_TOKEN\` and the GitHub API, and
    Windows or macOS runners. Change such a workflow, or leave it out of
    the required set.

@@ -23,6 +23,7 @@ export const provenanceActions = {
   clearNetworkPolicy: (repo, workflow, job) => ({ action: 'clear-network-policy', repo, workflow, job }),
   stageShadow: (repo, ref, head, base, event, external = '') => ({ action: 'stage-shadow', repo, ref, head, base, event, external }),
   compareShadow: (shadow, oid, event, verdict, jobs) => ({ action: 'compare-shadow', shadow, oid, event, verdict, jobs }),
+  cancelWorkflow: (id, workflow = null) => ({ action: 'cancel-workflow', id, ...(workflow ? { workflow } : {}), reason: 'cancelled by the operator' }),
   cancelAttempt: (id, reason) => ({ action: 'cancel-attempt', id, reason }),
 }
 

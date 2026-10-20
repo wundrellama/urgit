@@ -29,7 +29,8 @@ test('state5 is frozen exactly and pending tag resolution has a new persisted ve
   assert.equal(createHash('sha256').update(old).digest('hex'),
     '019ff935802afee00028550aee1c66b17c39c8d6e8978035e0820a784ea0a77b')
   const current = deskText('sur/ci.hoon')
-  assert.match(current, /\+\$  state-6\n/)
+  assert.match(deskText('sur/ci-state-6.hoon'), /\+\$  state-6\n/)
+  assert.match(current, /\+\$  state-8\n/)
   assert.match(current, /tag-runs=\(map candidate-id \(unit attempt-id\)\)/)
   assert.match(arm(deskText('lib/ci-migrate.hoon'), 'from-state-5'), /schedules\.o\s+~/)
 })
@@ -89,7 +90,8 @@ test('tag authority is narrow and leaves the promoted and privileged paths guard
 test('resolver producer and consumers use the tested authority and lifecycle gates', () => {
   for (const name of ['deliver', 'read-allowed', 'handle-lock', 'handle-upload']) assert.match(arm(controller, name), /active:ci-resolve/)
   assert.match(arm(controller, 'emit'), /sweep:ci-resolve/)
-  assert.match(arm(controller, 'cancel-run'), /cancel:ci-resolve/)
+  assert.match(arm(controller, 'cancel-run'), /cancel-workflows/)
+  assert.match(arm(controller, 'cancel-workflows'), /cancel:ci-resolve/)
   assert.match(arm(controller, 'reoffer-attempt'), /reoffer:ci-resolve/)
   assert.match(arm(controller, 'advance-tags'), /next:ci-resolve/)
   assert.match(arm(controller, 'select-resolver-excluding'), /choose:ci-resolve/)

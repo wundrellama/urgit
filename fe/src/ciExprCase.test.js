@@ -64,7 +64,12 @@ test('an if that cannot be evaluated is an error decision: the job fails, it is 
   assert.ok(decide.includes("?:  ?=(%| -.value)\n      [%error (rap 3 ~['if ' shown ' could not be evaluated: ' p.value])]"))
   assert.ok(one(agent, 'decide-pass').includes('%error  (record-decision id job [%error reason.decision ~] needs)'))
   assert.ok(one(agent, 'record-decision').includes('?:(?=(%error verdict.decision) %failed %skipped)'))
-  assert.ok(one(agent, 'runnable-jobs').includes('=(%run -:(decide:ci-plan job u.plan.candidate standings.known entries context))'))
+  assert.ok(one(agent, 'runnable-jobs').includes('=(%run -:(decide:ci-concurrency state candidate job standings.known entries context))'))
+  // Follow the production wrapper: it must still use the same evaluator
+  // and cannot turn a refused concurrency expression into runnable work.
+  const concurrent = one(deskText('lib/ci-concurrency.hoon'), 'decide')
+  assert.match(concurrent, /%:  decide:ci-plan/)
+  assert.match(concurrent, /\[%error reason\.u\.r\]/)
 })
 
 test('an output that cannot be resolved keeps its reason and is never published', () => {

@@ -17,22 +17,25 @@
 ::    sur/ci-state-3.  state-4, tagged %4 (Delivery 1B), gave a planned job
 ::    its compiled condition and declared outputs, an attempt its step
 ::    outputs by step, its decision, its needs context and its resolved
-::    outputs; it is frozen as sur/ci-state-4.  the current state is
-::    state-5, tagged %5 (Delivery 1C), added: the event run mode, a candidate's
+::    outputs; it is frozen as sur/ci-state-4. State-5, tagged %5
+::    (Delivery 1C), added: the event run mode, a candidate's
 ::    event trigger and workflow selection, a lock's trigger catalog, and
 ::    the forge events, their ids and the armed schedules.  a %0 shape is
 ::    converted to state-1, state-1 to state-2, state-2 to state-3, state-3
 ::    to state-4 and state-4 to state-5.  an
-::    State6 appends the tagged-run resolver bindings. State5 converts
-::    without changing any prior field. An unknown, partial,
+::    State-6 appends the tagged-run resolver bindings. State-7 appends
+::    automatic input authority and captured evidence. State-8 freezes
+::    state-7 completely and adds workflow-run concurrency records, with
+::    unknown declarations on old locks and no membership for old runs.
+::    Every earlier conversion preserves its prior fields. An unknown, partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -52,8 +55,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %8
+    ?:  !=(~ (mole |.(;;(state-8:ci old))))  &+%current
+    |+'a %8 state that is not exactly state-8: partial or corrupt'
+  ::
       %7
-    ?:  !=(~ (mole |.(;;(state-7:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-7:ci-state-7 old))))  &+%state-7
     |+'a %7 state that is not exactly state-7: partial or corrupt'
   ::
       %6
@@ -95,19 +102,22 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-7:ci]
+  ^-  [=shape new=state-8:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
-  ?:  =(%current p.found)  ;;(state-7:ci old)
+  ?:  =(%current p.found)  ;;(state-8:ci old)
+  %-  from-state-7
+  ?:  =(%state-7 p.found)  ;;(state-7:ci-state-7 old)
   %-  from-state-6
   ?:  =(%state-6 p.found)  ;;(state-6:ci-state-6 old)
   %-  from-state-5
   ?-  p.found
     %current  !!
+    %state-7  !!
     %state-6  !!
     %state-5  ;;(state-5:ci-state-5 old)
     %state-4  (from-state-4 ;;(state-4:ci-state-4 old))
@@ -128,9 +138,73 @@
 ::
 ::  State6 is frozen whole, including all nested molds. Preserve every
 ::  old noun and outstanding obligation; no historical source gains a grant.
+++  from-state-7
+  |=  o=state-7:ci-state-7
+  ^-  state-8:ci
+  :*  %8
+      candidates.o
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      (~(run by locks.o) lock-from-7)
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      forge-events.o
+      event-ids.o
+      schedules.o
+      tag-runs.o
+      automatic-inputs.o
+      input-snapshots.o
+      input-evidence.o
+      resolver-inputs.o
+      ~
+      ~(key by candidates.o)
+  ==
+::
+++  lock-from-7
+  |=  l=lock:ci-state-7
+  ^-  lock:ci
+  :*  digest.l  repo.l  revision.l  nodes.l  resolved.l  resolver.l
+      bytes.l  notices.l
+      ?~(inventory.l ~ `(turn u.inventory.l dispatch-from-7))
+      ?~  triggers.l  ~
+      `[(turn workflows.u.triggers.l trigger-from-7) zones.u.triggers.l]
+  ==
+::
+++  dispatch-from-7
+  |=  w=dispatch-workflow:ci-state-7
+  ^-  dispatch-workflow:ci
+  [workflow.w name.w inputs.w refusal.w ~]
+::
+++  trigger-from-7
+  |=  w=trigger-workflow:ci-state-7
+  ^-  trigger-workflow:ci
+  [workflow.w name.w events.w refusal.w ~]
+::
 ++  from-state-6
   |=  o=state-6:ci-state-6
-  ^-  state-7:ci
+  ^-  state-7:ci-state-7
   :*  %7
       candidates.o
       daemons.o
@@ -261,7 +335,7 @@
 ::
 ++  candidate-from-4
   |=  c=candidate:ci-state-4
-  ^-  candidate:ci
+  ^-  candidate:ci-state-5
   :*  id.c
       repo.c
       ref.c
@@ -298,7 +372,7 @@
 ::
 ++  lock-from-4
   |=  l=lock:ci-state-4
-  ^-  lock:ci
+  ^-  lock:ci-state-5
   :*  digest.l
       repo.l
       revision.l

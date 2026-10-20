@@ -26,6 +26,7 @@ type JobInfo struct {
 	// the job's declared outputs (jobs.<id>.outputs), compiled, in
 	// declaration order; the ship resolves them from the accepted attempt
 	Outputs     []Output
+	Concurrency bool // job-level concurrency is refused by the ship
 	Matrix      bool
 	Environment string // the job's `environment:` name, "" when none
 	// the job's `runs-on` (a string or a list; the ship treats a string
@@ -51,6 +52,7 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 		job := jobs.Content[i+1]
 		info := JobInfo{Needs: []string{}}
 		if job.Kind == yaml.MappingNode {
+			info.Concurrency = mappingValue(job, "concurrency") != nil
 			if needs := mappingValue(job, "needs"); needs != nil {
 				switch needs.Kind {
 				case yaml.ScalarNode:

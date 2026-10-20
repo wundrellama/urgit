@@ -1,3 +1,4 @@
+import { renderConcurrency } from '../ciConcurrency.js'
 import { Fragment, createElement, useCallback, useEffect, useRef, useState } from 'react'
 import { ci, publicApi } from '../api'
 import { approveHint, attemptRows, candidateRow, candidateStatusLabel, ciActions, lineText, noRunnerMessage, pinnedNote, renderLog, shortOid } from '../ci'
@@ -273,6 +274,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate, onOpenPull })
         {c.verdictReason && <div><dt>{c.status === 'pending' ? 'Waiting' : 'Verdict'}</dt><dd>{c.verdictReason}</dd></div>}
       </dl>
       {error && <small className="field-error">{error}</small>}
+      {renderConcurrency(createElement, c, { busy: busy !== '', onCancel: (body) => act('cancel', body) })}
       <EventFacts candidate={c} repo={repo} onOpenPull={onOpenPull} />
       {renderSelection(createElement, selectionModel(c))}
       <CandidateProvenance data={data} tip={(repo?.refs || []).find((r) => r.name === c.ref)?.oid || ''} onAct={act} busy={busy} confirm={confirm} />

@@ -16,6 +16,7 @@ export const candidateStatusLabel = {
   passed: 'passed',
   failed: 'failed',
   pending: 'pending',
+  cancelled: 'cancelled',
   skipped: 'superseded',
   unknown: 'unknown',
 }

@@ -14,9 +14,10 @@ import (
 // against it. The compiler carries the declaration; the ship decides
 // whether each definition is valid.
 type Dispatch struct {
-	Workflow string          `json:"workflow"` // the file name under .github/workflows
-	Name     string          `json:"name"`     // the workflow's own name, else the file name
-	Inputs   []DispatchInput `json:"inputs"`
+	Workflow    string          `json:"workflow"` // the file name under .github/workflows
+	Name        string          `json:"name"`     // the workflow's own name, else the file name
+	Inputs      []DispatchInput `json:"inputs"`
+	Concurrency Concurrency     `json:"concurrency"`
 	// Refusal names what this compiler cannot carry faithfully: the
 	// workflow is listed, and cannot be run manually
 	Refusal string `json:"refusal,omitempty"`
@@ -51,7 +52,7 @@ func DispatchOf(data []byte, fileName string) (*Dispatch, error) {
 	if !declared {
 		return nil, nil
 	}
-	d := &Dispatch{Workflow: fileName, Name: fileName, Inputs: []DispatchInput{}}
+	d := &Dispatch{Workflow: fileName, Name: fileName, Inputs: []DispatchInput{}, Concurrency: ConcurrencyOf(data, fileName).Concurrency}
 	if name := mappingValue(top, "name"); name != nil && name.Kind == yaml.ScalarNode && name.Value != "" {
 		d.Name = name.Value
 	}
@@ -188,6 +189,9 @@ func jobRefusal(data []byte, top *yaml.Node) string {
 	}
 	for i := 0; i+1 < len(jobs.Content); i += 2 {
 		id := jobs.Content[i].Value
+		if mappingValue(resolved(jobs.Content[i+1]), "concurrency") != nil {
+			return "job " + id + ": job-level concurrency is not supported"
+		}
 		info := walked[id]
 		if info.Matrix {
 			return "job " + id + ": a matrix strategy is not supported in this release"

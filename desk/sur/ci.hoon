@@ -53,7 +53,7 @@
 ::
 +$  trust  ?(%trusted %untrusted)
 +$  result  ?(%success %failure %skipped %cancelled)
-+$  candidate-status  ?(%passed %failed %pending %skipped %unknown)
++$  candidate-status  ?(%passed %failed %pending %skipped %cancelled %unknown)
 ::  %reoffered is an attempt its daemon gave up, went silent on, or was
 ::  revoked from (CI-DELIVERY-1.1): closed without a verdict and offered
 ::  again as a fresh attempt, so it stands for nothing in a job's standing.
@@ -413,6 +413,7 @@
       name=@t
       inputs=(list dispatch-input)
       refusal=(unit @t)
+      concurrency=(unit concurrency)
   ==
 ::
 ::  an admitted value, typed as its input declares: a number keeps its
@@ -522,11 +523,28 @@
       line=@ud
       col=@ud
   ==
+::  Workflow concurrency: missing declaration is unknown, a known empty
+::  group is no concurrency. New records are safe when defaulted.
++$  concurrency
+  [group=(unit declared-output) cancel=(unit condition) refusal=(unit @t)]
++$  workflow-key  [candidate=candidate-id workflow=@t]
++$  workflow-phase  ?(%running %waiting %cancelled %complete %refused %unknown)
++$  workflow-run
+  $:  repo=@t
+      name=@t
+      group=(unit @t)
+      cancel=?
+      phase=workflow-phase
+      reason=@t
+      related=(unit candidate-id)
+  ==
+::
 +$  trigger-workflow
   $:  workflow=@t
       name=@t
       events=(list trigger-event)
       refusal=(unit @t)
+      concurrency=(unit concurrency)
   ==
 ::
 ::  a timezone's UTC offsets (seconds east, signed) over the compiler's
@@ -893,105 +911,14 @@
 ::
 +$  pin  [name=@t addrs=(list @t)]
 ::
-+$  state-5
-  $:  %5
-      candidates=(map candidate-id candidate)
-      daemons=(map daemon-id daemon)
-      assignments=(map assignment-id assignment)
-      attempts=(map attempt-id attempt)
-      ci-protected=(set [repo=@t ref=@t])
-      policies=(map @t untrusted-policy)
-      credentials=(map [repo=@t name=@t] credential)
-      signing=(unit signing)
-      ship-keys=(unit ship-keys)
-      ::  P4
-      incarnations=(map @t @uv)
-      generations=(map @t @ud)
-      baselines=(map [repo=@t ref=@t] baseline)
-      locks=(map @ux lock)
-      roles=(map @t (list binding))
-      environments=(map [repo=@t name=@t] environment)
-      approvals=(map @uv approval)
-      overrides=(map @uv override)
-      network-policies=(map @t (list network-policy))
-      read-capabilities=(map @ read-capability)
-      shadows=(map @uv shadow)
-      comparisons=(map @uv comparison)
-      audit=(list audit-entry)
-      sandbox-requirements=(map @t sandbox-need)
-      ::  the write tokens a resolve attempt's mirrors hold until it closes
-      mirror-tokens=(map attempt-id (set @t))
-      ::  the operator's explicit import mappings of a resolve (rider 03),
-      ::  by the synthetic resolve candidate: [from to] prefixes
-      resolve-mappings=(map candidate-id (list [from=@t to=@t]))
-      ::  a repository's harness paths (D5): what a promotion records on
-      ::  the baseline it creates; ~ means the default, .github/
-      harness-paths=(map @t (list @t))
-      ::  the legacy recovery (legacy-recovery UI ruling 01): each
-      ::  runner's latest retention report, and the operator's recovery
-      ::  commands by id, never pruned
-      recovery-reports=(map daemon-id recovery-report)
-      recovery-commands=(map @uv recovery-command)
-      ::  state-5 (Delivery 1C): the forge events recorded per repository
-      ::  (newest kept), the ids of every event admitted (the replay
-      ::  guard, newest kept), and the armed schedules
-      forge-events=(map @uv forge-event)
-      event-ids=(map @uv @da)
-      schedules=(map schedule-key schedule-entry)
-  ==
-::
-+$  state-6
-  $:  %6
-      candidates=(map candidate-id candidate)
-      daemons=(map daemon-id daemon)
-      assignments=(map assignment-id assignment)
-      attempts=(map attempt-id attempt)
-      ci-protected=(set [repo=@t ref=@t])
-      policies=(map @t untrusted-policy)
-      credentials=(map [repo=@t name=@t] credential)
-      signing=(unit signing)
-      ship-keys=(unit ship-keys)
-      ::  P4
-      incarnations=(map @t @uv)
-      generations=(map @t @ud)
-      baselines=(map [repo=@t ref=@t] baseline)
-      locks=(map @ux lock)
-      roles=(map @t (list binding))
-      environments=(map [repo=@t name=@t] environment)
-      approvals=(map @uv approval)
-      overrides=(map @uv override)
-      network-policies=(map @t (list network-policy))
-      read-capabilities=(map @ read-capability)
-      shadows=(map @uv shadow)
-      comparisons=(map @uv comparison)
-      audit=(list audit-entry)
-      sandbox-requirements=(map @t sandbox-need)
-      ::  the write tokens a resolve attempt's mirrors hold until it closes
-      mirror-tokens=(map attempt-id (set @t))
-      ::  the operator's explicit import mappings of a resolve (rider 03),
-      ::  by the synthetic resolve candidate: [from to] prefixes
-      resolve-mappings=(map candidate-id (list [from=@t to=@t]))
-      ::  a repository's harness paths (D5): what a promotion records on
-      ::  the baseline it creates; ~ means the default, .github/
-      harness-paths=(map @t (list @t))
-      ::  the legacy recovery (legacy-recovery UI ruling 01): each
-      ::  runner's latest retention report, and the operator's recovery
-      ::  commands by id, never pruned
-      recovery-reports=(map daemon-id recovery-report)
-      recovery-commands=(map @uv recovery-command)
-      ::  state-5 (Delivery 1C): the forge events recorded per repository
-      ::  (newest kept), the ids of every event admitted (the replay
-      ::  guard, newest kept), and the armed schedules
-      forge-events=(map @uv forge-event)
-      event-ids=(map @uv @da)
-      schedules=(map schedule-key schedule-entry)
-      ::  Tagged-revision runs and their exact resolver attempts. A null
-      ::  attempt waits for a resolver. Completed runs keep this provenance.
-      tag-runs=(map candidate-id (unit attempt-id))
-  ==
 
-+$  state-7
-  $:  %7
+::
+
+
+
+
++$  state-8
+  $:  %8
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -1043,6 +970,8 @@
       input-snapshots=(map candidate-id (list @t))
       input-evidence=(map @ux @t)
       resolver-inputs=(map daemon-id (list @t))
+      workflow-runs=(map workflow-key workflow-run)
+      concurrency-legacy=(set candidate-id)
   ==
 
 ::
@@ -1146,6 +1075,7 @@
       [%clear-network-policy repo=@t workflow=@t job=@t actor=@p]
       [%stage-shadow repo=@t ref=@t head=oid:git base=oid:git event=@t external=@t actor=@p]
       [%compare-shadow shadow=@uv oid=oid:git event=@t verdict=@t jobs=(list [workflow=@t job=@t status=@t]) actor=@p]
+      [%cancel-workflow id=candidate-id workflow=(unit @t) reason=@t actor=@p]
       [%cancel-attempt id=attempt-id reason=@t actor=@p]
       ::  a delegate on another ship acts through the peer protocol (rider
       ::  02): %urgit hands over the requester and the action's JSON; the
