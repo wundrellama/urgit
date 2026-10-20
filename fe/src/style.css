@@ -851,6 +851,19 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-event-selection > summary { cursor: pointer; }
 .ci-event-outcome { margin-left: 12px; overflow-wrap: anywhere; }
 
+/* CI-CONCURRENCY-1: a run's workflow concurrency groups and its Cancel
+   control on the candidate page. Each reason stays in its own case outside
+   the badge; the rows stack in a narrow list like every CI table (UI-N3) */
+.ci-concurrency { margin: 8px 0 12px; }
+.ci-concurrency-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ci-concurrency-head small { flex: 1 1 14rem; min-width: 0; overflow-wrap: anywhere; }
+.ci-concurrency-note, .ci-concurrency-whole { display: block; margin: 6px 0; overflow-wrap: anywhere; }
+.ci-concurrency-whole { padding: 4px 8px; border-left: 2px solid var(--border, #e2e2e2); }
+.ci-concurrency-row { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(7rem, 1fr) minmax(12rem, 3fr) auto; gap: 8px; align-items: baseline; padding: 4px 0; }
+.ci-concurrency-state { overflow-wrap: anywhere; }
+.ci-concurrency-fine { display: block; overflow-wrap: anywhere; }
+.ci-group-tag { overflow-wrap: anywhere; }
+
 /* a schedule's last occurrence wraps instead of truncating, so its open run
    stays in the cell (correction 05); a schedules list no wider than the row's
    minimum (10 + 9 + 14 + 9rem tracks, three 0.75rem gaps, 0.75rem sides =
@@ -869,10 +882,10 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
    from a cell's position). The status badge names itself and has no label.
    The schedules list keeps its own container (correction 05) */
 .ci-list:not(.ci-schedule-list) { container: ci-list / inline-size; }
-.ci-row > *, .ci-attempt-row > *, .ci-selection-row > *, .ci-input-row > *, .ci-event-row > *, .ci-waiting-row > *, .ci-runner-row > *, .ci-lock-row > *, .ci-backend-row > * { min-width: 0; overflow-wrap: anywhere; }
+.ci-row > *, .ci-attempt-row > *, .ci-selection-row > *, .ci-input-row > *, .ci-event-row > *, .ci-waiting-row > *, .ci-runner-row > *, .ci-lock-row > *, .ci-backend-row > *, .ci-concurrency-row > * { min-width: 0; overflow-wrap: anywhere; }
 @container ci-list (max-width: 36rem) {
   .ci-list > .table-head { display: none; }
-  .ci-row, .ci-attempt-row, .ci-selection-row, .ci-input-row, .ci-event-row, .ci-waiting-row, .ci-runner-row, .ci-lock-row, .ci-backend-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.3rem; align-items: start; }
+  .ci-row, .ci-attempt-row, .ci-selection-row, .ci-input-row, .ci-event-row, .ci-waiting-row, .ci-runner-row, .ci-lock-row, .ci-backend-row, .ci-concurrency-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.3rem; align-items: start; }
   .ci-row > .status, .ci-attempt-row > .status, .ci-selection-row > .status, .ci-runner-row > .status { justify-self: start; }
   [data-label]::before { content: attr(data-label); display: block; margin-bottom: 1px; color: var(--muted); font: 600 11px/1.3 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: normal; text-transform: none; }
 }

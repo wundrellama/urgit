@@ -1,5 +1,6 @@
 import { jobDetailsModel } from './ciJobs.js'
 import { runEventSummary } from './ciEvents.js'
+import { groupWaitTag } from './ciConcurrency.js'
 
 // The CI tab's pure helpers (BRIEF-CI-P2 D6): the log renderer over the
 // raw act jsonl the store serves, the shapes the candidate list and the
@@ -11,12 +12,15 @@ export const shortOid = (oid) => (oid ? String(oid).slice(0, 8) : '—')
 export const branchLabel = (ref) => (ref ? String(ref).replace('refs/heads/', '') : '—')
 
 // the candidate statuses and the one word the list shows for each: a
-// candidate skipped was superseded by a newer one for its ref
+// candidate skipped was superseded by a newer one for its ref; a run
+// cancelled (CI-CONCURRENCY-1) by its concurrency group or by an operator
+// is neither failed nor an infrastructure error
 export const candidateStatusLabel = {
   passed: 'passed',
   failed: 'failed',
   pending: 'pending',
   skipped: 'superseded',
+  cancelled: 'cancelled',
   unknown: 'unknown',
 }
 
@@ -98,6 +102,8 @@ export function candidateRow(candidate, nowSeconds = Date.now() / 1000) {
     // a required run whose selection left a push workflow out: its
     // required evidence is absent, never a pass
     evidenceAbsent: Boolean(candidate.requiredEvidence?.evaluated && candidate.requiredEvidence.complete === false),
+    // a workflow of the run waits in its concurrency group (CI-CONCURRENCY-1)
+    groupWait: groupWaitTag(candidate),
   }
 }
 
@@ -210,6 +216,8 @@ export const lineText = (line) => `${line.job ? `[${line.job}] ` : ''}${line.ste
 export const ciActions = {
   approve: (id) => ({ action: 'approve-candidate', id }),
   rerun: (id) => ({ action: 'rerun-candidate', id }),
+  // CI-CONCURRENCY-1: cancel the whole run, or one workflow of it
+  cancelRun: (id, workflow) => ({ action: 'cancel-run', id, ...(workflow ? { workflow } : {}) }),
   setCiProtected: (repo, ref, protectedRef) => ({ action: 'set-ci-protected', repo, ref, protected: Boolean(protectedRef) }),
   setUntrustedPolicy: (repo, policy) => ({ action: 'set-untrusted-policy', repo, policy }),
   setCredential: (repo, name, value, scope, envs = []) => ({ action: 'set-credential', repo, name, value, scope, envs }),

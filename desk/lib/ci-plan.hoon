@@ -21,8 +21,10 @@
 ::  one job's standing, read off the newest attempt recorded for its key;
 ::  a job with no attempt is pending.  $? bunts to its last entry, so a
 ::  defaulted standing is pending: never passed, never skipped.
+::  %cancelled (CI-CONCURRENCY-1) is a job of a cancelled workflow run
+::  that was stopped or never ran: terminal, and never a pass
 ::
-+$  standing  ?(%passed %failed %skipped %unknown %running %pending)
++$  standing  ?(%passed %failed %skipped %cancelled %unknown %running %pending)
 ::
 ::  the wire plan as the daemon posts it, decoded but not yet validated
 ::
@@ -35,6 +37,8 @@
       cond=(unit condition:ci)
       outputs=(list declared-output:ci)
       matrix=?
+      ::  CI-CONCURRENCY-1: the job declares a job-level concurrency
+      concurrency=?
       events=(list @t)
       environment=(unit @t)
       runs-on=(set @t)
@@ -131,6 +135,15 @@
     ?~  value  %.n
     ?.  ?=([%b *] u.value)  %.n
     p.u.value
+  ::  a job-level concurrency (CI-CONCURRENCY-1), which the runner's
+  ::  compiler always sends; read as matrix is, absent being undeclared
+  ::  (a runner older than this release cannot say)
+  ::
+  =/  concurrency=?
+    =/  value=(unit json)  (~(get by fields) 'concurrency')
+    ?~  value  %.n
+    ?.  ?=([%b *] u.value)  %.n
+    p.u.value
   =/  events=(unit (list @t))  (string-list-field fields 'events')
   ?~  events  [%| (rap 3 ~[name ': events is not a list'])]
   =/  cond=(each (unit condition:ci) @t)  (parse-cond fields name)
@@ -170,7 +183,9 @@
     =/  parsed=(unit @ud)  (rush p.u.value dim:ag)
     ?~  parsed  ~
     ?:(=(0 u.parsed) ~ parsed)
-  [%& u.id u.workflow workflow-name u.stage u.needs p.cond p.outputs matrix u.events environment runs-on timeout]
+  :*  %&  u.id  u.workflow  workflow-name  u.stage  u.needs  p.cond  p.outputs
+      matrix  concurrency  u.events  environment  runs-on  timeout
+  ==
 ::
 ::  the compiled condition (CI-EXPR-2): absent or null means none;
 ::  otherwise version 2, its tree checked node by node (lib/ci-expr), or
@@ -389,6 +404,11 @@
     `(rap 3 ~[name ': workflow ' workflow.wire-job ' is not in the plan'])
   ?:  matrix.wire-job
     `(rap 3 ~['matrix unsupported in P1 (' name ')'])
+  ::  a job-level concurrency is refused with the reason, never ignored
+  ::  (CI-CONCURRENCY-1): only a workflow's concurrency group is evaluated
+  ::
+  ?:  concurrency.wire-job
+    `(rap 3 ~['job-level concurrency is refused in this release (' name '): only a workflow\'s concurrency group is supported'])
   ::  runs-on is matched as literal labels (CI-P3-SCHED-A, rider 2): an
   ::  expression there could never match a daemon and is refused now,
   ::  never left pending
@@ -458,9 +478,14 @@
 ::  an infrastructure error is never success: it reads as failure.  a
 ::  state-3 plan's %output-eq keeps the meaning it was admitted under.
 ::
+::  in a cancelled workflow run (CI-CONCURRENCY-1) cancelled() is true and
+::  success() false, as GitHub reads them: a job whose if holds runs
+::  (always()), and one that does not run is %cancel, never a skip
+::
 +$  decision
   $%  [%run reason=@t value=(unit @t)]
       [%skip reason=@t value=(unit @t)]
+      [%cancel reason=@t value=(unit @t)]
       [%error reason=@t]
       [%wait reason=@t]
   ==
@@ -485,6 +510,7 @@
   ?+  standing  'failure'
     %passed  'success'
     %skipped  'skipped'
+    %cancelled  'cancelled'
   ==
 ::
 ++  standing-text
@@ -494,6 +520,7 @@
     %passed  'succeeded'
     %failed  'failed'
     %skipped  'was skipped'
+    %cancelled  'was cancelled'
     %unknown  'had an infrastructure error'
     %running  'is running'
     %pending  'is pending'
@@ -564,26 +591,38 @@
     |=  id=@t
     ^-  @t
     (result-word (~(gut by standings) [workflow.job id] %pending))
-  =/  succeeded=?  (levy family |=(id=@t =('success' (word id))))
+  ::  success() is false in a cancelled run (CI-CONCURRENCY-1)
+  =/  cancelled=?  cancelled.run-context
+  =/  succeeded=?  ?&(!cancelled (levy family |=(id=@t =('success' (word id)))))
   =/  failed=?  (lien family |=(id=@t =('failure' (word id))))
   =/  blocker=@t
     =/  first=(unit @t)  (find-first family |=(id=@t !=('success' (word id))))
     ?~  first  ''
     (rap 3 ~[u.first ' ' (standing-text (~(gut by standings) [workflow.job u.first] %pending))])
+  =/  stopped=@t  'not run: the workflow run was cancelled'
   ?~  cond.job
     ?:  succeeded
       [%run ?~(needs.job 'no prerequisites' 'every prerequisite succeeded') ~]
+    ?:  cancelled
+      [%cancel (rap 3 ~[stopped '; the job has no if, so success() applies, and it is false']) ~]
     [%skip (rap 3 ~['skipped: ' blocker]) ~]
   =/  cond=summary:ci-expr  (summarize:ci-expr u.cond.job)
   ?-  -.cond
       %refused
     [%error (rap 3 ~['if ' (quote (shown:ci-expr text.cond)) ' is refused: ' reason.cond])]
 ::
-    %output-eq  (legacy job cond standings entries)
+      %output-eq
+    ::  a state-3 gate reads success() first, which a cancelled run fails
+    ?:  cancelled  [%cancel stopped ~]
+    (legacy job cond standings entries)
   ::
       %if
     =/  shown=@t  (quote (shown:ci-expr text.cond))
     ?:  ?&(!status.cond !succeeded)
+      ?:  cancelled
+        :+  %cancel
+          (rap 3 ~[stopped '; the if ' shown ' has no status function, so success() applies first, and it is false'])
+        ~
       [%skip (rap 3 ~['skipped: ' blocker '; the if has no status function, so success() applies first']) ~]
     =/  value=(each val:ci-expr @t)
       (eval-condition:ci-expr u.cond.job (job-scope job entries run-context [succeeded failed]))
@@ -591,6 +630,7 @@
       [%error (rap 3 ~['if ' shown ' could not be evaluated: ' p.value])]
     =/  seen=@t  (render:ci-expr p.value)
     ?:  (truthy:ci-expr p.value)  [%run (rap 3 ~['if ' shown ' is ' seen]) `seen]
+    ?:  cancelled  [%cancel (rap 3 ~[stopped '; if ' shown ' is ' seen]) `seen]
     [%skip (rap 3 ~['if ' shown ' is ' seen]) `seen]
   ==
 ::
@@ -634,20 +674,42 @@
 ++  verdict
   |=  [plan=(list job:ci) standings=(map key standing)]
   ^-  [status=candidate-status:ci reason=(unit @t)]
+  (verdict-in plan standings ~)
+::
+::  the verdict of a run some of whose workflow runs were cancelled
+::  (CI-CONCURRENCY-1): a cancelled workflow's conclusion is cancelled, as
+::  on GitHub — a job of it that failed (an always() job) does not make
+::  the run failed — yet an infrastructure error anywhere still needs
+::  review.  failure of another workflow first, then unknown, then
+::  cancelled, then passed; open jobs keep it pending
+::
+++  verdict-in
+  |=  [plan=(list job:ci) standings=(map key standing) cancelled=(set @t)]
+  ^-  [status=candidate-status:ci reason=(unit @t)]
   =/  open=?
     %+  lien  plan
     |=  =job:ci
     =/  standing=standing  (~(gut by standings) [workflow.job id.job] %pending)
     ?=(?(%pending %running) standing)
   ?:  open  [%pending ~]
+  =/  live=(list job:ci)
+    (skip plan |=(=job:ci (~(has in cancelled) workflow.job)))
+  =/  gone=(list job:ci)
+    (skim plan |=(=job:ci (~(has in cancelled) workflow.job)))
   =/  failed=(unit job:ci)
-    (find-job plan standings %failed)
+    (find-job live standings %failed)
   ?^  failed
     [%failed `(rap 3 ~[(job-name id.u.failed workflow.u.failed) ' failed'])]
   =/  unknown=(unit job:ci)
     (find-job plan standings %unknown)
   ?^  unknown
     [%unknown `(rap 3 ~[(job-name id.u.unknown workflow.u.unknown) ' had an infrastructure error'])]
+  ?^  gone
+    [%cancelled `(rap 3 ~['the run of ' workflow.i.gone ' was cancelled'])]
+  =/  stopped=(unit job:ci)
+    (find-job plan standings %cancelled)
+  ?^  stopped
+    [%cancelled `(rap 3 ~[(job-name id.u.stopped workflow.u.stopped) ' was cancelled'])]
   [%passed ~]
 ::
 ++  find-job

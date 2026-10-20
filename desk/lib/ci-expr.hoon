@@ -45,10 +45,11 @@
       [%obj p=(map @t val)]
   ==
 ::
-::  the field an expression is written in: a job-level `if`, or a job's
-::  declared output
+::  the field an expression is written in: a job-level `if`, a workflow's
+::  concurrency group or cancel-in-progress (CI-CONCURRENCY-1: github,
+::  inputs and vars alone), or a job's declared output
 ::
-+$  field  ?(%if %output)
++$  field  ?(%if %concurrency %output)
 ::
 ::  what an evaluation reads: the contexts, and the answers of the status
 ::  functions for the job being decided
@@ -192,6 +193,65 @@
   =/  problem=(unit @t)  (check e.p.built %output)
   ?^  problem  |+u.problem
   $(items t.items, nodes n.p.built, out [[%expr e.p.built] out])
+::
+::  a compiled template of a field (CI-CONCURRENCY-1: a workflow's
+::  concurrency group): {text, line, col, parts}, every part checked for
+::  the field and the node bound counted over every part, as a declared
+::  output's are
+::
+++  parse-template
+  |=  [jon=json =field]
+  ^-  (each template:ci @t)
+  ?.  ?=([%o *] jon)  |+'a template is not an object'
+  =/  f=(map @t json)  p.jon
+  =/  text=(unit @t)  (text-field f 'text')
+  =/  line=(unit @ud)  (count-field f 'line')
+  =/  col=(unit @ud)  (count-field f 'col')
+  ?.  ?&(?=(^ text) ?=(^ line) ?=(^ col))
+    |+'the template has no text, line or col'
+  ?:  (gth (met 3 u.text) max-text)  |+'the template text exceeds 4096 bytes'
+  =/  raw=(unit json)  (~(get by f) 'parts')
+  ?.  ?=([~ %a *] raw)  |+'the template has no parts'
+  =/  items=(list json)  p.u.raw
+  =|  out=(list part:ci)
+  =|  nodes=@ud
+  |-
+  ?~  items  &+[u.text u.line u.col (flop out)]
+  ?.  ?=([%o *] i.items)  |+'a template part is not an object'
+  =/  lit=(unit @t)  (text-field p.i.items 'lit')
+  ?^  lit  $(items t.items, out [[%lit u.lit] out])
+  =/  tree=(unit json)  (~(get by p.i.items) 'expr')
+  ?~  tree  |+'a template part is neither text nor an expression'
+  =/  built=(each [e=expr:ci n=@ud] @t)  (build u.tree 1 nodes)
+  ?:  ?=(%| -.built)  built
+  =/  problem=(unit @t)  (check e.p.built field)
+  ?^  problem  |+u.problem
+  $(items t.items, nodes n.p.built, out [[%expr e.p.built] out])
+::
+::  a compiled cancel-in-progress (CI-CONCURRENCY-1): {value: true|false}
+::  for a fixed one, else {text, line, col, expr} for the expression the
+::  ship evaluates when a run joins
+::
+++  parse-cancel
+  |=  jon=json
+  ^-  (each cancel-flag:ci @t)
+  ?.  ?=([%o *] jon)  |+'cancel-in-progress is not an object'
+  =/  f=(map @t json)  p.jon
+  =/  value=(unit json)  (~(get by f) 'value')
+  =/  tree=(unit json)  (~(get by f) 'expr')
+  ?:  ?&(?=(^ value) ?=(^ tree))  |+'cancel-in-progress is both a value and an expression'
+  ?:  ?=([~ %b *] value)  &+[%fixed p.u.value]
+  ?^  value  |+'cancel-in-progress value is not true or false'
+  ?~  tree  |+'cancel-in-progress is neither a value nor an expression'
+  =/  text=(unit @t)  (text-field f 'text')
+  =/  line=(unit @ud)  (count-field f 'line')
+  =/  col=(unit @ud)  (count-field f 'col')
+  ?.  ?&(?=(^ text) ?=(^ line) ?=(^ col))
+    |+'cancel-in-progress has no text, line or col'
+  ?:  (gth (met 3 u.text) max-text)  |+'the cancel-in-progress text exceeds 4096 bytes'
+  =/  built=(each expr:ci @t)  (parse-tree u.tree %concurrency)
+  ?:  ?=(%| -.built)  built
+  &+[%expr u.text u.line u.col p.built]
 ::
 ++  output-name-valid
   |=  name=@t
@@ -392,20 +452,28 @@
   ^-  (unit @t)
   =/  allowed=(set @t)
     %-  silt
-    ?:  ?=(%if field)  ~['github' 'needs' 'vars' 'inputs']
-    ~['github' 'needs' 'vars' 'inputs' 'steps']
+    ?-  field
+      %if  ~['github' 'needs' 'vars' 'inputs']
+      %concurrency  ~['github' 'vars' 'inputs']
+      %output  ~['github' 'needs' 'vars' 'inputs' 'steps']
+    ==
   ?.  (~(has in allowed) name)
     ?.  (~(has in known-contexts) name)  `(rap 3 ~['unknown context ' name])
     ?:  ?=(%if field)
       `(rap 3 ~['context ' name ' is not available in a job-level if (github, needs, vars and inputs are)'])
+    ?:  ?=(%concurrency field)
+      `(rap 3 ~['context ' name ' is not available to a workflow\'s concurrency (github, inputs and vars are)'])
     `(rap 3 ~['context ' name ' is not available to a job output on the ship in this release (github, needs, vars, inputs and steps.<id>.outputs are)'])
   ?+  name  ~
       %github
     ?~  chain  `'the whole github context is not available on the ship; name one of its properties'
     ?~  name.i.chain  `'github is read by property name only on the ship'
     =/  key=@t  (crip (cass (trip u.name.i.chain)))
-    ?:  (~(has in github-keys) key)  ~
-    `(rap 3 ~['github.' key ' is not available on the ship in this release'])
+    ?.  (~(has in github-keys) key)
+      `(rap 3 ~['github.' key ' is not available on the ship in this release'])
+    ?:  ?&(?=(%concurrency field) =('job' key))
+      `'github.job is not defined for a workflow\'s concurrency: it is set only inside a job'
+    ~
   ::
       %steps
     ?.  ?&(?=([* * *] chain) ?=(^ name.i.chain) ?=(^ name.i.t.chain))
@@ -432,6 +500,7 @@
     `(rap 3 ~['function ' u.display ' is only valid in an if'])
   ?:  =('hashfiles' fn.e)
     ?:  ?=(%if field)  `'function hashFiles is not available in a job-level if'
+    ?:  ?=(%concurrency field)  `'function hashFiles is not available to a workflow\'s concurrency'
     `'function hashFiles is not available to a job output on the ship'
   =/  got=@ud  (lent args.e)
   =/  shown-got=@t  (crip (a-co:co got))

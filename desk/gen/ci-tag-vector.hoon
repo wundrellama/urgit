@@ -46,7 +46,7 @@
 =/  paths=filter:ci
   [%.n ~[['src/**' %.n ~[[%lit 'src/'] [%globstar ~]]]]]
 =/  push=trigger-event:ci  ['push' ~ ~ `tags `paths ~ %.n ~ 2 3]
-=/  catalog=trigger-catalog:ci  [~[['release.yml' 'Release checks' ~[push] ~]] ~]
+=/  catalog=trigger-catalog:ci  [~[['release.yml' 'Release checks' ~[push] ~ ~]] ~]
 =/  l=lock:ci
   [0x123 'demo' commit ~ ~2026.10.17 0v1 0 ~ ~ `catalog]
 =/  different=lock:ci
@@ -54,7 +54,7 @@
     digest  0x456
     revision  0x999
     resolved  ~2026.10.18
-    triggers  `[~[['today.yml' 'Default branch today' ~[push] ~]] ~]
+    triggers  `[~[['today.yml' 'Default branch today' ~[push] ~ ~]] ~]
   ==
 =/  c=candidate:ci
   =/  initial  *candidate:ci

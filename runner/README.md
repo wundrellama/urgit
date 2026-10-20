@@ -24,6 +24,7 @@ CI runs the GitHub Actions workflows in the repository's `.github/workflows/` di
 - `runs-on: ubuntu-latest`, `ubuntu-22.04`, `ubuntu-24.04`, `self-hosted`, `linux`, `x64`, or a label a runner declares.
 - `needs`, job outputs, job and step `if` (including `always()`, `failure()` and `needs.<job>.result`), and the common expression functions.
 - Events: `push` (branches and tags), `pull_request` (`opened`, `synchronize`, `closed`, `reopened`), `workflow_dispatch` with typed inputs, and `schedule`; with branch, tag and path filters.
+- Workflow-level `concurrency`, as a group name or as `group` and `cancel-in-progress`, with expressions over `github`, `inputs` and `vars` (urgit keeps no repository variables, so `vars.<name>` reads empty). It works as on GitHub. Groups belong to the repository, span its workflows and ignore case. A new run with `cancel-in-progress: true` cancels the group's running and waiting runs; with `false`, the default, it waits until the run in progress finishes. A group keeps one waiting run: a newer arrival cancels the older waiting one, whatever its flag. When a run is cancelled its running jobs stop and jobs not yet started do not run, except a job whose `if` holds under `cancelled()`, such as `always()`; a running privileged job closes as unknown and needs review. The run's result is **cancelled**, which is neither a failure nor an infrastructure error, and a cancelled required run never lands. A group that cannot be evaluated refuses that workflow's run with the reason.
 - `uses:` actions. They are fetched once, when you resolve dependencies (step 4), pinned in a lock and served to every job from your ship. Pin each action to a full commit SHA where you can.
 - Secrets, set in **Settings → Credentials**; a job reads them as `${{ secrets.NAME }}`.
 
@@ -32,10 +33,10 @@ CI runs the GitHub Actions workflows in the repository's `.github/workflows/` di
 - `strategy.matrix`.
 - Reusable workflows: `workflow_call`, and `uses:` at job level.
 - `pull_request_target`, and other events not listed above.
+- `concurrency` at job level (`jobs.<id>.concurrency`). Workflow-level `concurrency` is supported (above).
 
 **Not supported yet: ignored.** Check these yourself, because no refusal shows them.
 
-- `concurrency` and `cancel-in-progress`. The key is read and ignored. A second push to a branch does not cancel the run still in flight there, and each run goes on to its own result.
 - Artifacts passed between jobs (`actions/upload-artifact` and `actions/download-artifact`). Files stay in the job's VM.
 - `GITHUB_TOKEN` and the GitHub API. urgit is not GitHub. A step that calls the GitHub API fails at that step.
 - Windows and macOS runners. A `runs-on` that only such a runner matches waits with the reason.
@@ -139,6 +140,10 @@ The repository's **CI** tab lists candidates newest first and updates as the shi
 
 Open a candidate for its jobs: each row shows the job, its `runs-on`, the runner that ran it, timing, and a **log** link once the log is in the store. **Approve and run trusted** appears on an untrusted candidate (the tooltip names the repository's policy); **Re-run** stages the same head again.
 
+The run's **Concurrency** panel shows each workflow's group and its state in plain words: *in progress in group deploy-main*, *waiting for run push of 1a2b3c4d to main in group deploy-main*, *cancelled: run push of 5e6f7a8b to main joined group deploy-main with cancel-in-progress*, or a refusal with its reason. Runs are named by their event and source; their ids are in the fine print. A run waiting in its group is tagged in the list. **Cancel run** cancels every workflow of the run that has not finished; a workflow's own **Cancel** stops only that workflow's jobs. Both take the path a concurrency group cancels by, ask first, and are offered to the owner and to a ship holding the repository's `ci-policy` role; the ship refuses anyone else, and the page shows its refusal as the ship words it.
+
+A run whose lock was resolved before concurrency was read says *concurrency not read for this lock: resolve or promote again to apply it*, and takes part in no group until the revision is resolved and promoted again; that is unknown, not "no group". A run already in flight when the ship upgraded takes part in no group, and its page says so.
+
 Until CI is set up the CI tab shows the setup checklist, each step ticked from the ship's state, with this guide and the agent file one click away. Once every step is done it folds to one line.
 
 ## 6. Runners
@@ -226,6 +231,7 @@ Nothing at the launcher is touched. A record of the attempt there refuses the re
 - **Automatic events** (Delivery 1C): pushes, native pull request activities (`opened`, `closed`, `reopened`, `synchronize`) and schedules run the workflows the promoted baseline's `on:` selects; a revision resolved by an earlier runner has no trigger definitions, so resolve and promote it again with this release's runner. The resolver posts the compiled catalog beside the lock (`triggers`), and the daemon runs each admitted job on its signed event: `act pull_request -j <job> -e /work/event.json …` (act derives `github.ref` as `refs/pull/<n>/merge` from the payload's number and `github.sha` from the checkout, the merge the ship built) and `act schedule -j <job> -e /work/event.json …` (`github.ref` from `repository.default_branch`). It refuses a job whose signed `trigger` does not begin with its event, a pull request payload whose number, head or target do not match, and a schedule payload whose default branch is not the signed ref. Event runs never land, receive no credentials and always run in a VM. Not supported: `pull_request_target`, other activity types and events (diagnosed, never run as a push), a deletion's `delete` event, schedules beyond 2040-01-01 (re-resolve with a newer compiler).
 - **Manual runs** (CI tab → **Run workflow**): a workflow that declares `on.workflow_dispatch` at a branch's promoted baseline runs on that branch's tip with its declared inputs (boolean, number, choice, string, environment), checked by the ship. The list is the resolver's: resolve and promote a revision with this release's runner to list its manual workflows. A manual run never lands, receives no credentials (an environment input only names an environment), is not re-run in place, and is cancelled if the policy generation moves while it is open. A job-level `if` on `inputs` is not supported yet.
 - The saved `act` stream is uploaded as `log.jsonl`. Step summaries and artifacts stay in the sandbox and are not uploaded.
+- **Concurrency**: a job stopped by a cancellation stops whole. A step with `if: always()` (or `cancelled()`) inside it does not run, as its sandbox is stopped; a job-level `if: always()` does run. Job-level `concurrency` is refused.
 - The store's `public-url-base` setting is not read: the endpoint `%storage` names is the one both the runner and every browser must reach.
 
 ## How it works

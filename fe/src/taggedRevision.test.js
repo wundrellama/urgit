@@ -62,7 +62,10 @@ test('authentic tag replay stays deduplicated after the recent event window expi
   assert.match(arm(controller, 'on-save'), /!>\(state\)/)
   assert.match(arm(controller, 'on-load'), /load:ci-migrate/)
   const load = arm(deskText('lib/ci-migrate.hoon'), 'load')
-  assert.match(load, /state-6:ci/)
+  // state-8 (CI-CONCURRENCY-1): every shape before it, state-6 among them,
+  // converts through +seven to state-7 first
+  assert.match(load, /\(from-state-7 \(seven p\.found old\)\)/)
+  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'seven'), /state-6:ci/)
 })
 
 test('tag authority is narrow and leaves the promoted and privileged paths guarded', () => {
@@ -70,8 +73,12 @@ test('tag authority is narrow and leaves the promoted and privileged paths guard
   assert.ok(push.indexOf('?~  new.u') < push.indexOf('(admit-tag base u.new.u)'))
   assert.ok(push.indexOf('has in ci-protected') < push.indexOf('(admit-tag base u.new.u)'))
   assert.match(push, /\(governing repo ref\.u\)/)
-  assert.match(arm(controller, 'landable'), /=\(%required mode\.c\)/)
-  assert.match(arm(controller, 'bindings-current'), /get by baselines/)
+  // the agent lands through lib/ci-concurrency, which its vector reads too
+  // (CI-CONCURRENCY-1): the guards are held there
+  assert.match(arm(controller, 'landable'), /\(landable:ci-concurrency state c\)/)
+  assert.match(arm(controller, 'bindings-current'), /\(bindings-current:ci-concurrency state c\)/)
+  assert.match(arm(deskText('lib/ci-concurrency.hoon'), 'landable'), /=\(%required mode\.c\)/)
+  assert.match(arm(deskText('lib/ci-concurrency.hoon'), 'bindings-current'), /get by baselines/)
   assert.match(arm(controller, 'assignment-json'), /=\(%required mode\.candidate\)/)
   assert.match(arm(controller, 'sandbox-for'), /!=\(%required mode\.candidate\)/)
   assert.match(arm(controller, 'schedule'), /\?\|\(=\(%trusted trust\.candidate\) \(restricted repo\.candidate\)\)/)

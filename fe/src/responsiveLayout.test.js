@@ -4,6 +4,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { attemptRows } from './ci.js'
+import { concurrencyModel, renderConcurrency } from './ciConcurrency.js'
+import { waitingRun } from './ciConcurrencyFixtures.js'
 import { renderSelection } from './ciEventsView.js'
 import { renderWaitingJobs } from './ciJobs.js'
 import { all, h } from './runnerRecoveryFixtures.js'
@@ -81,7 +83,7 @@ test('N3: a section title wraps its tools below a text column of a readable meas
 test('N3: a narrow CI list stacks each row, hides the column head and labels every value', () => {
   assert.equal(decls('.ci-list:not(.ci-schedule-list)').container, 'ci-list / inline-size')
   assert.equal(decls('.ci-list > .table-head', ciNarrow).display, 'none')
-  for (const row of ['.ci-row', '.ci-attempt-row', '.ci-selection-row', '.ci-input-row', '.ci-event-row', '.ci-waiting-row', '.ci-runner-row', '.ci-lock-row', '.ci-backend-row']) {
+  for (const row of ['.ci-row', '.ci-attempt-row', '.ci-selection-row', '.ci-input-row', '.ci-event-row', '.ci-waiting-row', '.ci-runner-row', '.ci-lock-row', '.ci-backend-row', '.ci-concurrency-row']) {
     assert.equal(decls(row, ciNarrow)['grid-template-columns'], 'minmax(0, 1fr)', `${row} stacks`)
     assert.equal(decls(`${row} > *`)['min-width'], '0', `${row}'s cells may shrink`)
   }
@@ -103,6 +105,18 @@ test('N3: the CI views label their values in markup, never the status badge', ()
   for (const tree of [selection, waiting]) {
     for (const badge of all(tree, (n) => /\bstatus\b/.test(n.props?.className || ''))) assert.equal(badge.props['data-label'], undefined, 'a badge names itself')
   }
+})
+
+test('N3 (CI-CONCURRENCY-1): the concurrency panel wraps its head and Cancel, stacks its rows and lets long group names wrap', () => {
+  assert.equal(decls('.ci-concurrency-head')['flex-wrap'], 'wrap', 'Cancel run wraps below the summary')
+  assert.equal(decls('.ci-concurrency-head small')['min-width'], '0')
+  assert.equal(decls('.ci-concurrency-row', ciNarrow)['grid-template-columns'], 'minmax(0, 1fr)')
+  for (const cls of ['.ci-concurrency-state', '.ci-concurrency-fine', '.ci-concurrency-note', '.ci-group-tag']) assert.equal(decls(cls)['overflow-wrap'], 'anywhere', `${cls} wraps`)
+  // the rows sit in a .ci-list, so the narrow container rule applies to them
+  const tree = renderConcurrency(h, concurrencyModel(waitingRun))
+  const list = all(tree, (n) => /(^|\s)ci-list(\s|$)/.test(n.props?.className || ''))
+  assert.equal(list.length, 1)
+  assert.equal(all(list[0], (n) => n.props?.['data-part'] === 'concurrency-row').length, 2)
 })
 
 let deps = null

@@ -75,14 +75,22 @@
 ::    automatically. Promoted branch, PR and schedule authority stays
 ::    unchanged. A tag run remains advisory and receives no credentials.
 ::
-::    persisted state is state-7 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-5, state-4, state-3, state-2, state-1, and
-::    the three tagged %0 — is converted to it explicitly on load by
-::    lib/ci-migrate, or refused with its reason.
+::    CI-CONCURRENCY-1 adds workflow concurrency groups as GitHub runs
+::    them (lib/ci-concurrency): a run joins its workflows' groups once it
+::    is materialized, in creation order; a newcomer's cancel-in-progress
+::    cancels the group's runs, or it waits behind the run in progress,
+::    and a group keeps one waiting run; a cancelled workflow's jobs stop,
+::    its always() jobs still run, and the run's result is cancelled,
+::    which never lands.  the CI tab's Cancel takes the same path.
+::
+::    persisted state is state-8 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-7, state-6, state-5, state-4,
+::    state-3, state-2, state-1, and the three tagged %0 — is converted to
+::    it explicitly on load by lib/ci-migrate, or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-input, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -132,7 +140,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-7:ci
+=|  state-8:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -165,7 +173,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-7, or converted to it explicitly, or refused with its
+    ::  current state-8, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::  every active schedule's armed wake is set again (Delivery 1C): a
     ::  timer that survived is then set twice, and the armed-due and
@@ -179,7 +187,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-7")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-8")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
@@ -723,28 +731,20 @@
 ::  restricted check, a trial, a shadow or stale evidence can never
 ::  advance a ref from any side.
 ::
+::  (lib/ci-concurrency +landable, which its vector reads too: a
+::  cancelled run is not passed and never lands)
+::
 ++  landable
   |=  c=candidate:ci
   ^-  ?
-  ?&  =(%passed status.c)
-      =(%trusted trust.c)
-      ?=(^ candidate.c)
-      =(%required mode.c)
-      (bindings-current c)
-  ==
+  (landable:ci-concurrency state c)
 ::
 ::  the candidate's bindings against the repository's current policy
 ::
 ++  bindings-current
   |=  c=candidate:ci
   ^-  ?
-  =/  base=(unit baseline:ci)  (~(get by baselines) [repo.c ref.c])
-  ?&  =(generation.c (current-generation repo.c))
-      =(incarnation.c (current-incarnation repo.c))
-      ?=(^ base)
-      =(baseline.c `revision.u.base)
-      =(lock.c lock.u.base)
-  ==
+  (bindings-current:ci-concurrency state c)
 ::
 ++  current-generation
   |=  repo=@t
@@ -2165,7 +2165,7 @@
       ::  may use a runner profile toward these destinations
       ::
       %set-automatic-inputs
-    =/  changed=(each state-7:ci @t)
+    =/  changed=(each state-8:ci @t)
       %:  edit:ci-input  state  repo.act  sources.act  expected.act
         (authorized repo.act %ci-policy ~ actor.act)
       ==
@@ -2285,7 +2285,8 @@
         [%.n (rap 3 ~['object differs: native ' (oid-text:git-codec u.candidate.u.c) ', external ' (oid-text:git-codec oid.act)])]
       ?.  =(event.u.sh event.act)
         [%.n (rap 3 ~['event differs: native ' event.u.sh ', external ' event.act])]
-      ?.  ?=(?(%passed %failed) status.u.c)
+      ::  a cancelled run is a conclusion, as on GitHub (CI-CONCURRENCY-1)
+      ?.  ?=(?(%passed %failed %cancelled) status.u.c)
         [%.n (rap 3 ~['native evidence incomplete: ' status.u.c])]
       ?~  plan.u.c  [%.n 'native run has no plan']
       ?.  =(native verdict.act)
@@ -2345,6 +2346,57 @@
       ==
     (after-close candidate.u.found)
   ::
+      ::  CI-CONCURRENCY-1: an operator cancels a run, or one workflow of
+      ::  it, by the path a concurrency group cancels by: the cancellation
+      ::  is recorded, every running attempt that does not keep running
+      ::  under cancelled() closes (the daemon hears `attempt is closed`), a
+      ::  privileged one closes unknown and needs review, and no other
+      ::  workflow's job is touched.  the ci-policy role's, the owner's
+      ::  implicitly; anyone else is refused
+      ::
+      %cancel-run
+    =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
+    ?~  found  ~|('no such run' !!)
+    =+  (require-authority repo.u.found %ci-policy ~ actor.act)
+    ?:  (resolver-record u.found)
+      ~|('a dependency resolution is not a run: there is nothing to cancel' !!)
+    ?.  =(%pending status.u.found)
+      ~|('the run has finished: nothing is left to cancel' !!)
+    ?:  (~(has by cancelled.u.found) '')
+      ~|('the run is cancelled already' !!)
+    =/  why=@t  ?:(=('' reason.act) 'cancelled from the CI tab' reason.act)
+    =/  reason=@t  (rap 3 ~['cancelled by ' (scot %p actor.act) ': ' why])
+    =/  cause=cancel-cause:ci  [%operator actor.act]
+    =/  known=(list @t)  (run-workflows:ci-concurrency u.found)
+    =/  open=(list @t)
+      %+  skip  known
+      |=(w=@t (workflow-finished:ci-concurrency state u.found w))
+    =.  state
+      ?~  workflow.act
+        ?:  ?&(?=(^ plan.u.found) ?=(~ open))
+          ~|('every workflow of the run has finished: nothing is left to cancel' !!)
+        (cancel-whole-run:ci-concurrency state id.act cause reason now.bowl)
+      ?.  (lien known |=(w=@t =(w u.workflow.act)))
+        ~|(`@t`(rap 3 ~['the run has no workflow ' u.workflow.act]) !!)
+      ?:  (workflow-cancelled:ci-concurrency u.found u.workflow.act)
+        ~|('that workflow\'s run is cancelled already' !!)
+      ?.  (lien open |=(w=@t =(w u.workflow.act)))
+        ~|('that workflow\'s run has finished: nothing is left to cancel' !!)
+      (cancel-workflows:ci-concurrency state id.act ~[u.workflow.act] cause reason now.bowl)
+    =.  audit
+      %:  record-audit
+        actor.act
+        'cancel-run'
+        repo.u.found
+        %+  rap  3
+        :~  (scot %uv id.act)
+            ?~(workflow.act ' (the whole run)' (rap 3 ~[' ' u.workflow.act]))
+            ': '
+            why
+        ==
+      ==
+    (after-close id.act)
+  ::
       ::  a delegate's request from another ship (rider 02): the JSON is
       ::  the operator surface's, the actor is the requester, and only the
       ::  delegable actions pass — roles are bound by the owner's session,
@@ -2364,7 +2416,7 @@
                 %set-environment  %delete-environment  %approve-environment
                 %record-override  %set-network-policy  %clear-network-policy
                 %set-automatic-inputs
-                %stage-shadow  %compare-shadow  %cancel-attempt
+                %stage-shadow  %compare-shadow  %cancel-attempt  %cancel-run
             ==
         -.p.parsed
       ~|  `@t`(rap 3 ~[-.p.parsed ' is not a delegable action'])
@@ -2730,8 +2782,11 @@
         ?~(promoted ~ lock.u.promoted)
         (current-incarnation repo)
         %vm  trial-of  %.n  [%push ~]  ~
+        [%pending ~]  ~
     ==
-  c(sandbox (sandbox-for c %.n))
+  ::  CI-CONCURRENCY-1: a new run joins its groups once it is materialized,
+  ::  unless by rule it takes part in none (a trial, a resolver record)
+  c(sandbox (sandbox-for c %.n), concurrency (initial:ci-concurrency c))
 ::
 ::  the scratch ref a promoted baseline stays reachable under
 ::
@@ -3017,12 +3072,7 @@
 ++  push-payload-of
   |=  c=candidate:ci
   ^-  @t
-  %:  push-payload:ci-dispatch
-    ref.c
-    (oid-text:git-codec base.c)
-    (oid-hex:ci-provenance candidate.c)
-    actor.c
-  ==
+  (push-payload-of:ci-concurrency c)
 ::
 ::  a decided skip or refusal is recorded as an attempt no daemon ran: a
 ::  skip %skipped, a condition that could not be evaluated %failed (the
@@ -3041,6 +3091,9 @@
         %job
         `workflow.job
         `id.job
+        ::  a job of a cancelled workflow run that did not run is cancelled
+        ::  (CI-CONCURRENCY-1), never a skip
+        ?:  ?=(%cancel verdict.decision)  %cancelled
         ?:(?=(%error verdict.decision) %failed %skipped)
         0
         ~
@@ -3242,6 +3295,12 @@
   =/  tags=out  advance-tags
   =.  state  state.tags
   =.  polls  polls.tags
+  ::  CI-CONCURRENCY-1: runs that finished leave their groups, new runs
+  ::  join theirs oldest first, and a group with no run in progress starts
+  ::  its waiting run, before anything is planned or assigned
+  ::
+  =^  grouped  state  concurrency-pass
+  =.  cards.tags  (weld cards.tags grouped)
   ::  an untrusted candidate is planned only where the repository runs
   ::  restricted checks (D3); under the approval policy it waits
   ::
@@ -3348,6 +3407,107 @@
     runnable  t.runnable
     cards  (snoc cards timer.made)
     touched  (~(put in touched) u.chosen)
+  ==
+::
+::  CI-CONCURRENCY-1: the scheduler's pass over the groups (lib/ci-
+::  concurrency).  every run holding or waiting in a group is settled
+::  first — its verdict says whether it finished — and released; then the
+::  new runs join against the groups as they stand; then the runs a join
+::  cancelled are settled and released in turn, so a waiting run starts in
+::  the same pass its group frees
+::
+++  concurrency-pass
+  ^-  [(list card) _state]
+  =^  settled-before  state  settle-members
+  =.  state  (release:ci-concurrency state now.bowl)
+  =.  state  join-arrivals
+  =^  settled-after  state  settle-members
+  =.  state  (release:ci-concurrency state now.bowl)
+  [(weld settled-before settled-after) state]
+::
+::  every run in progress that holds or waits in a group, settled
+::
+++  settle-members
+  ^-  [(list card) _state]
+  =/  ids=(list candidate-id:ci)
+    %+  murn  ~(val by candidates)
+    |=  c=candidate:ci
+    ^-  (unit candidate-id:ci)
+    ?.  =(%pending status.c)  ~
+    ?.  ?=(%joined -.concurrency.c)  ~
+    =/  open=?
+      %+  lien  runs.concurrency.c
+      |=  r=workflow-run:ci
+      ?&(?=(%member -.group.r) !=(%released place.group.r))
+    ?.  open  ~
+    `id.c
+  =|  cards=(list card)
+  |-
+  ?~  ids  [cards state]
+  =/  settled=out  (settle i.ids)
+  =.  state  state.settled
+  $(ids t.ids, cards (weld cards cards.settled))
+::
+::  the runs ready to join their groups, oldest first: pending and
+::  materialized (the jobs' github.sha is the integration object), not
+::  conflicted, runnable now (trusted, or untrusted where the repository
+::  runs restricted checks), a required run under a promoted baseline, an
+::  event run with its selection made.  each joins with its workflows'
+::  definitions from its own lock; a run whose workflows or catalog cannot
+::  be read takes part in no group, unknown, with the reason
+::
+++  join-arrivals
+  ^-  _state
+  =/  ready=(list candidate:ci)
+    %+  sort
+      %+  skim  ~(val by candidates)
+      |=  c=candidate:ci
+      ?&  =(%pending status.c)
+          ?=(%pending -.concurrency.c)
+          ?=(^ candidate.c)
+          !conflict.c
+          ?|(=(%trusted trust.c) (restricted repo.c))
+          ?|(!=(%required mode.c) ?=(^ baseline.c))
+          ?|(!?=(%event -.trigger.c) ?=(^ selected.c))
+      ==
+    |=  [a=candidate:ci b=candidate:ci]
+    ?.  =(created.a created.b)  (lth created.a created.b)
+    (lth id.a id.b)
+  %+  roll  ready
+  |=  [c=candidate:ci acc=_state]
+  =.  state  acc
+  =/  current=candidate:ci  (~(got by candidates) id.c)
+  =/  workflows=(each (list @t) @t)  (join-workflows current)
+  ?:  ?=(%| -.workflows)
+    =.  candidates  (~(put by candidates) id.c current(concurrency [%unknown p.workflows]))
+    state
+  =/  defs=(each (list [workflow=@t name=@t def=(unit concurrency-def:ci)]) @t)
+    (definitions:ci-concurrency state current p.workflows)
+  ?:  ?=(%| -.defs)
+    =.  candidates  (~(put by candidates) id.c current(concurrency [%unknown p.defs]))
+    state
+  (join:ci-concurrency state id.c p.defs now.bowl)
+::
+::  the workflows a run joins with: an event run's selected ones, a
+::  manual run's one, a required push's selection from its baseline's
+::  catalog (the arm its plan reads), a shadow's push workflows
+::
+++  join-workflows
+  |=  c=candidate:ci
+  ^-  (each (list @t) @t)
+  ?-  -.trigger.c
+    %dispatch  [%& ~[workflow.trigger.c]]
+  ::
+      %event
+    ?~  selected.c  [%| 'the run\'s workflows are not selected yet']
+    [%& (selected-workflows:ci-trigger outcomes.u.selected.c)]
+  ::
+      %push
+    ?~  candidate.c  [%| 'the run is not materialized yet']
+    ?.  =(%required mode.c)  (push-workflows:ci-concurrency state c)
+    =/  sel=event-selection:ci  (required-push-selection c u.candidate.c)
+    ?^  note.sel  [%| (rap 3 ~[unread:ci-concurrency ' (' u.note.sel ')'])]
+    [%& (selected-workflows:ci-trigger outcomes.sel)]
   ==
 ::
 ::  an assignment its daemon never fetched (undelivered) while that
@@ -3479,16 +3639,7 @@
 ++  planned-job
   |=  [=candidate:ci workflow=(unit @t) job=(unit @t)]
   ^-  (unit job:ci)
-  ?~  plan.candidate  ~
-  ?~  workflow  ~
-  ?~  job  ~
-  =/  wf=@t  u.workflow
-  =/  id=@t  u.job
-  |-
-  ?~  u.plan.candidate  ~
-  ?:  &(=(wf workflow.i.u.plan.candidate) =(id id.i.u.plan.candidate))
-    `i.u.plan.candidate
-  $(u.plan.candidate t.u.plan.candidate)
+  (planned-job:ci-concurrency candidate workflow job)
 ::
 ::  an attempt is given up without a verdict and its job offered again
 ::  (CI-DELIVERY-1.1): closed %reoffered with the reason, let go by its
@@ -3564,60 +3715,24 @@
 ::
 ::  the newest job attempt per [workflow id] is that job's standing, and
 ::  the accepted attempt a dependent's decision and needs context read.  a
-::  re-offered or cancelled attempt stands for nothing: the job is owed a
-::  fresh one.
+::  re-offered or cancelled attempt stands for nothing — the job is owed a
+::  fresh one — unless its workflow's run was cancelled: then it is the
+::  job's end (lib/ci-concurrency, CI-CONCURRENCY-1)
 ::
 ++  standings
   |=  =candidate:ci
   ^-  [standings=(map key:ci-plan standing:ci-plan) newest=(map key:ci-plan attempt:ci)]
-  =/  newest=(map key:ci-plan attempt:ci)
-    %+  roll  (flop attempts.candidate)
-    |=  [id=attempt-id:ci acc=(map key:ci-plan attempt:ci)]
-    =/  found=(unit attempt:ci)  (~(get by attempts) id)
-    ?~  found  acc
-    ?.  ?=(%job kind.u.found)  acc
-    ?~  workflow.u.found  acc
-    ?~  job.u.found  acc
-    ?:  =(%reoffered status.u.found)  acc
-    ?:  =(%cancelled status.u.found)  acc
-    ::  evidence from another generation stands for nothing (P11)
-    ?.  =(generation.u.found generation.candidate)  acc
-    (~(put by acc) [u.workflow.u.found u.job.u.found] u.found)
-  :_  newest
-  %-  ~(run by newest)
-  |=  =attempt:ci
-  ^-  standing:ci-plan
-  ?-  status.attempt
-    %passed  %passed
-    %failed  %failed
-    %skipped  %skipped
-    %running  %running
-    %reoffered  %pending
-    %cancelled  %pending
-    %infrastructure-error  %unknown
-  ==
+  (standings:ci-concurrency state candidate)
 ::
 ::  the run a candidate's decisions read (CI-EXPR-2): its event, the
-::  payload act reads, ref, source and actor, and its typed inputs.  no
-::  decision is taken in a cancelled run in this release (+cancel-run
-::  supersedes the candidate and +settle stops there), so cancelled() is
-::  false in every decision
+::  payload act reads, ref, source and actor, and its typed inputs.
+::  cancelled() is read per job, for the job's own workflow's run
+::  (lib/ci-concurrency +decide-with)
 ::
 ++  run-context
   |=  c=candidate:ci
   ^-  run-context:ci-plan
-  :*  (event-name:ci-trigger trigger.c)
-      ?-  -.trigger.c
-        %push  (push-payload-of c)
-        %dispatch  payload.trigger.c
-        %event  payload.run-event.trigger.c
-      ==
-      ref.c
-      (oid-hex:ci-provenance candidate.c)
-      (scot %p actor.c)
-      ?-(-.trigger.c %push [%obj ~], %event [%obj ~], %dispatch (inputs-of:ci-expr inputs.trigger.c))
-      %.n
-  ==
+  (run-context:ci-concurrency c)
 ::
 ::  every terminal job's entry as its dependents' decisions and needs
 ::  contexts read it: the accepted attempt, its status and result, and the
@@ -3629,40 +3744,22 @@
           standings=(map key:ci-plan standing:ci-plan)
       ==
   ^-  (map key:ci-plan need-entry:ci)
-  %-  malt
-  %+  turn  ~(tap by newest)
-  |=  [k=key:ci-plan att=attempt:ci]
-  ^-  [key:ci-plan need-entry:ci]
-  :-  k
-  :*  id.k
-      id.att
-      status.att
-      (result-word:ci-plan (~(gut by standings) k %pending))
-      (published-outputs (planned-job c `workflow.k `id.k) att)
-  ==
+  (need-entries:ci-concurrency c newest standings)
 ::
-::  what an attempt published to its dependents: its declared outputs as
-::  resolved when it closed; for a job of a plan saved before state-4,
-::  every output it recorded, by name, the meaning that plan was admitted
-::  under (its declarations were never read)
+::  what an attempt published to its dependents (lib/ci-concurrency)
 ::
 ++  published-outputs
   |=  [planned=(unit job:ci) a=attempt:ci]
   ^-  (list [name=@t value=@t])
-  ?:  ?&(?=(^ planned) ?=(~ outputs.u.planned))
-    (legacy-outputs step-outputs.a)
-  ?~  job-outputs.a  ~
-  %+  murn  u.job-outputs.a
-  |=  o=job-output:ci
-  ?.  ?=(%& -.value.o)  ~
-  `[name.o p.value.o]
+  (published-outputs:ci-concurrency planned a)
 ::
 ++  legacy-outputs
   |=  outputs=(list step-output:ci)
   ^-  (list [name=@t value=@t])
-  ~(tap by (malt (turn outputs |=(o=step-output:ci [name.o value.o]))))
+  (legacy-outputs:ci-concurrency outputs)
 ::
-::  a job's decision now, and the needs context it would be given
+::  a job's decision now, and the needs context it would be given: its
+::  concurrency gate first (CI-CONCURRENCY-1), then its condition
 ::
 ++  job-decision
   |=  [c=candidate:ci =job:ci]
@@ -3670,7 +3767,7 @@
   ?~  plan.c  [[%wait 'the run has no plan yet'] ~]
   =/  known  (standings c)
   =/  entries=(map key:ci-plan need-entry:ci)  (need-entries c newest.known standings.known)
-  :-  (decide:ci-plan job u.plan.c standings.known entries (run-context c))
+  :-  (decide-with:ci-concurrency state c job u.plan.c standings.known entries (run-context c))
   (direct-entries:ci-plan job entries)
 ::
 ++  runnable-jobs
@@ -3683,10 +3780,11 @@
   %+  skim  u.plan.candidate
   |=  =job:ci
   ?:  (~(has by standings.known) [workflow.job id.job])  %.n
-  =(%run -:(decide:ci-plan job u.plan.candidate standings.known entries context))
+  =(%run -:(decide-with:ci-concurrency state candidate job u.plan.candidate standings.known entries context))
 ::
-::  one pass of a candidate's undecided jobs: a skip or a refusal its
-::  plan decides is recorded with the reason and the needs context
+::  one pass of a candidate's undecided jobs: a skip, a cancel or a
+::  refusal its plan decides is recorded with the reason and the needs
+::  context
 ::
 ++  decide-pass
   |=  id=candidate-id:ci
@@ -3700,10 +3798,12 @@
   |=  [=job:ci acc=_state]
   =.  state  acc
   ?:  (~(has by standings.known) [workflow.job id.job])  state
-  =/  =decision:ci-plan  (decide:ci-plan job u.plan.found standings.known entries context)
+  =/  =decision:ci-plan
+    (decide-with:ci-concurrency state found job u.plan.found standings.known entries context)
   =/  needs=(list need-entry:ci)  (direct-entries:ci-plan job entries)
   ?+  -.decision  state
     %skip  (record-decision id job [%skip reason.decision value.decision] needs)
+    %cancel  (record-decision id job [%cancel reason.decision value.decision] needs)
     %error  (record-decision id job [%error reason.decision ~] needs)
   ==
 ::
@@ -3735,10 +3835,20 @@
     =.  state  (decide-pass id)
     ?:  =(count (lent attempts:(~(got by candidates) id)))  state
     $(rounds (dec rounds))
+  ::  a run cancelled before it was planned — whole, or every workflow it
+  ::  joined while it waited (CI-CONCURRENCY-1) — is cancelled with no
+  ::  job: its plan attempt is closed, as nothing is left to plan
+  ::
+  =/  unplanned=?  (unplanned-cancelled (~(got by candidates) id))
+  =?  state  unplanned  (close-plan-attempts (~(got by candidates) id))
   =/  =candidate:ci  (~(got by candidates) id)
   =/  verdict=[status=candidate-status:ci reason=(unit @t)]
     ?^  plan.candidate
-      (verdict:ci-plan u.plan.candidate standings:(standings candidate))
+      %^  verdict-in:ci-plan
+          u.plan.candidate
+        standings:(standings candidate)
+      (cancelled-workflows candidate)
+    ?:  unplanned  [%cancelled ~]
     ::  the newest attempt OF THIS GENERATION: a candidate reset by a
     ::  policy change keeps its history, but evidence from another
     ::  generation stands for nothing (P09/P11 — the cold run found the
@@ -3774,6 +3884,8 @@
     ?.  ?&(?=(^ missing) =(%passed status.verdict))  ~
     `(absent-evidence missing)
   =?  verdict  ?=(^ blocked)  [%pending blocked]
+  ::  a cancelled run says who or what cancelled it, in plain words
+  =?  verdict  ?=(%cancelled status.verdict)  [%cancelled `(cancel-reason candidate)]
   ::  a restricted check that passes is a verdict, never a landing: the
   ::  reason says so, and only approval runs the head as trusted (D3)
   ::
@@ -3805,6 +3917,63 @@
   ?.  (landable next)  (emit ~[release])
   (emit (snoc (land-cards next) release))
 ::
+::  CI-CONCURRENCY-1: the workflows of a run whose runs were cancelled;
+::  the whole run's cancellation ('') covers every workflow of its plan
+::
+++  cancelled-workflows
+  |=  c=candidate:ci
+  ^-  (set @t)
+  =/  own=(set @t)  (~(del in ~(key by cancelled.c)) '')
+  ?.  (~(has by cancelled.c) '')  own
+  ?~  plan.c  own
+  (~(gas in own) (turn u.plan.c |=(j=job:ci workflow.j)))
+::
+::  whether a run with no plan is cancelled: whole, or every workflow it
+::  joined, each before it started
+::
+++  unplanned-cancelled
+  |=  c=candidate:ci
+  ^-  ?
+  ?^  plan.c  %.n
+  ?:  (~(has by cancelled.c) '')  %.y
+  ?.  ?=(%joined -.concurrency.c)  %.n
+  =/  runs=(list workflow-run:ci)  runs.concurrency.c
+  ?:  =(~ runs)  %.n
+  %+  levy  runs
+  |=  r=workflow-run:ci
+  =/  stop=(unit cancellation:ci)  (~(get by cancelled.c) workflow.r)
+  ?&(?=(^ stop) !started.u.stop)
+::
+::  a cancelled run's running plan attempts, closed (the daemon hears
+::  `attempt is closed`)
+::
+++  close-plan-attempts
+  |=  c=candidate:ci
+  ^-  _state
+  %+  roll  attempts.c
+  |=  [aid=attempt-id:ci acc=_state]
+  =.  state  acc
+  =/  a=(unit attempt:ci)  (~(get by attempts) aid)
+  ?~  a  state
+  ?.  ?&(=(%running status.u.a) ?=(%plan kind.u.a))  state
+  (close-cancelled:ci-concurrency state u.a (cancel-reason c) now.bowl)
+::
+::  the reason a cancelled run shows: the whole run's cancellation, else
+::  each cancelled workflow's, by workflow file
+::
+++  cancel-reason
+  |=  c=candidate:ci
+  ^-  @t
+  =/  whole=(unit cancellation:ci)  (~(get by cancelled.c) '')
+  ?^  whole  reason.u.whole
+  =/  items=(list [workflow=@t =cancellation:ci])
+    %+  sort  ~(tap by cancelled.c)
+    |=([a=[workflow=@t cancellation:ci] b=[workflow=@t cancellation:ci]] (aor workflow.a workflow.b))
+  ?~  items  'the run was cancelled'
+  %+  join:ci-plan
+    (turn items |=([workflow=@t =cancellation:ci] (rap 3 ~[workflow ': ' reason.cancellation])))
+  '; '
+::
 ++  land-cards
   |=  =candidate:ci
   ^-  (list card)
@@ -3829,37 +3998,15 @@
 ::  closes it unknown for the candidate.  the daemon's running set lets
 ::  the attempt go.  the candidate's verdict is +settle's, after this.
 ::
+::  (lib/ci-concurrency +close, which a cancellation closes through too):
+::  a resolve's mirror write tokens end with it (the cards are emitted by
+::  the caller through mirror-token-cards), and the read capability of a
+::  closed attempt is gone (A06)
+::
 ++  close-attempt
   |=  [=attempt:ci =attempt-result:ci]
   ^-  _state
-  =/  status=attempt-status:ci
-    ?-  -.attempt-result
-      %job-result  ?:(=(%success result.attempt-result) %passed %failed)
-      %plan-invalid  %failed
-      %infrastructure-error  %infrastructure-error
-    ==
-  =/  reason=(unit @t)
-    ?-  -.attempt-result
-      %job-result  ~
-      %plan-invalid  `(rap 3 ~['plan-invalid: ' message.attempt-result])
-      %infrastructure-error  `message.attempt-result
-    ==
-  =/  closed=attempt:ci
-    attempt(status status, result `attempt-result, reason reason, finished `now.bowl)
-  =.  attempts  (~(put by attempts) id.attempt closed)
-  =.  daemons
-    =/  runner=(unit daemon:ci)  (~(get by daemons) daemon.attempt)
-    ?~  runner  daemons
-    (~(put by daemons) daemon.attempt u.runner(running (~(del in running.u.runner) id.attempt)))
-  ::  a resolve's mirror write tokens end with it (the cards are emitted
-  ::  by the caller through mirror-token-cards)
-  =.  mirror-tokens  (~(del by mirror-tokens) id.attempt)
-  ::  the read capability of a closed attempt is gone (A06)
-  =.  read-capabilities
-    %-  malt
-    %+  skip  ~(tap by read-capabilities)
-    |=([* c=read-capability:ci] =(attempt.c id.attempt))
-  state
+  (close:ci-concurrency state attempt attempt-result now.bowl)
 ::
 ::  the %clear-write-token cards for a resolve attempt's mirrors: read
 ::  BEFORE close-attempt drops the record
@@ -4229,6 +4376,7 @@
           :~  ['workflow' s+workflow.w]
               ['name' s+name.w]
               ['refusal' ?~(refusal.w ~ s+u.refusal.w)]
+              ['concurrency' (concurrency-def-json concurrency.w)]
               :-  'events'
               :-  %a
               %+  turn  events.w
@@ -6190,8 +6338,134 @@
   ?-  -.d
     %run  reason.d
     %skip  reason.d
+    %cancel  reason.d
     %error  reason.d
     %wait  reason.d
+  ==
+::
+::  CI-CONCURRENCY-1: a run's concurrency as the CI tab reads it: its
+::  state, why it takes part in no group, and each workflow's group, its
+::  place, the run it waits behind, its cancellation and whether its run
+::  finished.  a run in no group lists the workflows it knows with no
+::  group, so one of them can still be cancelled.  runs are named by
+::  their label, their ids beside them for the fine print
+::
+++  concurrency-json
+  |=  c=candidate:ci
+  ^-  json
+  =/  rc=run-concurrency:ci  concurrency.c
+  %-  pairs:enjs:format
+  :~  ['state' s+-.rc]
+      :-  'reason'
+      ?+  -.rc  ~
+        %exempt  s+reason.rc
+        %unknown  s+reason.rc
+      ==
+      ['joined' ?.(?=(%joined -.rc) ~ (numb:enjs:format (unix-seconds at.rc)))]
+      :-  'workflows'
+      :-  %a
+      ?.  ?=(%joined -.rc)
+        %+  turn  (run-workflows:ci-concurrency c)
+        |=  workflow=@t
+        %-  pairs:enjs:format
+        :~  ['workflow' s+workflow]
+            ['name' s+workflow]
+            ['group' ~]
+            ['cancelled' (cancellation-json (cancellation-of:ci-concurrency c workflow))]
+            ['finished' b+(workflow-finished:ci-concurrency state c workflow)]
+        ==
+      %+  turn  runs.rc
+      |=  r=workflow-run:ci
+      %-  pairs:enjs:format
+      :~  ['workflow' s+workflow.r]
+          ['name' s+name.r]
+          ['group' (group-json group.r)]
+          ['cancelled' (cancellation-json (cancellation-of:ci-concurrency c workflow.r))]
+          ['finished' b+(workflow-finished:ci-concurrency state c workflow.r)]
+      ==
+  ==
+::
+++  group-json
+  |=  g=workflow-group:ci
+  ^-  json
+  ?-  -.g
+    %free  (pairs:enjs:format ~[['kind' s+'free']])
+    %unknown  (pairs:enjs:format ~[['kind' s+'unknown'] ['reason' s+reason.g]])
+    %refused  (pairs:enjs:format ~[['kind' s+'refused'] ['reason' s+reason.g]])
+  ::
+      %member
+    %-  pairs:enjs:format
+    :~  ['kind' s+'member']
+        ['text' s+text.g]
+        ['cancelInProgress' b+cancel.g]
+        ['place' s+place.g]
+        ['behind' ?~(behind.g ~ (run-ref-json u.behind.g))]
+        ['since' (numb:enjs:format (unix-seconds since.g))]
+    ==
+  ==
+::
+::  another run, by its label and, for the fine print, its id
+::
+++  run-ref-json
+  |=  id=candidate-id:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(scot %uv id)]
+      ['label' s+(label-of:ci-concurrency state id)]
+  ==
+::
+++  cancellation-json
+  |=  c=(unit cancellation:ci)
+  ^-  json
+  ?~  c  ~
+  =/  =cancel-cause:ci  cause.u.c
+  %-  pairs:enjs:format
+  :~  ['at' (numb:enjs:format (unix-seconds at.u.c))]
+      ['started' b+started.u.c]
+      ['cause' s+-.cancel-cause]
+      ['reason' s+reason.u.c]
+      ['actor' ?.(?=(%operator -.cancel-cause) ~ s+(scot %p actor.cancel-cause))]
+      ['by' ?:(?=(%operator -.cancel-cause) ~ (run-ref-json by.cancel-cause))]
+      ['group' ?:(?=(%operator -.cancel-cause) ~ s+group.cancel-cause)]
+  ==
+::
+::  whether this session's ship may cancel a run: the ci-policy role (the
+::  owner's implicitly), on a run still in progress and not cancelled whole
+::
+++  may-cancel
+  |=  c=candidate:ci
+  ^-  ?
+  ?&  (authorized repo.c %ci-policy ~ our.bowl)
+      =(%pending status.c)
+      !(resolver-record c)
+      !(~(has by cancelled.c) '')
+  ==
+::
+++  no-cancel-authority
+  ^-  @t
+  'only the repository\'s owner, or a ship holding its ci-policy role, cancels a run'
+::
+::  a lock catalog workflow's compiled concurrency, in brief: null when the
+::  lock's compiler did not read it, which is unknown
+::
+++  concurrency-def-json
+  |=  d=(unit concurrency-def:ci)
+  ^-  json
+  ?~  d  ~
+  ?-  -.u.d
+    %none  (pairs:enjs:format ~[['kind' s+'none']])
+    %refused  (pairs:enjs:format ~[['kind' s+'refused'] ['reason' s+reason.u.d]])
+  ::
+      %group
+    %-  pairs:enjs:format
+    :~  ['kind' s+'group']
+        ['group' s+text.group.u.d]
+        :-  'cancelInProgress'
+        ?-  -.cancel.u.d
+          %fixed  b+p.cancel.u.d
+          %expr  s+text.cancel.u.d
+        ==
+    ==
   ==
 ::
 ++  workflow-provenance-json
@@ -6272,7 +6546,9 @@
         ?:  (~(has by standings.known) [workflow.job id.job])  ~
         ?.  =(%pending status.candidate)  ~
         =/  d=decision:ci-plan
-          %:  decide:ci-plan
+          %:  decide-with:ci-concurrency
+            state
+            candidate
             job
             u.plan.candidate
             standings.known
@@ -6315,6 +6591,21 @@
       ['harnessDiffers' b+harness-differs.candidate]
       ['bindingsCurrent' b+(bindings-current candidate)]
       ['landable' b+(landable candidate)]
+      ::  CI-CONCURRENCY-1: each workflow's group and place, every
+      ::  cancellation, and whether this session's ship may cancel
+      ['concurrency' (concurrency-json candidate)]
+      :-  'cancellations'
+      :-  %a
+      %+  turn
+        (sort ~(tap by cancelled.candidate) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+      |=  [workflow=@t =cancellation:ci]
+      =/  base=json  (cancellation-json `cancellation)
+      ?.  ?=([%o *] base)  base
+      [%o (~(put by p.base) 'workflow' s+workflow)]
+      ['canCancel' b+(may-cancel candidate)]
+      :-  'cancelAuthority'
+      ?:  (authorized repo.candidate %ci-policy ~ our.bowl)  ~
+      s+no-cancel-authority
       ['event' (event-json candidate)]
       ::  which workflows the event selected and why (Delivery 1C), and for
       ::  a required run whether its required evidence is complete: an
@@ -7713,6 +8004,16 @@
     =/  reason=@t  (fall (string-at 'reason' jon) 'cancelled by the operator')
     ?~  id  [%| 'id must be an attempt id']
     [%& [%cancel-attempt u.id reason actor]]
+  ::
+      ::  CI-CONCURRENCY-1: the run page's Cancel, for the whole run or one
+      ::  workflow of it (`workflow`); the actor is the session's ship
+      ::
+      %cancel-run
+    =/  reason=@t  (fall (string-at 'reason' jon) 'cancelled from the CI tab')
+    ?~  id  [%| 'id must be a run id']
+    =/  workflow=(unit @t)  (string-at 'workflow' jon)
+    ?:  ?&(?=(^ workflow) =('' u.workflow))  [%| 'workflow names a workflow file']
+    [%& [%cancel-run u.id workflow reason actor]]
   ::
       ::  the Runners panel's release of a legacy retention (legacy-recovery
       ::  UI ruling 01): the runner, and the entry, revision and evidence

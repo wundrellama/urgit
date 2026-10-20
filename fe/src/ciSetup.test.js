@@ -67,6 +67,10 @@ test('the agent brief names the ship and repository, the state, and the rules, a
   assert.match(md, /Do not paste the token to me\./)
   assert.match(md, /## Step 6: prepare the repository/)
   assert.match(md, /strategy\.matrix/)
+  // workflow-level concurrency runs (CI-CONCURRENCY-1); job-level is refused
+  assert.match(md, /What runs:[^]*workflow-level\s+`concurrency` with `cancel-in-progress`[^]*Refused with the reason:/)
+  assert.match(md, /Refused with the reason:[^]*job-level `concurrency`[^]*Read but ignored/)
+  assert.doesNotMatch(md.slice(md.indexOf('Read but ignored'), md.indexOf('2. **Actions**')), /concurrency/)
   assert.match(md, /99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5/)
   // nothing that looks like a minted token, a daemon id, a bearer or a +code
   assert.doesNotMatch(md, /0v[0-9a-v]+\.[0-9a-v]{5}/)
@@ -87,12 +91,17 @@ test('the setup guide covers repository preparation and the VM runner, not Docke
   for (const h of ['## Prepare your repository', '## 3. Install the runner', '## 4. Approve the workflows and require CI']) assert.ok(guide.includes(h), h)
   assert.match(guide, /urgit-vm-launcher/)
   assert.match(guide, /Not supported yet/)
-  // concurrency is read and ignored, never refused: the guide must not
-  // list it among the refused keys (hands-on review, 2026-10-19)
+  // workflow-level concurrency is supported (CI-CONCURRENCY-1) and the
+  // job-level key refused with the reason; neither is listed as ignored,
+  // as concurrency was before (hands-on review, 2026-10-19)
+  const supported = guide.slice(guide.indexOf('**Supported**'), guide.indexOf('Not supported yet: refused'))
   const refused = guide.slice(guide.indexOf('Not supported yet: refused'), guide.indexOf('Not supported yet: ignored'))
-  assert.ok(refused.length > 0, 'the guide separates refused from ignored keys')
-  assert.doesNotMatch(refused, /concurrency/)
-  assert.match(guide.slice(guide.indexOf('Not supported yet: ignored')), /`concurrency` and `cancel-in-progress`/)
+  const ignored = guide.slice(guide.indexOf('Not supported yet: ignored'), guide.indexOf('**Network.**'))
+  assert.ok(supported.length > 0 && refused.length > 0 && ignored.length > 0, 'the guide separates supported, refused and ignored keys')
+  assert.match(supported, /Workflow-level `concurrency`, as a group name or as `group` and `cancel-in-progress`/)
+  assert.match(supported, /result is \*\*cancelled\*\*/)
+  assert.match(refused, /`concurrency` at job level/)
+  assert.doesNotMatch(ignored, /concurrency/)
   assert.match(guide, /Network policies/)
   assert.match(guide, /CI-required branches/)
   assert.doesNotMatch(guide, /the one backend in this release/)
