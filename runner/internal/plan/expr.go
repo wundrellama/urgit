@@ -150,12 +150,16 @@ type Output struct {
 	Refusal string `json:"refusal,omitempty"`
 }
 
-// the field an expression is written in decides what it may use
+// the field an expression is written in decides what it may use: a
+// job-level if, a job's declared output, or a workflow's concurrency group
+// and cancel-in-progress (CI-CONCURRENCY-1), which GitHub evaluates with
+// github, inputs and vars alone
 type field int
 
 const (
 	fieldIf field = iota
 	fieldOutput
+	fieldConcurrency
 )
 
 // the github properties the ship holds for a run, as act and GitHub name
@@ -416,12 +420,18 @@ func checkContext(name string, chain []accessor, f field) string {
 	if f == fieldOutput {
 		allowed["steps"] = true
 	}
+	if f == fieldConcurrency {
+		allowed = map[string]bool{"github": true, "vars": true, "inputs": true}
+	}
 	if !allowed[name] {
 		if !knownContexts[name] {
 			return "unknown context " + name
 		}
 		if f == fieldIf {
 			return "context " + name + " is not available in a job-level if (github, needs, vars and inputs are)"
+		}
+		if f == fieldConcurrency {
+			return "context " + name + " is not available to a workflow's concurrency (github, inputs and vars are)"
 		}
 		return "context " + name + " is not available to a job output on the ship in this release (github, needs, vars, inputs and steps.<id>.outputs are)"
 	}
@@ -435,6 +445,9 @@ func checkContext(name string, chain []accessor, f field) string {
 		}
 		if key := strings.ToLower(chain[0].name); !githubKeys[key] {
 			return "github." + key + " is not available on the ship in this release"
+		}
+		if f == fieldConcurrency && strings.EqualFold(chain[0].name, "job") {
+			return "github.job is not defined for a workflow's concurrency: it is set only inside a job"
 		}
 	case "steps":
 		if len(chain) < 2 || !chain[0].literal || !chain[1].literal {
@@ -458,6 +471,9 @@ func checkCall(n *Node, f field) string {
 	if n.S == "hashfiles" {
 		if f == fieldIf {
 			return "function hashFiles is not available in a job-level if"
+		}
+		if f == fieldConcurrency {
+			return "function hashFiles is not available to a workflow's concurrency"
 		}
 		return "function hashFiles is not available to a job output on the ship"
 	}

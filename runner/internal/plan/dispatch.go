@@ -192,6 +192,9 @@ func jobRefusal(data []byte, top *yaml.Node) string {
 		if info.Matrix {
 			return "job " + id + ": a matrix strategy is not supported in this release"
 		}
+		if info.Concurrency {
+			return "job " + id + ": a job-level concurrency is not supported in this release; only the workflow's concurrency group is"
+		}
 		for _, label := range info.RunsOn {
 			if strings.Contains(label, "${{") {
 				return "job " + id + ": a runs-on expression is not supported in this release"

@@ -15,6 +15,7 @@ import { CandidateProvenance } from './CiProvenance'
 import { useConfirm } from './ConfirmDialog'
 import RunWorkflow from './RunWorkflow'
 import { EventLog, Schedules } from './CiEvents'
+import { RunConcurrency } from './CiConcurrency'
 
 // The repository page's CI tab (BRIEF-CI-P2 D6; P3 D4/D7), read-first
 // and then live: the candidate list (ref, head, actor, status, age,
@@ -25,9 +26,13 @@ import { EventLog, Schedules } from './CiEvents'
 // through Eyre's channel (P3 D4): the first fact is the list, every later
 // one a changed candidate's full row, replaced by id; Refresh and a
 // polling timer carry the tab while the channel is down, and a pip says
-// which. Approve and re-run are the two actions the page offers.
+// which. Approve and re-run are the two actions the page offers, and
+// (CI-CONCURRENCY-1) Cancel, for the whole run or one workflow of it, in
+// its concurrency panel.
 
-const statusClass = (status) => ({ passed: 'good', failed: 'bad', 'infrastructure-error': 'bad', unknown: 'warn', running: 'warn', reoffered: 'warn', pending: '' })[status] || ''
+// a cancelled run or attempt is neutral: neither failed nor an
+// infrastructure error
+const statusClass = (status) => ({ passed: 'good', failed: 'bad', 'infrastructure-error': 'bad', unknown: 'warn', running: 'warn', reoffered: 'warn', pending: '', cancelled: '' })[status] || ''
 
 function Pips({ pips }) {
   if (!pips.length) return <small className="quiet">no jobs yet</small>
@@ -121,7 +126,7 @@ function CandidateList({ feed, onOpen }) {
       <div className="table-head ci-row"><span>Ref</span><span>Head</span><span>Actor</span><span>Status</span><span>Age</span><span>Jobs</span></div>
       {rows.map((row) => (
         <button type="button" className="ci-row ci-candidate" key={row.id} onClick={() => onOpen(row.id)}>
-          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}{row.event && <small className="quiet ci-manual-tag" title="An automatic run: advisory, it never lands"> · {row.event}</small>}{row.evidenceAbsent && <small className="ci-evidence-tag" title="A required workflow was not selected: the branch stays blocked until an override"> · required evidence absent</small>}</span>
+          <span><strong>{row.ref}</strong>{row.pull != null && <small className="quiet"> · PR #{row.pull}</small>}{row.manual && <small className="quiet ci-manual-tag" title="A manual run: it never lands"> · manual: {row.workflowName}</small>}{row.event && <small className="quiet ci-manual-tag" title="An automatic run: advisory, it never lands"> · {row.event}</small>}{row.evidenceAbsent && <small className="ci-evidence-tag" title="A required workflow was not selected: the branch stays blocked until an override"> · required evidence absent</small>}{row.groupWait && <small className="quiet ci-group-tag" data-part="group-wait" title={row.groupWait.title}> · {row.groupWait.text}</small>}</span>
           <code data-label="Head">{row.head}</code>
           <span data-label="Actor">{row.actor}{row.trust === 'untrusted' && <small className="quiet"> · untrusted</small>}</span>
           <span className={`status ${statusClass(row.status)}`} title={row.reason}>{row.statusText}{row.status === 'pending' && row.reason && <small className="quiet"> · {row.reason}</small>}</span>
@@ -275,6 +280,7 @@ function CandidatePage({ id, live, policy, repo, onBack, onMutate, onOpenPull })
       {error && <small className="field-error">{error}</small>}
       <EventFacts candidate={c} repo={repo} onOpenPull={onOpenPull} />
       {renderSelection(createElement, selectionModel(c))}
+      <RunConcurrency candidate={c} confirm={confirm} onChanged={async () => { await load(); await onMutate?.() }} />
       <CandidateProvenance data={data} tip={(repo?.refs || []).find((r) => r.name === c.ref)?.oid || ''} onAct={act} busy={busy} confirm={confirm} />
       <div className="form-actions">
         {c.trust === 'untrusted' && c.status !== 'skipped' && <button className="button primary" disabled={busy !== ''} title={approveHint(policy)} onClick={() => act('approve', ciActions.approve(c.id))}>{busy === 'approve' ? 'Approving…' : 'Approve and run trusted'}</button>}

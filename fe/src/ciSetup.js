@@ -234,14 +234,15 @@ and check each one is done:
 1. **Workflows**: GitHub Actions YAML in \`.github/workflows/\`. What runs:
    \`runs-on\` of \`ubuntu-latest\` (or \`self-hosted\`, \`linux\`, \`x64\`,
    \`ubuntu-22.04\`, \`ubuntu-24.04\`, or a label the runner declares),
-   \`needs\`, job and step \`if\`, job outputs, \`push\`, \`pull_request\`,
+   \`needs\`, job and step \`if\`, job outputs, workflow-level
+   \`concurrency\` with \`cancel-in-progress\` (as on GitHub: a cancelled
+   run's result is cancelled and it never lands), \`push\`, \`pull_request\`,
    \`workflow_dispatch\` with inputs, \`schedule\`, and branch, tag and path
-   filters. Refused with the reason: \`strategy.matrix\`, reusable workflows and
-   \`pull_request_target\`. Read but ignored, so check them yourself:
-   \`concurrency\` (a new push does not cancel the run in flight),
-   artifacts between jobs, \`GITHUB_TOKEN\` and the GitHub API, and
-   Windows or macOS runners. Change such a workflow, or leave it out of
-   the required set.
+   filters. Refused with the reason: \`strategy.matrix\`, reusable workflows,
+   job-level \`concurrency\` and \`pull_request_target\`. Read but ignored,
+   so check them yourself: artifacts between jobs, \`GITHUB_TOKEN\` and the
+   GitHub API, and Windows or macOS runners. Change such a workflow, or
+   leave it out of the required set.
 2. **Actions**: \`uses:\` actions are fetched once when the owner resolves
    dependencies, pinned in a lock, and served to jobs from the ship. Pin
    each action to a full commit SHA where you can.

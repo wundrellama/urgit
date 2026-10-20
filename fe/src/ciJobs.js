@@ -19,6 +19,9 @@ const verdicts = {
   run: { label: 'Run', tone: '' },
   skip: { label: 'Skip', tone: '' },
   error: { label: 'Refuse: its condition could not be evaluated', tone: 'bad' },
+  // CI-CONCURRENCY-1: its workflow's run was cancelled and the job does
+  // not run under cancelled()
+  cancel: { label: 'Cancel: its workflow\'s run was cancelled', tone: '' },
 }
 
 // what the attempt itself shows happened, by its status and the evidence
@@ -33,7 +36,7 @@ const outcomes = {
   running: (execution) => (execution === 'reported' ? ['Running', 'warn'] : ['Assigned; no runner has reported yet', 'warn']),
   'infrastructure-error': (execution) => (execution === 'reported' ? ['Infrastructure error after it started', 'bad'] : execution === 'not-run' ? ['Not executed: infrastructure error', 'bad'] : ['No execution reported: infrastructure error', 'bad']),
   reoffered: () => ['Given back and offered again', 'warn'],
-  cancelled: () => ['Cancelled', ''],
+  cancelled: (execution) => (execution === 'not-run' ? ['Cancelled: not run', ''] : execution === 'reported' ? ['Cancelled after it started', ''] : ['Cancelled', '']),
   skipped: () => ['Skipped: not run', ''],
 }
 
@@ -45,11 +48,12 @@ const refusedBeforeWork = 'abandoned: assignment refused: '
 
 // the evidence of an attempt's run: 'reported' once the ship accepted a
 // line of it; 'not-run' when it is known not to have run, as the ship never
-// assigned it (a skip or a refused condition) or its runner refused the
-// assignment before any work; else 'unreported', as nothing shows either
+// assigned it (a skip, a refused condition, or a cancel: its workflow's run
+// was cancelled) or its runner refused the assignment before any work; else
+// 'unreported', as nothing shows either
 function executionEvidence(attempt) {
   if (Number(attempt.events) > 0) return 'reported'
-  if (attempt.status === 'skipped' || attempt.decision?.verdict === 'error') return 'not-run'
+  if (attempt.status === 'skipped' || attempt.decision?.verdict === 'error' || attempt.decision?.verdict === 'cancel') return 'not-run'
   return str(attempt.reason).startsWith(refusedBeforeWork) ? 'not-run' : 'unreported'
 }
 
@@ -64,6 +68,7 @@ const waitingVerdicts = {
   run: 'Ready to run',
   skip: 'Skip being recorded',
   error: 'Refusal being recorded',
+  cancel: 'Cancel being recorded',
 }
 
 const str = (v) => (v == null ? '' : String(v))

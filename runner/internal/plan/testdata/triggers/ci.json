@@ -270,7 +270,11 @@
           "col": 3
         }
       ],
-      "refusal": ""
+      "refusal": "",
+      "concurrency": {
+        "v": 2,
+        "kind": "none"
+      }
     }
   ],
   "zones": {

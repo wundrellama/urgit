@@ -38,7 +38,13 @@
 ::    every earlier shape shared the tag %0 and is frozen byte for byte in
 ::    a sur file of its own — ci-state-base, ci-state-review06 and
 ::    ci-state-q11 — and every shape is converted explicitly by
-::    lib/ci-migrate on load, never cast (contract §8c).
+::    lib/ci-migrate on load, never cast (contract §8c).  state-6 (the
+::    tagged-run resolver bindings) and state-7 (the automatic-input
+::    policy) are frozen whole as sur/ci-state-6 and sur/ci-state-7.
+::    state-8, tagged %8 (CI-CONCURRENCY-1), adds workflow concurrency
+::    groups: each catalog workflow's compiled concurrency, a candidate's
+::    concurrency membership and its cancelled workflows, the cancelled
+::    candidate status and the cancel decision.
 ::
 /-  git
 |%
@@ -51,9 +57,14 @@
 ::  defaulted candidate status is unknown, and a defaulted attempt status
 ::  is an infrastructure error.  none of them can read as success.
 ::
+::  %cancelled (state-8, CI-CONCURRENCY-1) is a run whose workflow runs a
+::  concurrency group or an operator cancelled: never passed, never
+::  landed, and apart from a failure and an infrastructure error.  it sits
+::  before %unknown, so the bunt is still unknown
+::
 +$  trust  ?(%trusted %untrusted)
 +$  result  ?(%success %failure %skipped %cancelled)
-+$  candidate-status  ?(%passed %failed %pending %skipped %unknown)
++$  candidate-status  ?(%passed %failed %pending %skipped %cancelled %unknown)
 ::  %reoffered is an attempt its daemon gave up, went silent on, or was
 ::  revoked from (CI-DELIVERY-1.1): closed without a verdict and offered
 ::  again as a fresh attempt, so it stands for nothing in a job's standing.
@@ -383,9 +394,12 @@
   ==
 ::
 ::  why a job ran, was skipped, or was refused at its condition; .value is
-::  the condition's value as shown, ~ when no condition was evaluated
+::  the condition's value as shown, ~ when no condition was evaluated.
+::  %cancel (state-8) is a job of a cancelled workflow run that did not
+::  run: its if does not hold when cancelled() does, or its run was
+::  cancelled before it started.  the bunt stays %error
 ::
-+$  decision  [verdict=?(%run %skip %error) reason=@t value=(unit @t)]
++$  decision  [verdict=?(%run %skip %cancel %error) reason=@t value=(unit @t)]
 ::
 ::  manual runs (Delivery 1A).  a workflow that declares
 ::  `on.workflow_dispatch` is listed with its declared inputs as the
@@ -522,11 +536,31 @@
       line=@ud
       col=@ud
   ==
+::
+::  CI-CONCURRENCY-1.  a workflow's top-level `concurrency:` as the pinned
+::  compiler compiled it (runner/internal/plan concurrency.go): none
+::  declared, a group template with its cancel-in-progress, or why it is
+::  refused, with the text and place the workflow wrote.  cancel-in-
+::  progress is fixed (false when the workflow writes none) or one
+::  compiled expression the ship evaluates when a run joins
+::
++$  cancel-flag
+  $%  [%fixed p=?]
+      [%expr text=@t line=@ud col=@ud =expr]
+  ==
++$  concurrency-def
+  $%  [%none ~]
+      [%group group=template cancel=cancel-flag]
+      [%refused text=@t line=@ud col=@ud reason=@t]
+  ==
 +$  trigger-workflow
   $:  workflow=@t
       name=@t
       events=(list trigger-event)
       refusal=(unit @t)
+      ::  state-8: its compiled concurrency; ~ for a lock whose compiler
+      ::  did not read it, which is unknown, never "no group"
+      concurrency=(unit concurrency-def)
   ==
 ::
 ::  a timezone's UTC offsets (seconds east, signed) over the compiler's
@@ -693,6 +727,64 @@
       outputs=(unit (list declared-output))
   ==
 ::
+::  CI-CONCURRENCY-1: where one workflow's run stands in its concurrency
+::  group.  %holding is the run in progress, %waiting the one run that
+::  waits behind it, %released a run that left its group (it finished,
+::  or was cancelled while it waited).  the bunt is %released: a
+::  defaulted place holds nothing and waits for nothing
+::
++$  group-place  ?(%holding %waiting %released)
+::
+::  one workflow's concurrency in a run: no group (the workflow declares
+::  none), unknown (its lock did not read it), refused (it could not be
+::  evaluated: the workflow's run is refused with the reason), or a member
+::  of a group: the text as evaluated, its key (the text without ASCII
+::  case: GitHub's groups ignore case), the run's own cancel-in-progress,
+::  its place, the run it waits behind, and since when
+::
++$  workflow-group
+  $~  [%unknown 'no concurrency was recorded for this workflow']
+  $%  [%free ~]
+      [%unknown reason=@t]
+      [%refused reason=@t]
+      $:  %member
+          text=@t
+          key=@t
+          cancel=?
+          place=group-place
+          behind=(unit candidate-id)
+          since=@da
+      ==
+  ==
++$  workflow-run  [workflow=@t name=@t group=workflow-group]
+::
+::  a run's concurrency: %pending until it joins (once its workflows and
+::  its github context are known), %exempt when by rule it takes part in
+::  no group (a trial twin, a resolver record, a run in flight when groups
+::  were added), %unknown when its lock read no concurrency, or %joined
+::  with each workflow's place.  the bunt is %unknown: a defaulted record
+::  joins nothing and cancels nothing
+::
++$  run-concurrency
+  $~  [%unknown 'no concurrency was recorded for this run']
+  $%  [%pending ~]
+      [%exempt reason=@t]
+      [%unknown reason=@t]
+      [%joined at=@da runs=(list workflow-run)]
+  ==
+::
+::  why a workflow's run was cancelled: an operator's Cancel, a newer run
+::  of its group with cancel-in-progress, or a newer run that waits in its
+::  group in its place.  .started says whether it had started: a run
+::  cancelled while it waited ran no job, not even an always() one
+::
++$  cancel-cause
+  $%  [%operator actor=@p]
+      [%superseded by=candidate-id group=@t]
+      [%displaced by=candidate-id group=@t]
+  ==
++$  cancellation  [at=@da started=? cause=cancel-cause reason=@t]
+::
 ::  a staged head for a CI-protected ref.  .candidate is the exact
 ::  integration object once %urgit has materialized it: the head itself
 ::  for a fast-forward, else the merge of the head onto the base tip.
@@ -740,6 +832,11 @@
       ::  1C), from the governing catalog; ~ before it was evaluated, and
       ::  for every run before state-5
       selected=(unit event-selection)
+      ::  state-8 (CI-CONCURRENCY-1): its workflows' concurrency groups,
+      ::  and the workflows of it that were cancelled, by workflow file
+      ::  ('' is the whole run)
+      concurrency=run-concurrency
+      cancelled=(map @t cancellation)
   ==
 ::
 ::  a runner daemon.  a record is created when the operator mints an
@@ -990,8 +1087,13 @@
       tag-runs=(map candidate-id (unit attempt-id))
   ==
 
-+$  state-7
-  $:  %7
+::  state-8 (CI-CONCURRENCY-1): state-7's thirty-six fields under the tag
+::  %8; what changed is nested — a candidate's status, concurrency and
+::  cancelled workflows, an attempt's decision, a lock's catalog
+::  concurrency (sur/ci-state-7 holds the frozen state-7 shape)
+::
++$  state-8
+  $:  %8
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -1147,6 +1249,9 @@
       [%stage-shadow repo=@t ref=@t head=oid:git base=oid:git event=@t external=@t actor=@p]
       [%compare-shadow shadow=@uv oid=oid:git event=@t verdict=@t jobs=(list [workflow=@t job=@t status=@t]) actor=@p]
       [%cancel-attempt id=attempt-id reason=@t actor=@p]
+      ::  CI-CONCURRENCY-1: cancel a run (~) or one workflow of it, by the
+      ::  same path a concurrency group cancels by; ci-policy authority
+      [%cancel-run id=candidate-id workflow=(unit @t) reason=@t actor=@p]
       ::  a delegate on another ship acts through the peer protocol (rider
       ::  02): %urgit hands over the requester and the action's JSON; the
       ::  action is parsed here with that ship as its actor and judged by

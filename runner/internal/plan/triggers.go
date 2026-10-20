@@ -31,12 +31,15 @@ type TriggerCatalog struct {
 
 // TriggerWorkflow is one workflow file's events, in the order `on:` lists
 // them. Refusal is why its `on:` cannot be read at all; then it lists no
-// event and nothing runs it automatically.
+// event and nothing runs it automatically. Concurrency is its top-level
+// `concurrency:` compiled (CI-CONCURRENCY-1), always present: a catalog
+// without it was read by an older compiler.
 type TriggerWorkflow struct {
-	Workflow string         `json:"workflow"`
-	Name     string         `json:"name"`
-	Events   []TriggerEvent `json:"events"`
-	Refusal  string         `json:"refusal"`
+	Workflow    string         `json:"workflow"`
+	Name        string         `json:"name"`
+	Events      []TriggerEvent `json:"events"`
+	Refusal     string         `json:"refusal"`
+	Concurrency *Concurrency   `json:"concurrency"`
 }
 
 // TriggerEvent is one event of `on:` and its configuration, compiled.
@@ -100,7 +103,7 @@ func resolved(n *yaml.Node) *yaml.Node {
 // fails: what cannot be read is a refusal of the workflow or of one event,
 // carried with its reason, so the catalog lists every file.
 func TriggersOf(data []byte, fileName string) TriggerWorkflow {
-	w := TriggerWorkflow{Workflow: fileName, Name: fileName, Events: []TriggerEvent{}}
+	w := TriggerWorkflow{Workflow: fileName, Name: fileName, Events: []TriggerEvent{}, Concurrency: ConcurrencyOf(nil)}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		w.Refusal = "the workflow is not valid YAML: " + err.Error()
@@ -111,6 +114,7 @@ func TriggersOf(data []byte, fileName string) TriggerWorkflow {
 		w.Refusal = "the workflow is not a mapping"
 		return w
 	}
+	w.Concurrency = ConcurrencyOf(top)
 	if name := resolved(mappingValue(top, "name")); name != nil && name.Kind == yaml.ScalarNode && name.Value != "" {
 		w.Name = name.Value
 	}

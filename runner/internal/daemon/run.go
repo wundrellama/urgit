@@ -432,6 +432,9 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 		// deadline with them (CI-P3-SCHED-A, CI-DELIVERY-1.1)
 		RunsOn         []string `json:"runs-on"`
 		TimeoutMinutes int      `json:"timeout-minutes,omitempty"`
+		// a job-level concurrency: (CI-CONCURRENCY-1), always sent, so
+		// the ship refuses it with the reason instead of ignoring it
+		Concurrency bool `json:"concurrency"`
 	}
 	body := struct {
 		OID          string    `json:"oid"`
@@ -479,7 +482,7 @@ func (d *Daemon) runPlan(ctx context.Context, a *ship.Assignment, h sandbox.Hand
 			body.Jobs = append(body.Jobs, wireJob{
 				ID: row.JobID, Workflow: file, Name: row.WorkflowName, Stage: row.Stage, Needs: info.Needs,
 				Cond: info.Cond, Outputs: info.Outputs, Matrix: info.Matrix, Events: row.Events, Environment: info.Environment,
-				RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes,
+				RunsOn: info.RunsOn, TimeoutMinutes: info.TimeoutMinutes, Concurrency: info.Concurrency,
 			})
 		}
 		logf("act -l %s: %d job(s)", file, len(listed))

@@ -32,6 +32,10 @@ type JobInfo struct {
 	// as a one-element set) and `timeout-minutes` (0 when none)
 	RunsOn         []string
 	TimeoutMinutes int
+	// whether the job declares a job-level `concurrency:`, which this
+	// release refuses with the reason (CI-CONCURRENCY-1): only the
+	// workflow-level group is evaluated
+	Concurrency bool
 }
 
 // Walk reads one workflow file's jobs: needs (string or list), the
@@ -88,6 +92,13 @@ func Walk(data []byte) (map[string]JobInfo, error) {
 			if strategy := mappingValue(job, "strategy"); strategy != nil && strategy.Kind == yaml.MappingNode {
 				if mappingValue(strategy, "matrix") != nil {
 					info.Matrix = true
+				}
+			}
+			// a job-level `concurrency:` in any form, even an empty one, is
+			// declared: refused, never ignored (CI-CONCURRENCY-1)
+			for k := 0; k+1 < len(job.Content); k += 2 {
+				if job.Content[k].Value == "concurrency" {
+					info.Concurrency = true
 				}
 			}
 			// `runs-on: ubuntu-latest` or `runs-on: [self-hosted, big-mem]`:

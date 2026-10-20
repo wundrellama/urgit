@@ -13,7 +13,7 @@
 ::    filter it would decide selects its workflow, labelled.
 ::
 /-  ci, git
-/+  ci-cron, git-codec
+/+  ci-cron, ci-expr, git-codec
 |%
 ++  catalog-version  1
 ++  max-workflows  256
@@ -119,6 +119,10 @@
   =/  name=@t  (fall (text-at f 'name') u.file)
   =?  name  =('' name)  u.file
   =/  refusal=(unit @t)  (refusal-at f)
+  ::  CI-CONCURRENCY-1: its compiled concurrency; absent is unknown
+  =/  concurrency=(each (unit concurrency-def:ci) @t)
+    (parse-concurrency (~(get by f) 'concurrency'))
+  ?:  ?=(%| -.concurrency)  [%| (rap 3 ~[where 'concurrency ' p.concurrency])]
   =/  raw=(unit json)  (~(get by f) 'events')
   ?.  ?=([~ %a *] raw)  [%| (rap 3 ~[where 'events must be a list'])]
   =/  items=(list json)  p.u.raw
@@ -127,11 +131,50 @@
   =|  seen=(set @t)
   =|  out=(list trigger-event:ci)
   |-
-  ?~  items  [%& u.file name (flop out) refusal]
+  ?~  items  [%& u.file name (flop out) refusal p.concurrency]
   =/  one=(each trigger-event:ci @t)  (parse-event i.items)
   ?:  ?=(%| -.one)  [%| (rap 3 ~[where p.one])]
   ?:  (~(has in seen) event.p.one)  [%| (rap 3 ~[where 'event ' event.p.one ' twice'])]
   $(items t.items, seen (~(put in seen) event.p.one), out [p.one out])
+::
+::  a workflow's compiled concurrency (CI-CONCURRENCY-1): absent is ~,
+::  unknown — a catalog an older compiler read, never "no group"; else
+::  version 2 and one of none, a group (its template and cancel-in-
+::  progress checked by lib/ci-expr for the concurrency field) or a
+::  refusal with its reason.  anything else refuses the catalog
+::
+++  parse-concurrency
+  |=  jon=(unit json)
+  ^-  (each (unit concurrency-def:ci) @t)
+  ?~  jon  [%& ~]
+  ?.  ?=([%o *] u.jon)  [%| 'is not an object']
+  =/  f=(map @t json)  p.u.jon
+  ?.  =(`2 (ud-at f 'v'))  [%| 'is not version 2']
+  ?+  (text-at f 'kind')  [%| 'is of an unknown kind']
+      [~ %none]  [%& `[%none ~]]
+  ::
+      [~ %refused]
+    =/  reason=(unit @t)  (refusal-at f)
+    ?~  reason  [%| 'is refused with no reason']
+    :+  %&  ~
+    :*  %refused
+        (fall (text-at f 'text') '')
+        (fall (ud-at f 'line') 0)
+        (fall (ud-at f 'col') 0)
+        u.reason
+    ==
+  ::
+      [~ %group]
+    =/  group=(unit json)  (~(get by f) 'group')
+    =/  cancel=(unit json)  (~(get by f) 'cancel')
+    ?~  group  [%| 'names no group']
+    ?~  cancel  [%| 'names no cancel-in-progress']
+    =/  g=(each template:ci @t)  (parse-template:ci-expr u.group %concurrency)
+    ?:  ?=(%| -.g)  [%| (rap 3 ~['group ' p.g])]
+    =/  c=(each cancel-flag:ci @t)  (parse-cancel:ci-expr u.cancel)
+    ?:  ?=(%| -.c)  [%| p.c]
+    [%& `[%group p.g p.c]]
+  ==
 ::
 ::  one event.  a refused one keeps only its name, reason and place
 ::

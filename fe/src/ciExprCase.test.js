@@ -15,6 +15,7 @@ import { armsNamed, deskText, enclosingArms } from './hoonSource.js'
 const expr = deskText('lib/ci-expr.hoon')
 const plan = deskText('lib/ci-plan.hoon')
 const agent = deskText('app/urgit-ci.hoon')
+const concurrency = deskText('lib/ci-concurrency.hoon')
 
 const one = (text, name) => {
   const found = armsNamed(text, name)
@@ -64,14 +65,21 @@ test('an if that cannot be evaluated is an error decision: the job fails, it is 
   assert.ok(decide.includes("?:  ?=(%| -.value)\n      [%error (rap 3 ~['if ' shown ' could not be evaluated: ' p.value])]"))
   assert.ok(one(agent, 'decide-pass').includes('%error  (record-decision id job [%error reason.decision ~] needs)'))
   assert.ok(one(agent, 'record-decision').includes('?:(?=(%error verdict.decision) %failed %skipped)'))
-  assert.ok(one(agent, 'runnable-jobs').includes('=(%run -:(decide:ci-plan job u.plan.candidate standings.known entries context))'))
+  // the concurrency gate decides first (CI-CONCURRENCY-1), then the same
+  // +decide:ci-plan with cancelled() read for the job's own workflow run
+  assert.ok(one(agent, 'runnable-jobs').includes('=(%run -:(decide-with:ci-concurrency state candidate job u.plan.candidate standings.known entries context))'))
+  const gated = one(concurrency, 'decide-with')
+  assert.ok(gated.includes('=/  gated=(unit decision:ci-plan)  (gate s c job)\n  ?^  gated  u.gated\n  %:  decide:ci-plan'))
 })
 
 test('an output that cannot be resolved keeps its reason and is never published', () => {
   const resolve = one(agent, 'resolve-outputs')
   assert.ok(resolve.includes('%+  turn  (resolve:ci-expr u.outputs.u.planned scope)'))
   assert.ok(resolve.includes('?:  ?=(%| -.r)  [name [%| p.r] %.n]'))
-  assert.ok(one(agent, 'published-outputs').includes('?.  ?=(%& -.value.o)  ~'))
+  // the agent publishes through lib/ci-concurrency, which its vector reads
+  // too (CI-CONCURRENCY-1): the guard is held there
+  assert.ok(one(agent, 'published-outputs').includes('(published-outputs:ci-concurrency planned a)'))
+  assert.ok(one(concurrency, 'published-outputs').includes('?.  ?=(%& -.value.o)  ~'))
 })
 
 test('the vectors run the public evaluator, the decision and the resolution', () => {

@@ -121,7 +121,7 @@ Known differences from GitHub, as act 0.2.89 runs the projection:
 
 ## P5 handoff (brief §9)
 
-Ref-writer coverage on a ship (source and rows authored in restart 01, NOT RUN) and Clay compensation; matrices/expressions/reusable workflows/services/concurrency/cancellation semantics (schedules, push and pull request triggers and their filters: Delivery 1C, below) (manual `workflow_dispatch` runs with typed inputs: Delivery 1A, below); artifact/summary export, caches, retention/GC, public-browser topology; CI-RECOVERY-1; nightly batteries; real ERPit shadow period and cutover; upstream PR. Nothing above claims them.
+Ref-writer coverage on a ship (source and rows authored in restart 01, NOT RUN) and Clay compensation; matrices/expressions/reusable workflows/services/concurrency/cancellation semantics (schedules, push and pull request triggers and their filters: Delivery 1C, below) (workflow concurrency groups and run cancellation: CI-CONCURRENCY-1, below) (manual `workflow_dispatch` runs with typed inputs: Delivery 1A, below); artifact/summary export, caches, retention/GC, public-browser topology; CI-RECOVERY-1; nightly batteries; real ERPit shadow period and cutover; upstream PR. Nothing above claims them.
 
 ## Delivery 1B — job conditions, dependency results and declared outputs
 
@@ -143,7 +143,7 @@ Ref-writer coverage on a ship (source and rows authored in restart 01, NOT RUN) 
 | Needs context bound to run, workflow, source, generation and producer attempts (manifest v4 `needs`, `prerequisites`); altered/stale/unbound contexts refused | done in source; the parent's VM run refused the 1B consumer because the assignment's `manifest` object omitted `needs` and `prerequisites` (correction 01 emits them, and the runner refuses an omission by name); a complete producer-to-consumer VM run is owed to the parent | `sig/manifest.go`, `daemon.go` `verifyAssignment`; `daemon_test.go` needs cases; `ci-provenance` `manifest-json`; `sig/manifest_wire_test.go`, `daemon/manifest_wire_test.go`; `ci-provenance-vector` 32/32 before correction 01, its new cases not yet run |
 | State-3 plans keep their admitted gate meaning (`%output-eq`), outputs by name become step outputs of no named step | done | `ci-migrate` `from-state-3`; `ci-migration-vector` 72/72; live populated upgrade owned by the parent |
 | UI: decision, condition and place, prerequisites and results, received and published outputs, step outputs, redaction and unresolved states, live waits | done (model and render); the parent's browser walk found a decision shown as `Ran` and a skipped job attempt shown as superseded: correction 01 shows the decision (Run, Skip, Refuse) beside the attempt's observed outcome, a skipped attempt as skipped and a skipped candidate as superseded; a fresh browser walk is owed to the parent | `fe/src/ciJobs.js` + `ciJobs.test.js`; `ci.js` + `ci.test.js` (both with the parent's captured run); `CiTab.jsx` details area under each job row |
-| Matrices, workflow-level cancellation, concurrency, reruns | Delivery 2 | `cancelled()` is false in every decision this release reaches (a cancelled run stops deciding) |
+| Matrices, reruns | Delivery 2 | workflow concurrency groups and cancellation: CI-CONCURRENCY-1, below |
 
 ## Delivery 1C — native triggers, filters, schedules and their UI
 
@@ -166,6 +166,27 @@ Evidence levels are kept apart: **done (code)** is implemented with Go/frontend 
 | UI: event facts, selection and absent-evidence states, Events and Schedules views, native PR links, server-read times | done (code) | `fe/src/ciEvents*.js`, `CiTab.jsx`, `RepositoryView.jsx`; the full frontend suite (339 tests) and the build pass; browser UNRUN |
 
 Native limits disclosed: no `pull_request_target`; activity types beyond opened/closed/reopened/synchronize have no native source and run nothing; a deletion runs no workflow (`delete` is not implemented); a repeated local time runs at its first instance; schedules beyond 2040-01-01 refuse until re-resolved with a newer compiler; event runs never land and never satisfy required checks; changed-path evidence beyond the bounds selects, labelled.
+
+## CI-CONCURRENCY-1 — workflow concurrency groups and cancellation
+
+Evidence levels as in Delivery 1C. **done (code)** means Go or frontend tests ran and passed. **native** means the Hoon vector passed on a fresh fake ship: 46 of 46 vector files, with 89 of 89 concurrency cases and 120 of 120 migration cases. **UNRUN** is a live ship, browser, VM or upgrade check that is still owed.
+
+| Requirement | Status | Evidence / owner |
+|---|---|---|
+| Workflow-level `concurrency:` as a string or `{group, cancel-in-progress}`, keys without case. Expressions over `github`, `inputs` and `vars` compiled by the runner's compiler. Every other context, `github.job`, status functions, `hashFiles`, an empty group, a non-boolean flag refused with the text and place, never compiled to "no group" | done (code) | `runner/internal/plan/concurrency.go`, `concurrency_test.go` (forms, refusals, wire). Catalog goldens re-pinned |
+| The compiled concurrency rides the real lock wire (`triggers` catalog) and the real plan wire (`concurrency` per job), captured from the fake ship | done (code) | `runner/internal/daemon/concurrency_capture_test.go`, `testdata/concurrency/*.json`. The Hoon vectors embed the same bytes (`vector_embed_test.go`) |
+| Job-level `concurrency:` refuses the plan with the job and the reason | done (code). Native on the ship | `plan.go` walk, `dispatch.go`, `ci-plan` refusal, `TestJobLevelConcurrencyIsRefused` |
+| The ship evaluates a group against the github context the run's jobs see (act's, a pull request's `refs/pull/<n>/merge`), repository-scoped across workflows, compared without ASCII case | native | `lib/ci-concurrency.hoon` `github-for`/`evaluate`/`key-of`, `gen/ci-concurrency-vector.hoon` |
+| A newcomer's own cancel-in-progress decides: true cancels running and waiting runs. False waits. One waiting run, a newer arrival cancels the older waiting run whatever its flag. The waiting run starts when the run in progress finishes | native | `join`/`release`/`cancel-workflows`. Vector cases incl. the ERPit master/branch groups |
+| The unit is the workflow run: cancelling one workflow stops only its jobs. A running attempt closes cancelled (the daemon hears `attempt is closed`), a privileged one closes unknown. A job that has not started runs only when true under `cancelled()`. A run cancelled while waiting runs nothing | native | `stop-attempts`/`keeps-running`/`close-cancelled`/`gate`/`decide-with`. Vector. Live VM stop UNRUN |
+| Result `cancelled`, apart from failed and infrastructure error. A cancelled required run never lands. Shadow comparison counts it as a conclusion. The new status is no bunt | native. Done (code) for the UI and the bunt pin | `candidate-status`, `landable:ci-concurrency`, `compare-shadow`, `fe/src/ciConcurrencyWire.test.js` |
+| Participants: required, event (push, pull request, schedule, tag), manual and shadow runs. Trial twins and resolver records take part in no group and say why | native. Done (code) for the UI | `exempt`/`join-arrivals`, `ciConcurrency.test.js` |
+| An unevaluable group refuses that workflow's run with the reason | native. Done (code) for the UI | `group-for`, `gate` (`%error`), `ciConcurrency.test.js` |
+| Cancel (whole run, or one workflow) on the run page by the same path. Only the owner and `ci-policy` holders. The ship refuses anyone else. The UI hides it and says why | native (ship). Done (code) (UI, model and React render) | `%cancel-run` (`require-authority`), `may-cancel`, `ciConcurrencyComponent.js`, `ciConcurrency.test.js` |
+| Plain-words group state, refusals, cancellation causes. Runs named by label with ids in fine print. Narrow layout | done (code). Browser at 320 px UNRUN | `ciConcurrency.js`, `CiTab.jsx`, `style.css`, `responsiveLayout.test.js` |
+| Unknown is not none: a lock compiled before concurrency was read, and every catalog workflow it lists, is unknown with a reason. A manual run reads the same catalog | native | `lock-from-7`, `unread`, `catalog-of`, `ci-migration-vector` |
+| State-7 frozen whole. Explicit field-by-field state-8 conversion. Runs in flight at the upgrade take part in no group and say why. Nothing gains authority or is reset | native | `sur/ci-state-7.hoon`, `lib/ci-migrate.hoon` `from-state-7`, `ci-migration-vector`. Populated in-place upgrade UNRUN |
+| A step-level `always()` inside a job stopped by a cancellation | known gap | the job's sandbox is stopped whole. A job-level `always()` runs |
 
 ## Tagged-revision workflows
 

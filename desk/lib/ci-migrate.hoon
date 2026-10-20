@@ -24,15 +24,21 @@
 ::    converted to state-1, state-1 to state-2, state-2 to state-3, state-3
 ::    to state-4 and state-4 to state-5.  an
 ::    State6 appends the tagged-run resolver bindings. State5 converts
-::    without changing any prior field. An unknown, partial,
+::    without changing any prior field.  state-7 (frozen whole as
+::    sur/ci-state-7) appends the automatic-input policy; the current
+::    state is state-8, tagged %8 (CI-CONCURRENCY-1), which converts
+::    state-7's nested records: a candidate's concurrency and cancelled
+::    workflows, an attempt's decision, a lock catalog's concurrency.
+::    every earlier shape converts through state-7 (+seven).  An unknown,
+::    partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -52,8 +58,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %8
+    ?:  !=(~ (mole |.(;;(state-8:ci old))))  &+%current
+    |+'a %8 state that is not exactly state-8: partial or corrupt'
+  ::
       %7
-    ?:  !=(~ (mole |.(;;(state-7:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-7:ci-state-7 old))))  &+%state-7
     |+'a %7 state that is not exactly state-7: partial or corrupt'
   ::
       %6
@@ -95,19 +105,45 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-7:ci]
+  ^-  [=shape new=state-8:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
-  ?:  =(%current p.found)  ;;(state-7:ci old)
+  ?:  =(%current p.found)  ;;(state-8:ci old)
+  (from-state-7 (seven p.found old))
+::
+::  a saved state of a shape before state-8, as the state-7 it converts
+::  through on its way to state-8 (ci-migration-vector checks every
+::  earlier conversion on it); a current state has none
+::
+++  load-7
+  |=  old=*
+  ^-  [=shape new=state-7:ci-state-7]
+  =/  found=(each shape @t)  (shape-of old)
+  ?:  ?=(%| -.found)
+    ~|  %urgit-ci-state-refused
+    ~|  p.found
+    !!
+  ?:  =(%current p.found)
+    ~|  %urgit-ci-state-is-current
+    !!
+  [p.found (seven p.found old)]
+::
+::  .old, of a shape before state-8, converted to state-7
+::
+++  seven
+  |=  [=shape old=*]
+  ^-  state-7:ci-state-7
+  ?:  =(%state-7 shape)  ;;(state-7:ci-state-7 old)
   %-  from-state-6
-  ?:  =(%state-6 p.found)  ;;(state-6:ci-state-6 old)
+  ?:  =(%state-6 shape)  ;;(state-6:ci-state-6 old)
   %-  from-state-5
-  ?-  p.found
+  ?-  shape
     %current  !!
+    %state-7  !!
     %state-6  !!
     %state-5  ;;(state-5:ci-state-5 old)
     %state-4  (from-state-4 ;;(state-4:ci-state-4 old))
@@ -126,11 +162,165 @@
     (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
   ==
 ::
+::  state-7 (frozen whole in sur/ci-state-7): its thirty-six fields under
+::  the tag %8, and what state-8 adds inside them (CI-CONCURRENCY-1).  a
+::  candidate keeps every field; one still open takes part in no group —
+::  it was in flight when groups were added, and the CI tab says so — and
+::  a closed one had none recorded; neither has a cancelled workflow.  a
+::  lock keeps every field, its digest among them, and each catalog
+::  workflow's concurrency is unknown (~: never read before state-8,
+::  which is not "no group" and authorizes nothing; its revision is
+::  resolved and promoted again to apply it).  an attempt keeps every
+::  field, a running one still running, its decision as it was.  nothing
+::  gains authority and nothing is reset
+::
+++  from-state-7
+  |=  o=state-7:ci-state-7
+  ^-  state-8:ci
+  :*  %8
+      (~(run by candidates.o) candidate-from-7)
+      daemons.o
+      assignments.o
+      (~(run by attempts.o) attempt-from-7)
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      (~(run by locks.o) lock-from-7)
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      forge-events.o
+      event-ids.o
+      schedules.o
+      tag-runs.o
+      automatic-inputs.o
+      input-snapshots.o
+      input-evidence.o
+      resolver-inputs.o
+  ==
+::
+::  why a run of state-7 takes part in no group
+::
+++  in-flight
+  ^-  @t
+  'in flight when concurrency groups were added: this run takes part in no group'
+::
+++  before-groups
+  ^-  @t
+  'finished before concurrency groups were added: no group was recorded for it'
+::
+++  candidate-from-7
+  |=  c=candidate:ci-state-7
+  ^-  candidate:ci
+  :*  id.c
+      repo.c
+      ref.c
+      head.c
+      base.c
+      candidate.c
+      conflict.c
+      status.c
+      attempts.c
+      plan.c
+      plan-oid.c
+      verdict-reason.c
+      actor.c
+      via.c
+      trust.c
+      pull.c
+      created.c
+      updated.c
+      mode.c
+      generation.c
+      baseline.c
+      lock.c
+      incarnation.c
+      sandbox.c
+      trial-of.c
+      harness-differs.c
+      trigger.c
+      selected.c
+      ?:(=(%pending status.c) [%exempt in-flight] [%unknown before-groups])
+      ~
+  ==
+::
+++  attempt-from-7
+  |=  a=attempt:ci-state-7
+  ^-  attempt:ci
+  :*  id.a
+      candidate.a
+      assignment.a
+      daemon.a
+      trust.a
+      kind.a
+      workflow.a
+      job.a
+      status.a
+      events.a
+      step-outputs.a
+      job-result.a
+      result.a
+      reason.a
+      projection-name.a
+      log.a
+      started.a
+      finished.a
+      generation.a
+      mode.a
+      manifest.a
+      sandbox.a
+      network.a
+      approval.a
+      outcome.a
+      pinned.a
+      ?~(decision.a ~ `[verdict.u.decision.a reason.u.decision.a value.u.decision.a])
+      needs.a
+      job-outputs.a
+  ==
+::
+++  lock-from-7
+  |=  l=lock:ci-state-7
+  ^-  lock:ci
+  :*  digest.l
+      repo.l
+      revision.l
+      nodes.l
+      resolved.l
+      resolver.l
+      bytes.l
+      notices.l
+      inventory.l
+      ?~  triggers.l  ~
+      `[(turn workflows.u.triggers.l workflow-from-7) zones.u.triggers.l]
+  ==
+::
+++  workflow-from-7
+  |=  w=trigger-workflow:ci-state-7
+  ^-  trigger-workflow:ci
+  [workflow.w name.w events.w refusal.w ~]
+::
 ::  State6 is frozen whole, including all nested molds. Preserve every
 ::  old noun and outstanding obligation; no historical source gains a grant.
 ++  from-state-6
   |=  o=state-6:ci-state-6
-  ^-  state-7:ci
+  ^-  state-7:ci-state-7
   :*  %7
       candidates.o
       daemons.o
@@ -261,7 +451,7 @@
 ::
 ++  candidate-from-4
   |=  c=candidate:ci-state-4
-  ^-  candidate:ci
+  ^-  candidate:ci-state-5
   :*  id.c
       repo.c
       ref.c
@@ -298,7 +488,7 @@
 ::
 ++  lock-from-4
   |=  l=lock:ci-state-4
-  ^-  lock:ci
+  ^-  lock:ci-state-5
   :*  digest.l
       repo.l
       revision.l
@@ -313,7 +503,7 @@
 ::
 ++  attempt-from-4
   |=  a=attempt:ci-state-4
-  ^-  attempt:ci
+  ^-  attempt:ci-state-5
   :*  id.a
       candidate.a
       assignment.a
