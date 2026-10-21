@@ -45,6 +45,9 @@
 ::    groups: each catalog workflow's compiled concurrency, a candidate's
 ::    concurrency membership and its cancelled workflows, the cancelled
 ::    candidate status and the cancel decision.
+::    state-9, tagged %9, adds pull request labels to the pull facts of a
+::    run's event and of a recorded forge event.  state-8 is frozen whole
+::    as sur/ci-state-8.
 ::
 /-  git
 |%
@@ -584,7 +587,10 @@
 ::
 ::  a native pull request's facts as the forge persisted them: the
 ::  activity, the head and the ref it came from, the target branch and the
-::  tip the run integrates onto (the pre-merge tip for a merged close)
+::  tip the run integrates onto (the pre-merge tip for a merged close).
+::  state-9: its labels after the activity, sorted, and for a labeled or
+::  unlabeled activity the label added or removed (~ for any other, and
+::  for every event recorded before state-9)
 ::
 +$  pull-facts
   $:  number=@ud
@@ -597,6 +603,8 @@
       merged=?
       source-ship=@p
       source-repository=@t
+      labels=(list @t)
+      label=(unit @t)
   ==
 ::
 ::  a due schedule occurrence: the definition it belongs to, its UTC due
@@ -684,7 +692,11 @@
 ::
 ::  what %urgit reports of one persisted write (%forge-events): a ref
 ::  move, or a pull request transition, each with the identity the forge
-::  gave it in the event that persisted it
+::  gave it in the event that persisted it.  a pull request's update also
+::  carries the state the activity leaves it in, its labels after the
+::  activity (sorted, at most 20) and, for labeled and unlabeled only, the
+::  label added or removed (lib/ci-forge +pull-update-error says what is
+::  well formed, and %urgit-ci refuses anything else with the reason)
 ::
 +$  ref-update  [id=@uv ref=@t old=(unit oid:git) new=(unit oid:git)]
 +$  pull-update
@@ -700,6 +712,9 @@
       title=@t
       merged=?
       target-before=(unit oid:git)
+      state=?(%open %merged %closed)
+      labels=(list @t)
+      label=(unit @t)
   ==
 ::
 ::  one planned job.  jobs are keyed by [workflow id], never by id alone:
@@ -1087,13 +1102,13 @@
       tag-runs=(map candidate-id (unit attempt-id))
   ==
 
-::  state-8 (CI-CONCURRENCY-1): state-7's thirty-six fields under the tag
-::  %8; what changed is nested — a candidate's status, concurrency and
-::  cancelled workflows, an attempt's decision, a lock's catalog
-::  concurrency (sur/ci-state-7 holds the frozen state-7 shape)
+::  state-9: state-8's thirty-six fields under the tag %9.  what changed
+::  is nested — the pull facts of a candidate's event trigger and of a
+::  recorded forge event carry the labels (sur/ci-state-8 holds the
+::  frozen state-8 shape, and sur/ci-state-7 the state-7 one)
 ::
-+$  state-8
-  $:  %8
++$  state-9
+  $:  %9
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)

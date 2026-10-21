@@ -88,7 +88,7 @@
 ::
 =/  blank=repository:git  *repository:git
 =/  pr=native-pull:git
-  [1 ~bud 'wf1c-peer-fork' 'refs/heads/peer-feature' master 'Peer provenance fixture' %open 0x2edc 0x5126 ~]
+  [1 ~bud 'wf1c-peer-fork' 'refs/heads/peer-feature' master 'Peer provenance fixture' %open 0x2edc 0x5126 ~ ~]
 =/  at-5126=repository:git
   blank(owner ~nec, head master, refs (my ~[[master 0x5126]]))
 =/  receipt

@@ -46,7 +46,11 @@ type actEvent struct {
 // github.ref refs/pull/<number>/merge and takes github.sha from the
 // checkout, the signed object); for a schedule its cron and a default
 // branch that is the signed ref's branch (act makes github.ref that
-// branch); and for every event a sender, the actor.
+// branch); and for every event a sender, the actor. A pull request's
+// labels, when the payload lists them, are at most maxLabels objects with
+// a name, as the ship's labels are; a labeled or unlabeled payload lists
+// them and names its label, among them after labeled and not after
+// unlabeled, and no other activity names a label (pullLabelsError).
 func eventOf(a *ship.Assignment) (actEvent, error) {
 	if a.Manifest == nil {
 		return actEvent{}, errors.New("no manifest")
@@ -60,11 +64,14 @@ func eventOf(a *ship.Assignment) (actEvent, error) {
 		return actEvent{}, errors.New("the signed manifest binds no event payload")
 	}
 	var payload struct {
-		Ref         string   `json:"ref"`
-		After       string   `json:"after"`
-		Action      string   `json:"action"`
-		Number      *float64 `json:"number"`
-		Schedule    string   `json:"schedule"`
+		Ref      string   `json:"ref"`
+		After    string   `json:"after"`
+		Action   string   `json:"action"`
+		Number   *float64 `json:"number"`
+		Schedule string   `json:"schedule"`
+		Label    *struct {
+			Name string `json:"name"`
+		} `json:"label"`
 		PullRequest struct {
 			Head struct {
 				SHA string `json:"sha"`
@@ -72,6 +79,7 @@ func eventOf(a *ship.Assignment) (actEvent, error) {
 			Base struct {
 				Ref string `json:"ref"`
 			} `json:"base"`
+			Labels *[]json.RawMessage `json:"labels"`
 		} `json:"pull_request"`
 		Repository struct {
 			DefaultBranch string `json:"default_branch"`
@@ -105,6 +113,13 @@ func eventOf(a *ship.Assignment) (actEvent, error) {
 		if branch == a.Manifest.Ref || payload.PullRequest.Base.Ref != branch {
 			return actEvent{}, fmt.Errorf("the pull_request payload's base %q is not the signed ref %q", payload.PullRequest.Base.Ref, a.Manifest.Ref)
 		}
+		label := ""
+		if payload.Label != nil {
+			label = payload.Label.Name
+		}
+		if err := pullLabelsError(payload.Action, payload.PullRequest.Labels, payload.Label != nil, label); err != nil {
+			return actEvent{}, err
+		}
 	case "schedule":
 		if payload.Schedule == "" {
 			return actEvent{}, errors.New("the schedule payload names no cron")
@@ -117,4 +132,52 @@ func eventOf(a *ship.Assignment) (actEvent, error) {
 		return actEvent{}, errors.New("the event payload names no sender")
 	}
 	return actEvent{Name: a.Manifest.Event, Payload: a.EventPayload, Actor: payload.Sender.Login}, nil
+}
+
+// maxLabels is the most labels a pull request carries, as the ship allows
+const maxLabels = 20
+
+// pullLabelsError checks a pull_request payload's labels and label. labels
+// is nil when the payload lists none: a payload rendered before labels
+// existed is never rewritten, so that is accepted for every activity but
+// labeled and unlabeled, which always list them.
+func pullLabelsError(action string, labels *[]json.RawMessage, hasLabel bool, label string) error {
+	var names []string
+	if labels != nil {
+		if len(*labels) > maxLabels {
+			return fmt.Errorf("the pull_request payload lists more than %d labels", maxLabels)
+		}
+		for _, raw := range *labels {
+			var entry struct {
+				Name *string `json:"name"`
+			}
+			if err := json.Unmarshal(raw, &entry); err != nil || entry.Name == nil || *entry.Name == "" {
+				return errors.New("the pull_request payload lists a label with no name")
+			}
+			names = append(names, *entry.Name)
+		}
+	}
+	if action != "labeled" && action != "unlabeled" {
+		if hasLabel {
+			return fmt.Errorf("the %s payload names a label: only labeled and unlabeled do", action)
+		}
+		return nil
+	}
+	if labels == nil {
+		return fmt.Errorf("the %s payload lists no pull_request.labels", action)
+	}
+	if label == "" {
+		return fmt.Errorf("the %s payload names no label", action)
+	}
+	listed := false
+	for _, name := range names {
+		listed = listed || name == label
+	}
+	if action == "labeled" && !listed {
+		return fmt.Errorf("the labeled payload's label %q is not among its labels", label)
+	}
+	if action == "unlabeled" && listed {
+		return fmt.Errorf("the unlabeled payload's label %q is still among its labels", label)
+	}
+	return nil
 }

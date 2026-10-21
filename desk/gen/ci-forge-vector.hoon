@@ -15,18 +15,25 @@
 ::    - synchronize: a local pull request's head follows its source branch
 ::      in the event that moved it (not a deletion, not a closed one, never
 ::      a peer's), and a peer updates only its own open pull request.
+::    - pull request labels: one update per label an edit adds or removes,
+::      in name order, each with the labels after it, and no update for an
+::      edit that changes nothing.  a head move and a label change in one
+::      write give both.  the wire check %urgit-ci makes, the staleness
+::      check against the record, and the labels route's decision for the
+::      owner, a writer, a reader and the remote author, through the
+::      production predicate can-write:git-access.
 ::  Every case names the verdict it expects; prints `passed=N of=M` and
 ::  ends in a loobean.
 ::
 /-  ci, git
-/+  ci-forge
+/+  ci-forge, git-access
 :-  %say
 |=  *
 :-  %noun
 =/  now  ~2026.10.16..12.00.00
 =/  main  'refs/heads/main'
 =/  pull-1=native-pull:git
-  [1 ~nec 'demo' 'refs/heads/feature' main 'Add x' %open 0xd1 0xb1 ~]
+  [1 ~nec 'demo' 'refs/heads/feature' main 'Add x' %open 0xd1 0xb1 ~ ~]
 =/  blank=repository:git  *repository:git
 =/  repo=repository:git
   %=  blank
@@ -120,19 +127,19 @@
       .=  (pulls-of (one repo with-pull))
       :-  ~
       :~  :*  (pull-id 1 'opened' 0xd1)  1  'opened'  0xd1  0xb1
-              'refs/heads/feature'  main  ~nec  'demo'  'Add x'  %.n  ~
+              'refs/heads/feature'  main  ~nec  'demo'  'Add x'  %.n  ~  %open  ~  ~
           ==  ==
       :+  'open to closed is closed, not merged'  %.y
-      =(`~[[(pull-id 1 'closed' 0xd1) 1 'closed' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~]] (pulls-of (one with-pull with-pull(native-pulls ~[closed]))))
+      =(`~[[(pull-id 1 'closed' 0xd1) 1 'closed' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~ %closed ~ ~]] (pulls-of (one with-pull with-pull(native-pulls ~[closed]))))
       :+  'a merge is closed and merged, with the target\'s tip before it'  %.y
       =/  as=(list action:ci)  (one with-pull moved(native-pulls ~[merged]))
-      ?&  =(`~[[(pull-id 1 'closed' 0xd1) 1 'closed' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.y `0xb1]] (pulls-of as))
+      ?&  =(`~[[(pull-id 1 'closed' 0xd1) 1 'closed' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.y `0xb1 %merged ~ ~]] (pulls-of as))
           =(`~[[(ref-id main `0xb1 `0xc1 now) main `0xb1 `0xc1]] (refs-of as))
       ==
       :+  'closed to open is reopened'  %.y
-      =(`~[[(pull-id 1 'reopened' 0xd1) 1 'reopened' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~]] (pulls-of (one with-pull(native-pulls ~[closed]) with-pull)))
+      =(`~[[(pull-id 1 'reopened' 0xd1) 1 'reopened' 0xd1 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~ %open ~ ~]] (pulls-of (one with-pull(native-pulls ~[closed]) with-pull)))
       :+  'an open pull request whose head moved is synchronize'  %.y
-      =(`~[[(pull-id 1 'synchronize' 0xd2) 1 'synchronize' 0xd2 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~]] (pulls-of (one with-pull with-pull(native-pulls ~[pull-1(head 0xd2)]))))
+      =(`~[[(pull-id 1 'synchronize' 0xd2) 1 'synchronize' 0xd2 0xb1 'refs/heads/feature' main ~nec 'demo' 'Add x' %.n ~ %open ~ ~]] (pulls-of (one with-pull with-pull(native-pulls ~[pull-1(head 0xd2)]))))
       ['a pull request created closed reports nothing' %.y =(~ (one repo repo(native-pulls ~[closed])))]
       ['a merged pull request closed again reports nothing' %.y =(~ (one repo(native-pulls ~[merged]) repo(native-pulls ~[merged(state %closed)])))]
       :+  'transitions in number order'  %.y
@@ -160,7 +167,7 @@
 ::  the event that moved it; a peer's follows only that peer's transfers
 ::
 =/  local-pull=native-pull:git
-  [3 ~zod 'demo' 'refs/heads/feature' main 'Local' %open 0xd1 0xb1 ~]
+  [3 ~zod 'demo' 'refs/heads/feature' main 'Local' %open 0xd1 0xb1 ~ ~]
 =/  feature-at
   |=  [r=repository:git tip=oid:git]
   ^-  repository:git
@@ -183,7 +190,7 @@
   :~  ['a local pull request\'s head follows its moved source branch' %.y =(~[0xd2] (heads synced))]
       :+  'and the one event reports the push and a synchronize'  %.y
       ?&  =(`~[[(ref-id 'refs/heads/feature' `0xd1 `0xd2 now) 'refs/heads/feature' `0xd1 `0xd2]] (refs-of sync-report))
-          =(`~[[(sham [%ci-pull-event 'demo' 3 'synchronize' 0xd2 now]) 3 'synchronize' 0xd2 0xb1 'refs/heads/feature' main ~zod 'demo' 'Local' %.n ~]] (pulls-of sync-report))
+          =(`~[[(sham [%ci-pull-event 'demo' 3 'synchronize' 0xd2 now]) 3 'synchronize' 0xd2 0xb1 'refs/heads/feature' main ~zod 'demo' 'Local' %.n ~ %open ~ ~]] (pulls-of sync-report))
       ==
       :+  'a branch the event did not move leaves a pull request as it was'  %.y
       =/  stale=repository:git  local(native-pulls ~[local-pull(head 0xd0)])
@@ -205,8 +212,147 @@
           =(~ (open-pull-from:ci-forge ~[closed] ~nec 'demo' 'refs/heads/feature' main))
       ==
   ==
+::  ---- pull request labels ----
+::
+=/  label-id
+  |=  [number=@ud action=@t label=@t head=oid:git]
+  ^-  @uv
+  (sham [%ci-pull-label-event 'demo' number action label head now])
+=/  tagged=native-pull:git  pull-1(labels (silt ~['wip' 'bug']))
+=/  with-tags=repository:git  repo(native-pulls ~[tagged])
+::  one edit: add ci:fixtures and docs, remove wip
+=/  edited=repository:git
+  (with-pull-labels:ci-forge with-tags 1 (silt ~['bug' 'ci:fixtures' 'docs']))
+=/  edit-list=(list pull-update:ci)  (fall (pulls-of (one with-tags edited)) ~)
+=/  first-update=pull-update:ci  ?~(edit-list *pull-update:ci i.edit-list)
+=/  label-update
+  |=  [action=@t label=@t labels=(list @t) head=oid:git]
+  ^-  pull-update:ci
+  :*  (label-id 1 action label head)  1  action  head  0xb1  'refs/heads/feature'
+      main  ~nec  'demo'  'Add x'  %.n  ~  %open  labels  `label
+  ==
+=/  long=@t  `@t`(fil 3 65 'x')
+=/  edge=@t  `@t`(fil 3 64 'x')
+=/  twenty=(list @t)
+  :~  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'
+      'k'  'l'  'm'  'n'  'o'  'p'  'q'  'r'  's'  't'
+  ==
+::  the labels route's decision for a requester of repo-acl, through the
+::  predicate the agent's repository-writable applies (no group seat)
+=/  repo-acl=repository:git
+  with-tags(writers (silt ~[~bus]), readers (silt ~[~sev]))
+=/  decide
+  |=  [who=@p labels=(unit (list @t))]
+  ^-  (each (set @t) [status=@ud message=@t])
+  =/  writable=?  (can-write:git-access owner.repo-acl writers.repo-acl %none who)
+  (label-edit:ci-forge writable `tagged labels)
+=/  refusal-403=(each (set @t) [status=@ud message=@t])
+  :-  %|
+  :-  403
+  'only the repository owner and its writers may change pull request labels, because a label change can start CI'
+=/  refusal-422=(each (set @t) [status=@ud message=@t])
+  [%| 422 'labels must be an array of at most 20 non-empty strings, each at most 64 bytes']
+=/  label-cases=(list [name=@t expect=? got=?])
+  :~  :+  'one edit adding two labels and removing one is three updates, in name order'  %.y
+      .=  edit-list
+      :~  (label-update 'labeled' 'ci:fixtures' ~['bug' 'ci:fixtures' 'wip'] 0xd1)
+          (label-update 'labeled' 'docs' ~['bug' 'ci:fixtures' 'docs' 'wip'] 0xd1)
+          (label-update 'unlabeled' 'wip' ~['bug' 'ci:fixtures' 'docs'] 0xd1)
+      ==
+      :+  'two labels in one edit are two ids, and a redelivery is the same ids'  %.y
+      ?&  ?=([* * * ~] edit-list)
+          !=(id.i.edit-list id.i.t.edit-list)
+          =(edit-list (fall (pulls-of (one with-tags edited)) ~))
+      ==
+      :+  'an edit that changes nothing reports nothing'  %.y
+      =(~ (one with-tags (with-pull-labels:ci-forge with-tags 1 (silt ~['bug' 'wip']))))
+      :+  'a head move and a label change in one write give both, the move first'  %.y
+      .=  (pulls-of (one with-tags with-tags(native-pulls ~[tagged(head 0xd2, labels (silt ~['bug']))])))
+      :-  ~
+      :~  :*  (pull-id 1 'synchronize' 0xd2)  1  'synchronize'  0xd2  0xb1
+              'refs/heads/feature'  main  ~nec  'demo'  'Add x'  %.n  ~  %open
+              ~['bug' 'wip']  ~
+          ==
+          (label-update 'unlabeled' 'wip' ~['bug'] 0xd2)
+      ==
+      :+  'a new pull request is opened with its labels and no label update'  %.y
+      .=  (pulls-of (one repo repo(native-pulls ~[tagged])))
+      :-  ~
+      :~  :*  (pull-id 1 'opened' 0xd1)  1  'opened'  0xd1  0xb1
+              'refs/heads/feature'  main  ~nec  'demo'  'Add x'  %.n  ~  %open
+              ~['bug' 'wip']  ~
+          ==
+      ==
+      :+  'a label change on a closed pull request is reported with its state'  %.y
+      =/  shut=native-pull:git  tagged(state %closed)
+      .=  (pulls-of (one repo(native-pulls ~[shut]) repo(native-pulls ~[shut(labels (silt ~['bug']))])))
+      :-  ~
+      :~  :*  (label-id 1 'unlabeled' 'wip' 0xd1)  1  'unlabeled'  0xd1  0xb1
+              'refs/heads/feature'  main  ~nec  'demo'  'Add x'  %.n  ~  %closed
+              ~['bug']  `'wip'
+          ==
+      ==
+      :+  'every update of the edit is well formed'  %.y
+      (levy edit-list |=(p=pull-update:ci =(~ (pull-update-error:ci-forge p))))
+      :+  'a labeled update with no label is refused, never read as no labels'  %.y
+      =(`'a labeled update names no label' (pull-update-error:ci-forge first-update(label ~)))
+      :+  'a labeled update whose labels leave out its label is refused'  %.y
+      =(`'a labeled update for ci:fixtures does not list it' (pull-update-error:ci-forge first-update(labels ~['bug'])))
+      :+  'an unlabeled update whose labels keep its label is refused'  %.y
+      =/  u=pull-update:ci  first-update(action 'unlabeled')
+      =(`'an unlabeled update for ci:fixtures still lists it' (pull-update-error:ci-forge u))
+      :+  'unsorted, repeated, empty, long and too many labels are refused'  %.y
+      ?&  =(`'the labels are not sorted' (pull-update-error:ci-forge first-update(labels ~['wip' 'ci:fixtures'])))
+          =(`'the label bug is listed twice' (pull-update-error:ci-forge first-update(labels ~['bug' 'bug' 'ci:fixtures'])))
+          =(`'a label is empty' (pull-update-error:ci-forge first-update(labels ~['' 'ci:fixtures'])))
+          ?=(^ (pull-update-error:ci-forge first-update(labels ~[long])))
+          =(`'more than 20 labels' (pull-update-error:ci-forge first-update(labels ['ci:fixtures' twenty])))
+      ==
+      :+  'another activity naming a label, or leaving another state, is refused'  %.y
+      ?&  =(`'a synchronize update names a label' (pull-update-error:ci-forge first-update(action 'synchronize')))
+          .=  `'a synchronize update leaves the pull request closed'
+          (pull-update-error:ci-forge first-update(action 'synchronize', label ~, state %closed))
+          =(`'merged does not match the pull request state' (pull-update-error:ci-forge first-update(merged %.y)))
+          =(`'a label update names a tip before a merge' (pull-update-error:ci-forge first-update(target-before `0xb1)))
+      ==
+      :+  'a label update is fresh against the record that holds its label'  %.y
+      =/  record=native-pull:git  (snag 0 native-pulls.edited)
+      =(~ (pull-stale:ci-forge first-update record))
+      :+  'a later edit that removed the label makes a labeled update stale'  %.y
+      =/  record=native-pull:git  tagged
+      =(`'pull request #1 no longer carries the label ci:fixtures: stale' (pull-stale:ci-forge first-update record))
+      :+  'a later edit that put the label back makes an unlabeled update stale'  %.y
+      =/  removal=pull-update:ci  ?~(edit-list *pull-update:ci (rear edit-list))
+      =(`'pull request #1 carries the label wip again: stale' (pull-stale:ci-forge removal tagged))
+      :+  'a label update on a closed pull request is fresh against a closed record'  %.y
+      =/  record=native-pull:git  (snag 0 native-pulls.edited)
+      =(~ (pull-stale:ci-forge first-update(state %closed) record(state %closed)))
+      :+  'the labels route: the owner and a writer may change labels'  %.y
+      ?&  =([%& (silt ~['ci:fixtures'])] (decide ~zod `~['ci:fixtures']))
+          =([%& (silt ~['ci:fixtures'])] (decide ~bus `~['ci:fixtures']))
+      ==
+      :+  'a reader and the remote author who cannot write are refused with the reason'  %.y
+      ?&  =(refusal-403 (decide ~sev `~['ci:fixtures']))
+          =(refusal-403 (decide ~nec `~['ci:fixtures']))
+      ==
+      :+  'the limits: 20 labels of 64 bytes pass, 21 or a longer or empty one do not'  %.y
+      ?&  =([%& (silt [edge (tail twenty)])] (decide ~zod `[edge (tail twenty)]))
+          =(refusal-422 (decide ~zod `['u' twenty]))
+          =(refusal-422 (decide ~zod `~[long]))
+          =(refusal-422 (decide ~zod `~['']))
+          =(refusal-422 (decide ~zod ~))
+      ==
+      :+  'repeated labels in one request are one label'  %.y
+      =([%& (silt ~['bug'])] (decide ~zod `~['bug' 'bug']))
+      :+  'a closed pull request takes labels, and a missing one is not found'  %.y
+      ?&  =([%& (silt ~['bug'])] (label-edit:ci-forge %.y `tagged(state %closed) `~['bug']))
+          =([%| 404 'pull request not found'] (label-edit:ci-forge %.y ~ `~['bug']))
+      ==
+      :+  'the labels route is named'  %.y
+      =('pull request labels' (http-route:ci-forge ~['apps' 'urgit' 'api' 'repository' 'demo' 'pulls' '1' 'labels'] %.y))
+  ==
 =/  cases=(list [name=@t expect=? got=?])
-  :(weld quiet refs pulls routes sync)
+  :(weld quiet refs pulls routes sync label-cases)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

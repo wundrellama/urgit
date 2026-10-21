@@ -76,6 +76,11 @@ export const api = {
   peerDeleteForgeRequest: (requestId) => request('/peer/forge', { method: 'DELETE', body: JSON.stringify({ request: requestId }) }),
   // a writer's approval of an untrusted CI candidate on another ship's
   // repository (P3 D9), tracked like a forge comment
+  // a writer's labels for a pull request on another ship's repository: the
+  // owner decides, and the answer is tracked like a forge comment (kind pull)
+  peerPullLabels: (ship, repository, number, labels) => request('/peer/labels', {
+    method: 'POST', body: JSON.stringify({ ship, repository, number, labels }),
+  }),
   peerCiApprove: (ship, repository, candidate) => request('/peer/ci-approve', {
     method: 'POST', body: JSON.stringify({ ship, repository, candidate }),
   }),
@@ -266,6 +271,12 @@ export const api = {
       method: 'POST', body: JSON.stringify({ state }),
     }),
   mergePull: (name, number) => request(`/repository/${encodeURIComponent(name)}/pulls/${number}/merge`, { method: 'POST', body: '{}' }),
+  // a pull request's labels, replaced whole; the ship answers the labels it
+  // holds, or refuses with its reason
+  setPullLabels: (name, number, labels) =>
+    request(`/repository/${encodeURIComponent(name)}/pulls/${number}/labels`, {
+      method: 'POST', body: JSON.stringify({ labels }),
+    }),
   createIssue: (name, title, body) =>
     request(`/repository/${encodeURIComponent(name)}/issues`, {
       method: 'POST', body: JSON.stringify({ title, body }),

@@ -12,6 +12,7 @@ import FileTree from './FileTree'
 import { useConfirm } from './ConfirmDialog'
 import { HighlightedCode, HighlightedEditor } from './HighlightedCode'
 import { CopyIcon } from './Icons'
+import PullLabels from './PullLabels'
 import Readme from './Readme'
 import MarkdownDocument from './MarkdownDocument'
 import { clearLocalDraft, readLocalDraft, saveLocalDraft, useLocalDraft } from '../useLocalDraft'
@@ -835,6 +836,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin, initialPull = 0, onPullCon
     <button className="text-button file-back" onClick={() => { setSelected(null); setDiff(null); setCommentTarget(null) }}>← Pull requests</button>
     <header className="pull-detail-header"><div><h2>#{selected.number} {selected.title}</h2><p><span className={`status ${selected.state === 'open' ? 'good' : ''}`}>{selected.state}</span> <code>{selected.sourceShip}/{selected.sourceRepository}</code> proposes <code>{pullRefLabel(selected.sourceRef, selected.head)}</code> into <code>{pullRefLabel(selected.targetRef, selected.base)}</code></p></div><div className="pr-actions">{selected.state === 'closed' && <button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'open')}>{busy === selected.number ? 'Reopening…' : 'Reopen'}</button>}{selected.state === 'open' && <><button className="button" disabled={busy} onClick={() => setPullState(selected.number, 'closed')}>{busy === selected.number ? 'Closing…' : 'Close'}</button><button className="button primary" disabled={busy} onClick={() => merge(selected.number)}>{busy === selected.number ? 'Validating…' : 'Merge pull request'}</button></>}</div></header>
     {error && <div className="inline-error">{error}</div>}
+    <PullLabels labels={diff?.labels || selected.labels || []} editable={Boolean(diff?.labelsEditable)} onSave={(labels) => api.setPullLabels(repo.name, selected.number, labels)} onSaved={async () => { setDiff(await api.pull(repo.name, selected.number)); await onMutate?.() }} />
     {!diff ? <div className="empty">Loading diff…</div> : <>
       <DiffView diff={diff} onCommentTarget={setCommentTarget} />
       <section className="review-discussion">
@@ -863,7 +865,7 @@ function PullRequests({ repo, onMutate, onOpenOrigin, initialPull = 0, onPullCon
     {!entries.length ? <div className="empty compact">{repo.peerOrigin ? 'No pull requests opened from this repository yet.' : 'No pull requests.'}</div> : !visible.length ? <div className="empty compact">No pull requests match this filter.</div> : <div className="pull-list">
     {error && <div className="inline-error">{error}</div>}
     {visible.map((pull) => pull.native ? <article className="pull-row clickable" key={`native-${pull.number}`} onClick={() => inspect(pull)}>
-      <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{pullRefLabel(pull.sourceRef, pull.head)}</code> into <code>{pullRefLabel(pull.targetRef, pull.base)}</code></p></div>
+      <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.state}</span><h3>#{pull.number} {pull.title}</h3><p><code>{pull.sourceShip}/{pull.sourceRepository}</code> proposes <code>{pullRefLabel(pull.sourceRef, pull.head)}</code> into <code>{pullRefLabel(pull.targetRef, pull.base)}</code></p>{(pull.labels || []).length > 0 && <div className="issue-labels inline" aria-label="Labels">{pull.labels.map((label) => <span key={label}>{label}</span>)}</div>}</div>
       {pull.state === 'open' && <button className="button primary" disabled={busy} onClick={(event) => { event.stopPropagation(); merge(pull.number) }}>{busy === pull.number ? 'Validating…' : 'Merge'}</button>}
     </article> : <button className="pull-row forge-link clickable row-button" key={`github-${pull.number}`} onClick={() => inspect(pull)}>
       <div><span className={`status ${pull.state === 'open' ? 'good' : ''}`}>{pull.draft ? 'draft' : pull.state}</span><h3>#{pull.number} {pull.title}</h3><p>opened by <strong>{pull.author}</strong> on GitHub</p></div><span className="external-arrow">↗</span>

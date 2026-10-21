@@ -221,7 +221,7 @@
 --
 ::
 %-  agent:dbug
-=|  state-4:git
+=|  state-5:git
 =*  state  -
 =/  in-flight  *(map @uv lfs-request)
 =/  lfs-deletes  *(map @uv lfs-delete)
@@ -538,15 +538,24 @@
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
-  =/  loaded=state-4:git
+  ::  every older state converts through each later one (state-5: pull
+  ::  request labels, none on a stored pull request)
+  ::
+  =/  loaded=state-5:git
     ?+  -.q.old  !!
         %0
+      %-  migrate-state-4
       %-  migrate-state-3
       (migrate-state-2 (migrate-state-1 (migrate-state-0 !<(state-0:git old))))
-      %1  (migrate-state-3 (migrate-state-2 (migrate-state-1 !<(state-1:git old))))
-      %2  (migrate-state-3 (migrate-state-2 !<(state-2:git old)))
-      %3  (migrate-state-3 !<(state-3:git old))
-      %4  !<(state-4:git old)
+    ::
+        %1
+      %-  migrate-state-4
+      (migrate-state-3 (migrate-state-2 (migrate-state-1 !<(state-1:git old))))
+    ::
+      %2  (migrate-state-4 (migrate-state-3 (migrate-state-2 !<(state-2:git old))))
+      %3  (migrate-state-4 (migrate-state-3 !<(state-3:git old)))
+      %4  (migrate-state-4 !<(state-4:git old))
+      %5  !<(state-5:git old)
     ==
   =.  loaded  (settle-webhook-state loaded)
   ::  re-arm the snapshot-build timer for every request still queued: a queue
@@ -1084,6 +1093,7 @@
               incoming-oid
               base-oid
               ~
+              ~
           ==
         =/  updated=repository:git
           u.existing(objects objects.flight, native-pulls [pull native-pulls.u.existing])
@@ -1289,6 +1299,8 @@
         (peer-ci-approve request.packet repository.packet candidate.packet)
           %ci-request
         (peer-ci-request request.packet repository.packet body.packet)
+          %forge-labels
+        (peer-forge-labels request.packet repository.packet number.packet labels.packet)
         %offer  (peer-offer-legacy offer.packet)
         %offer-branches  (peer-offer offer-branches.packet)
         %release  (peer-release transfer.packet)
@@ -1421,6 +1433,9 @@
           %:  pairs:enjs:format
             :~  ['repository' (public-repository-json-up-to repository u.found 50)]
                 ['pull' u.pull-json]
+                ::  whether the browsing ship may change the labels: the rule
+                ::  its %forge-labels request is decided by
+                ['labelsEditable' b+(repository-writable u.found target)]
             ==
           ==
         ?:  =(%commit view)
@@ -1783,6 +1798,43 @@
               !>(`action:ci`[%approve-candidate candidate src.bowl])
           ==
       ==
+    ::
+    ::  a writer on another ship sets a pull request's labels (state-5).
+    ::  the decision is +label-edit:ci-forge, the labels route's, with the
+    ::  Ames-authenticated sender as the requester: a reader, or the pull
+    ::  request's author when it cannot write, is refused with the reason.
+    ::  the answer is a %forge-result of kind %pull with the detail
+    ::
+    ++  peer-forge-labels
+      |=  [request=@uv repository=@t number=@ud labels=(list @t)]
+      ^-  (quip card _this)
+      =/  found=(unit repository:git)  (~(get by repositories) repository)
+      ?.  &(?=(^ found) (repository-readable u.found src.bowl))
+        %:  peer-forge-reply
+          src.bowl
+          request
+          repository
+          %pull
+          number
+          %.n
+          'repository is unavailable or requester is not authorized'
+          ~
+        ==
+      =/  edit=(each (set @t) [status=@ud message=@t])
+        %:  label-edit:ci-forge
+          (repository-writable u.found src.bowl)
+          (native-pull-at u.found number)
+          `labels
+        ==
+      ?:  ?=(%| -.edit)
+        (peer-forge-reply src.bowl request repository %pull number %.n message.p.edit ~)
+      =/  updated-repo=repository:git  (with-pull-labels:ci-forge u.found number p.edit)
+      =.  repositories  (~(put by repositories) repository updated-repo)
+      =/  pull=(unit native-pull:git)  (native-pull-at updated-repo number)
+      =/  result=(unit json)
+        ?~  pull  ~
+        (native-pull-detail-json repository updated-repo u.pull)
+      (peer-forge-reply src.bowl request repository %pull number %.y 'labels saved' result)
     ::
     ::  a delegate's CI policy request (P4, rider 02): the requester must be
     ::  able to read the repository (a binding names a reader at least); the
@@ -4808,6 +4860,7 @@
             post-peer-ci-approve
               [%'POST' %peer %ci-action ~]
             post-peer-ci-action
+            [%'POST' %peer %labels ~]  post-peer-labels
             [%'POST' %peer %forge ~]  post-peer-forge
             [%'GET' %peer %discoveries ~]  get-peer-discoveries
             [%'POST' %peer %discover ~]  post-peer-discover
@@ -5094,6 +5147,69 @@
             :_  this
             (api-error eyre-id 422 'ship must be a valid Urbit ID')
           (start-peer-forge-issue eyre-id u.peer u.repository u.title u.body)
+        ::
+        ::  a writer's labels for a pull request on another ship's repository
+        ::  (state-5): sent over the peer protocol, decided by the owner, and
+        ::  tracked and read back like a forge comment (GET /peer/forge, kind
+        ::  pull).  the owner checks the limits again, and these are its words
+        ::
+        ++  post-peer-labels
+          ^-  (quip card _this)
+          ?>  ?&  =(%'POST' method)
+                  ?=([%apps %urgit %api %peer %labels ~] site)
+              ==
+          =/  jon=(unit json)  (api-body req)
+          ?~  jon
+            :_  this
+            (api-error eyre-id 400 'valid JSON body required')
+          =/  ship-text=(unit @t)  (string-at 'ship' u.jon)
+          =/  repository=(unit @t)  (string-at 'repository' u.jon)
+          =/  number=(unit @ud)  (nat-at 'number' u.jon)
+          =/  labels=(unit (list @t))  (string-list-at 'labels' u.jon)
+          =/  peer=(unit @p)  ?~(ship-text ~ (slaw %p u.ship-text))
+          ?.  ?&  ?=(^ peer)
+                  ?=(^ repository)
+                  ?=(^ number)
+                  (gth u.number 0)
+                  (valid-repository-name u.repository)
+              ==
+            :_  this
+            (api-error eyre-id 422 'ship, repository and a positive pull request number are required')
+          ?.  ?&  ?=(^ labels)
+                  (lte (lent u.labels) max-labels:ci-forge)
+                  (levy u.labels |=(label=@t ?=(~ (label-error:ci-forge label))))
+              ==
+            :_  this
+            %^  api-error
+              eyre-id
+              422
+            'labels must be an array of at most 20 non-empty strings, each at most 64 bytes'
+          =/  request=@uv
+            `@uv`(shas %git-peer-forge (cat 3 eny.bowl request-count))
+          =.  request-count  +(request-count)
+          =.  peer-forges
+            %+  ~(put by peer-forges)  request
+            :*  u.peer
+                u.repository
+                %pull
+                u.number
+                %.y
+                %.n
+                'sending the labels to the repository owner'
+                ~
+            ==
+          :_  this
+          %+  weld
+            :~  %^  peer-card
+                  u.peer
+                  /peer/forge-labels/(scot %uv request)
+                [%forge-labels request u.repository u.number u.labels]
+                [%pass /peer/forge-timeout/(scot %uv request) %arvo %b %wait (add now.bowl ~s30)]
+            ==
+          %^  api-json
+            eyre-id
+            202
+          (pairs:enjs:format ~[['ok' b+%.y] ['request' s+(scot %uv request)]])
         ::
         ::  a writer's approval of an untrusted candidate on another ship's
         ::  repository (P3 D9): sent over the peer protocol, tracked and read
@@ -7331,6 +7447,49 @@
             post-repository-pulls-comments-resolve
             [%'POST' %repository @ %pulls @ %state ~]  post-repository-pulls-state
             [%'POST' %repository @ %pulls @ %merge ~]  post-repository-pulls-merge
+            [%'POST' %repository @ %pulls @ %labels ~]  post-repository-pulls-labels
+          ==
+        ::
+        ::  a pull request's labels (state-5), replaced whole as an issue's
+        ::  are.  the session is this ship, the owner.  +label-edit:ci-forge
+        ::  decides, as it does for a writer's peer request.  a closed or
+        ::  merged pull request takes labels too: %urgit-ci records the
+        ::  change and runs nothing
+        ::
+        ++  post-repository-pulls-labels
+          ^-  (quip card _this)
+          ?>  ?&  =(%'POST' method)
+                  ?=([%apps %urgit %api %repository @ %pulls @ %labels ~] site)
+              ==
+          =/  name=@t  i.t.t.t.t.site
+          =/  number=(unit @ud)  (slaw %ud i.t.t.t.t.t.t.site)
+          ?~  number
+            :_  this
+            (api-error eyre-id 422 'pull request number is invalid')
+          =/  found=(unit repository:git)  (~(get by repositories) name)
+          ?~  found
+            :_  this
+            (api-error eyre-id 404 'repository not found')
+          =/  jon=(unit json)  (api-body req)
+          ?~  jon
+            :_  this
+            (api-error eyre-id 400 'valid JSON body required')
+          =/  edit=(each (set @t) [status=@ud message=@t])
+            %:  label-edit:ci-forge
+              (repository-writable u.found our.bowl)
+              (native-pull-at u.found u.number)
+              (string-list-at 'labels' u.jon)
+            ==
+          ?:  ?=(%| -.edit)
+            :_  this
+            (api-error eyre-id status.p.edit message.p.edit)
+          =.  repositories
+            (~(put by repositories) name (with-pull-labels:ci-forge u.found u.number p.edit))
+          :_  this
+          %^  api-json  eyre-id  200
+          %-  pairs:enjs:format
+          :~  ['ok' b+%.y]
+              ['labels' [%a (turn (sorted-labels:ci-forge p.edit) |=(label=@t s+label))]]
           ==
         ::
         ++  post-repository-pulls
@@ -7378,7 +7537,7 @@
             (api-error eyre-id 409 'selected branches have identical tips')
           =/  number=@ud  (add 1 (lent native-pulls.u.found))
           =/  pull=native-pull:git
-            [number our.bowl name u.source-ref u.target-ref u.title %open u.incoming u.base ~]
+            [number our.bowl name u.source-ref u.target-ref u.title %open u.incoming u.base ~ ~]
           =.  repositories
             (~(put by repositories) name u.found(native-pulls [pull native-pulls.u.found]))
           =/  event-data=json
@@ -7420,8 +7579,13 @@
           ?~  detail
             :_  this
             (api-error eyre-id 409 'pull request objects are incomplete')
+          ::  whether this viewer may change the labels: the session is the
+          ::  owner, asked through the rule the labels route applies
+          =/  shown=json
+            ?.  ?=([%o *] u.detail)  u.detail
+            [%o (~(put by p.u.detail) 'labelsEditable' b+(repository-writable u.found our.bowl))]
           :_  this
-          (api-json eyre-id 200 u.detail)
+          (api-json eyre-id 200 shown)
         ::
         ++  post-repository-pulls-comments
           ^-  (quip card _this)

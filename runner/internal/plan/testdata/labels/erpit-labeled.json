@@ -1,0 +1,1 @@
+{"v":2,"text":"${{ contains(github.event.pull_request.labels.*.name, 'ci:fixtures') }}","line":172,"col":20,"expr":{"k":"call","fn":"contains","args":[{"k":"prop","of":{"k":"star","of":{"k":"prop","of":{"k":"prop","of":{"k":"prop","of":{"k":"ctx","name":"github"},"name":"event"},"name":"pull_request"},"name":"labels"}},"name":"name"},{"k":"str","s":"ci:fixtures"}]}}

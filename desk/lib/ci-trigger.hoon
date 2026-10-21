@@ -27,10 +27,12 @@
 ++  max-transitions  512
 ::
 ::  the pull_request activity types of the captured reference, and the
-::  four this forge's native pull requests go through: opened, closed
-::  (merged or not), reopened, and synchronize when the head moves (a local
+::  six this forge's native pull requests go through: opened, closed
+::  (merged or not), reopened, synchronize when the head moves (a local
 ::  pull request's source branch moved, or the peer that opened one sent a
-::  new head)
+::  new head), and labeled and unlabeled, one for each label an owner or
+::  writer adds or removes.  GitHub's defaults stay the three below: a
+::  workflow runs on a label change only when its types name it
 ::
 ++  pull-request-types
   ^-  (set @t)
@@ -41,7 +43,8 @@
       'ready_for_review'  'review_requested'  'review_request_removed'
       'auto_merge_enabled'  'auto_merge_disabled'
   ==
-++  native-pull-types  `(set @t)`(silt ~['opened' 'reopened' 'closed' 'synchronize'])
+++  native-pull-types
+  `(set @t)`(silt ~['opened' 'reopened' 'closed' 'synchronize' 'labeled' 'unlabeled'])
 ++  default-pull-types  `(list @t)`~['opened' 'synchronize' 'reopened']
 ::
 ::  ---- the catalog ----
@@ -732,6 +735,16 @@
   ?~  e  ~
   `(decide w u.e (pull-gate u.e action base-ref) paths.u.e changes)
 ::
+::  a label change on a pull request that is not open runs nothing: the
+::  words its record keeps, or ~ when it is selected as any activity is
+::
+++  label-outcome
+  |=  p=pull-update:ci
+  ^-  (unit @t)
+  ?~  label.p  ~
+  ?:  =(%open state.p)  ~
+  `(rap 3 ~['recorded: a label change on a ' state.p ' pull request runs no workflow'])
+::
 ::  the workflows a selection runs
 ::
 ++  selected-workflows
@@ -786,7 +799,9 @@
 ::  a pull request activity's payload: GitHub's pull_request keys — the
 ::  action, the number, the pull request's state, merged flag, title, head
 ::  (its ref and sha) and base (the target branch and the tip the run
-::  integrates onto), its author — and the sender
+::  integrates onto), its author, its labels after the activity as
+::  [{name}] — and the sender.  a labeled or unlabeled activity also
+::  names the label added or removed, as {name}, under label
 ::
 ++  pull-event-payload
   |=  [repo=@t facts=pull-facts:ci actor=@p default=(unit @t)]
@@ -799,23 +814,32 @@
         ['sha' s+(oid-text:git-codec sha)]
         ['repo' (pairs:enjs:format ~[['name' s+repo]])]
     ==
-  %-  en:json:html
-  %-  pairs:enjs:format
-  :~  ['action' s+action.facts]
-      ['number' (numb:enjs:format number.facts)]
-      :-  'pull_request'
-      %-  pairs:enjs:format
-      :~  ['number' (numb:enjs:format number.facts)]
-          ['state' s+?:(=('closed' action.facts) 'closed' 'open')]
-          ['merged' b+merged.facts]
-          ['title' s+title.facts]
-          ['head' (side head-ref.facts head.facts)]
-          ['base' (side base-ref.facts base.facts)]
-          ['user' (login source-ship.facts)]
-      ==
-      ['repository' (repository-json repo default)]
-      ['sender' (login actor)]
-  ==
+  =/  named
+    |=  name=@t
+    ^-  json
+    (pairs:enjs:format ~[['name' s+name]])
+  =/  labels=json  [%a (turn labels.facts named)]
+  =/  label=(list [@t json])
+    ?~  label.facts  ~
+    ~[['label' (named u.label.facts)]]
+  =/  keys=(list [@t json])
+    :~  ['action' s+action.facts]
+        ['number' (numb:enjs:format number.facts)]
+        :-  'pull_request'
+        %-  pairs:enjs:format
+        :~  ['number' (numb:enjs:format number.facts)]
+            ['state' s+?:(=('closed' action.facts) 'closed' 'open')]
+            ['merged' b+merged.facts]
+            ['title' s+title.facts]
+            ['head' (side head-ref.facts head.facts)]
+            ['base' (side base-ref.facts base.facts)]
+            ['user' (login source-ship.facts)]
+            ['labels' labels]
+        ==
+        ['repository' (repository-json repo default)]
+        ['sender' (login actor)]
+    ==
+  (en:json:html (pairs:enjs:format (weld keys label)))
 ::
 ::  a due occurrence's payload: the cron text it fired for (GitHub's
 ::  github.event.schedule), the repository and its default branch, and the

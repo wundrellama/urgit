@@ -154,7 +154,8 @@ test('local pull creation validates and pins explicit source and target refs', (
   assert.match(create, /~\(get by refs\.u\.found\) u\.source-ref/)
   assert.match(create, /~\(get by refs\.u\.found\) u\.target-ref/)
   assert.match(create, /selected branches have identical tips/)
-  assert.match(create, /\[number our\.bowl name u\.source-ref u\.target-ref u\.title %open u\.incoming u\.base ~\]/)
+  // a new pull request has no comments and, since state-5, no labels
+  assert.match(create, /\[number our\.bowl name u\.source-ref u\.target-ref u\.title %open u\.incoming u\.base ~ ~\]/)
 })
 
 test('merge advances only the recorded target ref and gates Clay only for that ref', () => {

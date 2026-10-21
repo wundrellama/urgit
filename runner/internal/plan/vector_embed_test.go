@@ -49,6 +49,12 @@ func TestHoonVectorsEmbedThePins(t *testing.T) {
 		{gen + "ci-cron-vector.hoon", "occurrences", "testdata/schedules/occurrences.json"},
 		{gen + "ci-concurrency-vector.hoon", "capture-catalog", "../daemon/testdata/concurrency/catalog.json"},
 		{gen + "ci-concurrency-vector.hoon", "capture-plan-jobs", "../daemon/testdata/concurrency/plan-jobs.json"},
+		// pull request labels: the ship's labeled and unlabeled payloads the
+		// runner accepts (daemon event_labels_test.go), and ERPit's label
+		// expression as the pinned compiler compiles it (labels_pin_test.go)
+		{gen + "ci-trigger-vector.hoon", "labeled-payload", "../daemon/testdata/labels/labeled.json"},
+		{gen + "ci-trigger-vector.hoon", "unlabeled-payload", "../daemon/testdata/labels/unlabeled.json"},
+		{gen + "ci-concurrency-vector.hoon", "erpit-labeled", "testdata/labels/erpit-labeled.json"},
 	} {
 		pin, err := os.ReadFile(c.pin)
 		if err != nil {

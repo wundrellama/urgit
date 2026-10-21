@@ -25,20 +25,22 @@
 ::    to state-4 and state-4 to state-5.  an
 ::    State6 appends the tagged-run resolver bindings. State5 converts
 ::    without changing any prior field.  state-7 (frozen whole as
-::    sur/ci-state-7) appends the automatic-input policy; the current
-::    state is state-8, tagged %8 (CI-CONCURRENCY-1), which converts
-::    state-7's nested records: a candidate's concurrency and cancelled
-::    workflows, an attempt's decision, a lock catalog's concurrency.
-::    every earlier shape converts through state-7 (+seven).  An unknown,
-::    partial,
+::    sur/ci-state-7) appends the automatic-input policy; state-8,
+::    tagged %8 (CI-CONCURRENCY-1, frozen whole as sur/ci-state-8),
+::    converts state-7's nested records: a candidate's concurrency and
+::    cancelled workflows, an attempt's decision, a lock catalog's
+::    concurrency.  the current state is state-9, tagged %9, which gives
+::    the pull facts of an event run and of a recorded forge event their
+::    labels.  every earlier shape converts through state-7 (+seven) and
+::    then state-8 (+eight).  An unknown, partial,
 ::    corrupt or ambiguous state is refused — never cast, reset or read
 ::    another way — and every conversion is written out field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-8 %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -58,8 +60,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %9
+    ?:  !=(~ (mole |.(;;(state-9:ci old))))  &+%current
+    |+'a %9 state that is not exactly state-9: partial or corrupt'
+  ::
       %8
-    ?:  !=(~ (mole |.(;;(state-8:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-8:ci-state-8 old))))  &+%state-8
     |+'a %8 state that is not exactly state-8: partial or corrupt'
   ::
       %7
@@ -105,19 +111,36 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-8:ci]
+  ^-  [=shape new=state-9:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
-  ?:  =(%current p.found)  ;;(state-8:ci old)
-  (from-state-7 (seven p.found old))
+  ?:  =(%current p.found)  ;;(state-9:ci old)
+  (from-state-8 (eight p.found old))
+::
+::  a saved state of a shape before state-9, as the state-8 it converts
+::  through on its way to state-9 (ci-migration-vector checks the
+::  state-8 conversion on it).  a current state has none
+::
+++  load-8
+  |=  old=*
+  ^-  [=shape new=state-8:ci-state-8]
+  =/  found=(each shape @t)  (shape-of old)
+  ?:  ?=(%| -.found)
+    ~|  %urgit-ci-state-refused
+    ~|  p.found
+    !!
+  ?:  =(%current p.found)
+    ~|  %urgit-ci-state-is-current
+    !!
+  [p.found (eight p.found old)]
 ::
 ::  a saved state of a shape before state-8, as the state-7 it converts
 ::  through on its way to state-8 (ci-migration-vector checks every
-::  earlier conversion on it); a current state has none
+::  earlier conversion on it).  state-8 and the current state have none
 ::
 ++  load-7
   |=  old=*
@@ -130,7 +153,18 @@
   ?:  =(%current p.found)
     ~|  %urgit-ci-state-is-current
     !!
+  ?:  =(%state-8 p.found)
+    ~|  %urgit-ci-state-is-state-8
+    !!
   [p.found (seven p.found old)]
+::
+::  .old, of a shape before state-9, converted to state-8
+::
+++  eight
+  |=  [=shape old=*]
+  ^-  state-8:ci-state-8
+  ?:  =(%state-8 shape)  ;;(state-8:ci-state-8 old)
+  (from-state-7 (seven shape old))
 ::
 ::  .old, of a shape before state-8, converted to state-7
 ::
@@ -143,6 +177,7 @@
   %-  from-state-5
   ?-  shape
     %current  !!
+    %state-8  !!
     %state-7  !!
     %state-6  !!
     %state-5  ;;(state-5:ci-state-5 old)
@@ -162,6 +197,165 @@
     (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
   ==
 ::
+::  state-8 (frozen whole in sur/ci-state-8): its thirty-six fields under
+::  the tag %9, and what state-9 adds inside them.  a candidate keeps
+::  every field, and an event run's pull facts gain no labels and no
+::  label: none was recorded before state-9.  a recorded forge event's
+::  pull facts likewise.  the payload a run's event holds is kept byte
+::  for byte, because its manifest signed it: an old payload is never
+::  rewritten.  nothing gains authority and nothing is reset
+::
+++  from-state-8
+  |=  o=state-8:ci-state-8
+  ^-  state-9:ci
+  :*  %9
+      (~(run by candidates.o) candidate-from-8)
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      locks.o
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      (~(run by forge-events.o) forge-event-from-8)
+      event-ids.o
+      schedules.o
+      tag-runs.o
+      automatic-inputs.o
+      input-snapshots.o
+      input-evidence.o
+      resolver-inputs.o
+  ==
+::
+++  candidate-from-8
+  |=  c=candidate:ci-state-8
+  ^-  candidate:ci
+  :*  id.c
+      repo.c
+      ref.c
+      head.c
+      base.c
+      candidate.c
+      conflict.c
+      status.c
+      attempts.c
+      plan.c
+      plan-oid.c
+      verdict-reason.c
+      actor.c
+      via.c
+      trust.c
+      pull.c
+      created.c
+      updated.c
+      mode.c
+      generation.c
+      baseline.c
+      lock.c
+      incarnation.c
+      sandbox.c
+      trial-of.c
+      harness-differs.c
+      (trigger-from-8 trigger.c)
+      selected.c
+      concurrency.c
+      cancelled.c
+  ==
+::
+::  a run's trigger: a push and a manual run as they were, an automatic
+::  event's run with its pull facts given labels
+::
+++  trigger-from-8
+  |=  t=trigger:ci-state-8
+  ^-  trigger:ci
+  ?-  -.t
+    %push  [%push ~]
+    %dispatch  t
+    %event  [%event (run-event-from-8 run-event.t)]
+  ==
+::
+++  run-event-from-8
+  |=  e=run-event:ci-state-8
+  ^-  run-event:ci
+  =/  pull=(unit pull-facts:ci)
+    ?~  pull.e  ~
+    `(pull-facts-from-8 u.pull.e)
+  :*  id.e
+      kind.e
+      ref.e
+      before.e
+      after.e
+      pull
+      occurrence.e
+      actor.e
+      route.e
+      at.e
+      payload.e
+  ==
+::
+++  forge-event-from-8
+  |=  e=forge-event:ci-state-8
+  ^-  forge-event:ci
+  =/  pull=(unit pull-facts:ci)
+    ?~  pull.e  ~
+    `(pull-facts-from-8 u.pull.e)
+  :*  id.e
+      repo.e
+      kind.e
+      ref.e
+      before.e
+      after.e
+      pull
+      actor.e
+      route.e
+      at.e
+      received.e
+      outcome.e
+      selected.e
+      runs.e
+  ==
+::
+::  pull facts recorded before state-9: every field as it was, no labels
+::  and no label (never "no labels" read from a label event: no label
+::  event existed before state-9)
+::
+++  pull-facts-from-8
+  |=  p=pull-facts:ci-state-8
+  ^-  pull-facts:ci
+  :*  number.p
+      title.p
+      action.p
+      head.p
+      head-ref.p
+      base-ref.p
+      base.p
+      merged.p
+      source-ship.p
+      source-repository.p
+      ~
+      ~
+  ==
+::
 ::  state-7 (frozen whole in sur/ci-state-7): its thirty-six fields under
 ::  the tag %8, and what state-8 adds inside them (CI-CONCURRENCY-1).  a
 ::  candidate keeps every field; one still open takes part in no group —
@@ -176,7 +370,7 @@
 ::
 ++  from-state-7
   |=  o=state-7:ci-state-7
-  ^-  state-8:ci
+  ^-  state-8:ci-state-8
   :*  %8
       (~(run by candidates.o) candidate-from-7)
       daemons.o
@@ -228,7 +422,7 @@
 ::
 ++  candidate-from-7
   |=  c=candidate:ci-state-7
-  ^-  candidate:ci
+  ^-  candidate:ci-state-8
   :*  id.c
       repo.c
       ref.c
@@ -263,7 +457,7 @@
 ::
 ++  attempt-from-7
   |=  a=attempt:ci-state-7
-  ^-  attempt:ci
+  ^-  attempt:ci-state-8
   :*  id.a
       candidate.a
       assignment.a
@@ -297,7 +491,7 @@
 ::
 ++  lock-from-7
   |=  l=lock:ci-state-7
-  ^-  lock:ci
+  ^-  lock:ci-state-8
   :*  digest.l
       repo.l
       revision.l
@@ -313,7 +507,7 @@
 ::
 ++  workflow-from-7
   |=  w=trigger-workflow:ci-state-7
-  ^-  trigger-workflow:ci
+  ^-  trigger-workflow:ci-state-8
   [workflow.w name.w events.w refusal.w ~]
 ::
 ::  State6 is frozen whole, including all nested molds. Preserve every

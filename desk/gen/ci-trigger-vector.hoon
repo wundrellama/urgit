@@ -23,6 +23,12 @@
 ::      listed; and whether the diff is needed at all;
 ::    - the payloads act reads, and the signed trigger text of every run
 ::      kind, which begins with the event act runs.
+::    - pull request labels: labeled and unlabeled are native activities,
+::      selected only by a workflow whose types name them, with branch and
+::      path filters applied.  the ship's labeled and unlabeled payloads
+::      are the JSON pinned in runner/internal/daemon/testdata/labels,
+::      which the runner's eventOf accepts.  a label change on a closed or
+::      merged pull request runs nothing.
 ::  Every case names the verdict it expects; prints `passed=N of=M` and
 ::  ends in a loobean.
 ::
@@ -188,6 +194,34 @@
   :~  globs-1
       globs-2
   ==
+::  the ship's labeled and unlabeled payloads for the label facts below,
+::  pinned in runner/internal/daemon/testdata/labels, where eventOf
+::  accepts them
+::
+=/  labeled-payload-1=@t
+  %+  rap  3
+  :~  '{"action":"labeled","number":7,"pull_request":{"number":7,"state":"open"'
+      ',"merged":false,"title":"Add x","head":{"ref":"feature","sha":"000000000'
+      '00000000000000000000000000000d1","repo":{"name":"demo"}},"base":{"ref":"'
+      'main","sha":"00000000000000000000000000000000000000b1","repo":{"name":"d'
+      'emo"}},"user":{"login":"~nec"},"labels":[{"name":"ci:fixtures"},{"name":'
+      '"needs review"}]},"repository":{"name":"demo","default_branch":"main"},"'
+      'sender":{"login":"~zod"},"label":{"name":"ci:fixtures"}}'
+  ==
+=/  labeled-payload=@t
+  labeled-payload-1
+=/  unlabeled-payload-1=@t
+  %+  rap  3
+  :~  '{"action":"unlabeled","number":7,"pull_request":{"number":7,"state":"ope'
+      'n","merged":false,"title":"Add x","head":{"ref":"feature","sha":"0000000'
+      '0000000000000000000000000000000d1","repo":{"name":"demo"}},"base":{"ref"'
+      ':"main","sha":"00000000000000000000000000000000000000b1","repo":{"name":'
+      '"demo"}},"user":{"login":"~nec"},"labels":[{"name":"needs review"}]},"re'
+      'pository":{"name":"demo","default_branch":"main"},"sender":{"login":"~zo'
+      'd"},"label":{"name":"ci:fixtures"}}'
+  ==
+=/  unlabeled-payload=@t
+  unlabeled-payload-1
 =/  has-text
   |=  [text=@t part=@t]
   ^-  ?
@@ -311,7 +345,7 @@
   (push-event-payload:ci-trigger 'demo' main `0xb1 0xc1 ~zod `main)
 =/  facts=pull-facts:ci
   :*  7  'Add x'  'closed'  0xd1  'refs/heads/feature'  main  0xb1  %.y
-      ~nec  'demo'
+      ~nec  'demo'  ~  ~
   ==
 =/  pull-text=@t  (pull-event-payload:ci-trigger 'demo' facts ~zod `main)
 =/  opened-text=@t
@@ -751,8 +785,141 @@
           ==
       ~['push' 'push' 'pull_request' 'schedule']
   ==
+::  ---- pull request labels ----
+::
+::  four pull_request triggers as the compiler compiles them, written out
+::  with the tokens it gives `main` and `src/**`: ERPit's declared types,
+::  GitHub's defaults (undeclared), unlabeled on main, labeled with a path
+::  filter
+::
+=/  pr-event
+  |=  [types=(list @t) declared=? branches=(unit filter:ci) paths=(unit filter:ci)]
+  ^-  trigger-event:ci
+  ['pull_request' ~ branches ~ paths types declared ~ 1 1]
+=/  label-wf
+  |=  [file=@t e=trigger-event:ci]
+  ^-  trigger-workflow:ci
+  [file file ~[e] ~ ~]
+=/  on-main=(unit filter:ci)  `[%.n ~[['main' %.n ~[[%lit 'main']]]]]
+=/  src-only=(unit filter:ci)  `[%.n ~[['src/**' %.n ~[[%lit 'src/'] [%globstar ~]]]]]
+=/  label-cat=trigger-catalog:ci
+  :_  ~
+  :~  (label-wf 'erpit.yml' (pr-event ~['opened' 'synchronize' 'reopened' 'labeled'] %.y ~ ~))
+      (label-wf 'defaults.yml' (pr-event ~['opened' 'synchronize' 'reopened'] %.n ~ ~))
+      (label-wf 'unlabeled.yml' (pr-event ~['unlabeled'] %.y on-main ~))
+      (label-wf 'paths.yml' (pr-event ~['labeled'] %.y ~ src-only))
+  ==
+=/  lpull
+  |=  [action=@t base=@t changes=(unit evidence:ci-trigger)]
+  ^-  (list workflow-selection:ci)
+  (select-pull:ci-trigger label-cat action base changes)
+=/  labeled-src=(list workflow-selection:ci)  (lpull 'labeled' main (diff ~['src/app.js']))
+=/  labeled-docs=(list workflow-selection:ci)  (lpull 'labeled' main (diff ~['docs/a.md']))
+=/  unlabeled-main=(list workflow-selection:ci)  (lpull 'unlabeled' main (diff ~['src/app.js']))
+=/  unlabeled-dev=(list workflow-selection:ci)
+  (lpull 'unlabeled' 'refs/heads/dev' (diff ~['src/app.js']))
+=/  sync-src=(list workflow-selection:ci)  (lpull 'synchronize' main (diff ~['src/app.js']))
+::  the label facts the pinned payloads were rendered from
+::
+=/  labeled-facts=pull-facts:ci
+  :*  7  'Add x'  'labeled'  0xd1  'refs/heads/feature'  main  0xb1  %.n
+      ~nec  'demo'  ~['ci:fixtures' 'needs review']  `'ci:fixtures'
+  ==
+=/  labeled-text=@t  (pull-event-payload:ci-trigger 'demo' labeled-facts ~zod `main)
+=/  unlabeled-text=@t
+  %:  pull-event-payload:ci-trigger
+    'demo'
+    labeled-facts(action 'unlabeled', labels ~['needs review'])
+    ~zod
+    `main
+  ==
+=/  sync-text=@t
+  %:  pull-event-payload:ci-trigger
+    'demo'
+    labeled-facts(action 'synchronize', labels ~['ci:fixtures'], label ~)
+    ~nec
+    `main
+  ==
+=/  bare-text=@t
+  (pull-event-payload:ci-trigger 'demo' labeled-facts(action 'opened', labels ~, label ~) ~nec `main)
+=/  named
+  |=  name=@t
+  ^-  json
+  (pairs:enjs:format ~[['name' s+name]])
+=/  label-update
+  |=  [action=@t at=?(%open %merged %closed) labels=(list @t) label=(unit @t)]
+  ^-  pull-update:ci
+  :*  0v1.label  7  action  0xd1  0xb1  'refs/heads/feature'  main  ~nec  'demo'
+      'Add x'  =(%merged at)  ~  at  labels  label
+  ==
+=/  label-cases=(list [name=@t expect=? got=?])
+  :~  :+  'labeled and unlabeled are native activities now'  %.y
+      ?&  (~(has in native-pull-types:ci-trigger) 'labeled')
+          (~(has in native-pull-types:ci-trigger) 'unlabeled')
+      ==
+      :+  'GitHub\'s default types stay opened, synchronize and reopened'  %.y
+      =(default-pull-types:ci-trigger ~['opened' 'synchronize' 'reopened'])
+      :+  'labeled selects a workflow that declares it, and the default types do not'  %.y
+      .=  (verdicts labeled-src)
+      :~  ['erpit.yml' %selected]  ['defaults.yml' %excluded]
+          ['unlabeled.yml' %excluded]  ['paths.yml' %selected]
+      ==
+      :+  'the default types\' refusal names them'  %.y
+      %+  has-text
+        (reason-of labeled-src 'defaults.yml')
+      'activity labeled is not in types [opened, synchronize, reopened]'
+      :+  'a path filter applies to a label change'  %.y
+      ?&  =(`%excluded (verdict-of labeled-docs 'paths.yml'))
+          =(`%selected (verdict-of labeled-docs 'erpit.yml'))
+      ==
+      :+  'unlabeled selects only a workflow that declares it, on its branch filter'  %.y
+      .=  (verdicts unlabeled-main)
+      :~  ['erpit.yml' %excluded]  ['defaults.yml' %excluded]
+          ['unlabeled.yml' %selected]  ['paths.yml' %excluded]
+      ==
+      :+  'a branch filter applies to a label change'  %.y
+      ?&  =(`%excluded (verdict-of unlabeled-dev 'unlabeled.yml'))
+          (has-text (reason-of unlabeled-dev 'unlabeled.yml') 'target dev does not pass')
+      ==
+      :+  'synchronize still selects as before'  %.y
+      .=  (verdicts sync-src)
+      :~  ['erpit.yml' %selected]  ['defaults.yml' %selected]
+          ['unlabeled.yml' %excluded]  ['paths.yml' %excluded]
+      ==
+      :+  'the ship\'s labeled payload is the pinned one the runner accepts'  %.y
+      =((de:json:html labeled-text) (de:json:html labeled-payload))
+      :+  'the ship\'s unlabeled payload is the pinned one the runner accepts'  %.y
+      =((de:json:html unlabeled-text) (de:json:html unlabeled-payload))
+      :+  'a labeled payload names the label and lists the labels after it, sorted'  %.y
+      ?&  =(`(named 'ci:fixtures') (field labeled-text ~['label']))
+          =(`[%a ~[(named 'ci:fixtures') (named 'needs review')]] (field labeled-text ~['pull_request' 'labels']))
+          =(`[%s 'labeled'] (field labeled-text ~['action']))
+          =(`[%s '~zod'] (field labeled-text ~['sender' 'login']))
+          =(`[%s '~nec'] (field labeled-text ~['pull_request' 'user' 'login']))
+      ==
+      :+  'an unlabeled payload no longer lists the label it removed'  %.y
+      ?&  =(`(named 'ci:fixtures') (field unlabeled-text ~['label']))
+          =(`[%a ~[(named 'needs review')]] (field unlabeled-text ~['pull_request' 'labels']))
+      ==
+      :+  'every pull request payload lists its labels, and only a label change names one'  %.y
+      ?&  =(`[%a ~[(named 'ci:fixtures')]] (field sync-text ~['pull_request' 'labels']))
+          =(~ (field sync-text ~['label']))
+          =(`[%a ~] (field bare-text ~['pull_request' 'labels']))
+          =(~ (field bare-text ~['label']))
+      ==
+      :+  'a label change on an open pull request is selected as any activity is'  %.y
+      =(~ (label-outcome:ci-trigger (label-update 'labeled' %open ~['ci:fixtures'] `'ci:fixtures')))
+      :+  'a label change on a closed pull request is recorded and runs nothing'  %.y
+      .=  `'recorded: a label change on a closed pull request runs no workflow'
+      (label-outcome:ci-trigger (label-update 'labeled' %closed ~['ci:fixtures'] `'ci:fixtures'))
+      :+  'a label change on a merged pull request is recorded and runs nothing'  %.y
+      .=  `'recorded: a label change on a merged pull request runs no workflow'
+      (label-outcome:ci-trigger (label-update 'unlabeled' %merged ~ `'ci:fixtures'))
+      :+  'the rule is a label change\'s alone: a close is no label change'  %.y
+      =(~ (label-outcome:ci-trigger (label-update 'closed' %closed ~ ~)))
+  ==
 =/  cases=(list [name=@t expect=? got=?])
-  :(weld wire wire-2 globs-counted glob-cases select select-2 select-3 payloads signed)
+  :(weld wire wire-2 globs-counted glob-cases select select-2 select-3 payloads signed label-cases)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

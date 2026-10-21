@@ -73,5 +73,6 @@ test('synchronize: a local pull request follows its source branch in every event
   const finish = backend.slice(backend.indexOf('      ++  finish-pull\n'), backend.indexOf('      ++  finish-push\n'))
   has(finish, /%:  open-pull-from:ci-forge\n\s+native-pulls\.u\.existing  source\.flight  source-repository\.flight/, 'the peer is the flight\'s Ames-authenticated source')
   before(finish, '?^  prior', '=/  number=@ud  (add 1 (lent native-pulls.u.existing))', 'an update is decided before a new pull request is numbered')
-  has(desk('lib/ci-trigger.hoon'), /\+\+  native-pull-types  `\(set @t\)`\(silt ~\['opened' 'reopened' 'closed' 'synchronize'\]\)/, 'synchronize is a native activity now')
+  // pull request labels added labeled and unlabeled after synchronize
+  has(desk('lib/ci-trigger.hoon'), /\+\+  native-pull-types\n  `\(set @t\)`\(silt ~\['opened' 'reopened' 'closed' 'synchronize' 'labeled' 'unlabeled'\]\)/, 'synchronize, labeled and unlabeled are native activities now')
 })

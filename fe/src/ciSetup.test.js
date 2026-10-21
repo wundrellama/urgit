@@ -70,6 +70,9 @@ test('the agent brief names the ship and repository, the state, and the rules, a
   // workflow-level concurrency runs (CI-CONCURRENCY-1); job-level is refused
   assert.match(md, /What runs:[^]*workflow-level\s+`concurrency` with `cancel-in-progress`[^]*Refused with the reason:/)
   assert.match(md, /Refused with the reason:[^]*job-level `concurrency`[^]*Read but ignored/)
+  // pull request labels: labeled and unlabeled are supported, never refused
+  assert.match(md, /What runs:[^]*Pull request activities include\s+`labeled` and `unlabeled`[^]*Refused with the reason:/)
+  assert.doesNotMatch(md.slice(md.indexOf('Refused with the reason:'), md.indexOf('2. **Actions**')), /labeled/)
   assert.doesNotMatch(md.slice(md.indexOf('Read but ignored'), md.indexOf('2. **Actions**')), /concurrency/)
   assert.match(md, /99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5/)
   // nothing that looks like a minted token, a daemon id, a bearer or a +code
@@ -101,6 +104,13 @@ test('the setup guide covers repository preparation and the VM runner, not Docke
   assert.match(supported, /Workflow-level `concurrency`, as a group name or as `group` and `cancel-in-progress`/)
   assert.match(supported, /result is \*\*cancelled\*\*/)
   assert.match(refused, /`concurrency` at job level/)
+  // pull request labels: the two activities are supported and explained,
+  // and neither is listed as refused or ignored
+  assert.match(supported, /`pull_request` \(`opened`, `synchronize`, `closed`, `reopened`, `labeled`, `unlabeled`\)/)
+  assert.match(supported, /Each label added or removed is one `labeled` or `unlabeled` event/)
+  assert.match(supported, /`pull_request\.labels`/)
+  assert.doesNotMatch(refused, /labeled/)
+  assert.doesNotMatch(ignored, /labeled/)
   assert.doesNotMatch(ignored, /concurrency/)
   assert.match(guide, /Network policies/)
   assert.match(guide, /CI-required branches/)

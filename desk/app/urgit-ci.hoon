@@ -83,14 +83,19 @@
 ::    its always() jobs still run, and the run's result is cancelled,
 ::    which never lands.  the CI tab's Cancel takes the same path.
 ::
-::    persisted state is state-8 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-7, state-6, state-5, state-4,
-::    state-3, state-2, state-1, and the three tagged %0 — is converted to
+::    Pull request labels add the labeled and unlabeled activities: each
+::    label a write adds or removes is one event, its pull facts carrying
+::    the labels after it and the label, and a label change on a closed
+::    or merged pull request is recorded and runs nothing.
+::
+::    persisted state is state-9 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-8, state-7, state-6, state-5,
+::    state-4, state-3, state-2, state-1, and the three tagged %0 — is converted to
 ::    it explicitly on load by lib/ci-migrate, or refused with its reason.
 ::    the open long-polls are transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-forge, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -140,7 +145,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-8:ci
+=|  state-9:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -173,7 +178,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-8, or converted to it explicitly, or refused with its
+    ::  current state-9, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::  every active schedule's armed wake is set again (Delivery 1C): a
     ::  timer that survived is then set twice, and the armed-due and
@@ -187,7 +192,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-8")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-9")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
@@ -2165,7 +2170,7 @@
       ::  may use a runner profile toward these destinations
       ::
       %set-automatic-inputs
-    =/  changed=(each state-8:ci @t)
+    =/  changed=(each state-9:ci @t)
       %:  edit:ci-input  state  repo.act  sources.act  expected.act
         (authorized repo.act %ci-policy ~ actor.act)
       ==
@@ -4756,11 +4761,20 @@
       (evidence-text changes)
   ==
 ::
+::  a pull request activity as the records name it: a label change names
+::  its label
+::
+++  pull-activity
+  |=  p=pull-update:ci
+  ^-  @t
+  ?~  label.p  action.p
+  (rap 3 ~[action.p ' ' u.label.p])
+::
 ++  pull-basis
   |=  [p=pull-update:ci target=oid:git changes=(unit evidence:ci-trigger)]
   ^-  @t
   %+  rap  3
-  :~  'pull request #'  (crip (a-co:co number.p))  ' '  action.p  ': head '
+  :~  'pull request #'  (crip (a-co:co number.p))  ' '  (pull-activity p)  ': head '
       (oid-text:git-codec head.p)  ' into '  target-ref.p  ' at '
       (oid-text:git-codec target)  ' (three-dot, from the merge base)'
       (evidence-text changes)
@@ -5133,7 +5147,9 @@
 ::
 ::  a pull request transition %urgit reported, checked against the
 ::  record now: present, in the state the activity leaves it in, at the
-::  reported head
+::  reported head.  a label change leaves the state it reports, and its
+::  label is on the record now (labeled) or off it (unlabeled): a later
+::  edit that undid it makes this one stale
 ::
 ++  verify-pull
   |=  [repo=@t p=pull-update:ci]
@@ -5142,14 +5158,8 @@
   ?~  found  [%| '%urgit cannot be read, so the pull request cannot be checked']
   ?~  u.found
     [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is not in the repository'])]
-  =/  pr=native-pull:git  u.u.found
-  =/  want=?(%open %merged %closed)
-    ?:  =('closed' action.p)  ?:(merged.p %merged %closed)
-    %open
-  ?.  =(want state.pr)
-    [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' is ' state.pr ' now, not what ' action.p ' leaves: stale'])]
-  ?.  =(head.p head.pr)
-    [%| (rap 3 ~['pull request #' (crip (a-co:co number.p)) '\'s head is not the reported one: stale'])]
+  =/  stale=(unit @t)  (pull-stale:ci-forge p u.u.found)
+  ?^  stale  [%| u.stale]
   [%& ~]
 ::
 ::  one pull request activity: recorded with its outcome, and run when
@@ -5173,12 +5183,24 @@
   =/  facts=pull-facts:ci
     :*  number.p  title.p  action.p  head.p  source-ref.p  target-ref.p
         (fall onto base.p)  merged.p  source-ship.p  source-repository.p
+        labels.p  label.p
     ==
   =/  base=forge-event:ci
     [id.p repo %pull-request target-ref.p ~ `head.p `facts actor route at now.bowl '' ~ ~]
+  ::  a malformed update is refused with the reason, never read another
+  ::  way: a missing label is not "no labels"
+  =/  malformed=(unit @t)  (pull-update-error:ci-forge p)
+  ?^  malformed
+    =/  why=@t  (rap 3 ~['refused: a malformed pull request update: ' u.malformed])
+    [~ state(forge-events (record-forge-event base(outcome why)))]
   =/  checked=(each ~ @t)  (verify-pull repo p)
   ?:  ?=(%| -.checked)
     [~ state(forge-events (record-forge-event base(outcome (rap 3 ~['refused: ' p.checked]))))]
+  ::  a label change on a closed or merged pull request is recorded and
+  ::  runs nothing
+  =/  inert=(unit @t)  (label-outcome:ci-trigger p)
+  ?^  inert
+    [~ state(forge-events (record-forge-event base(outcome u.inert)))]
   ?~  onto
     =/  why=@t  (rap 3 ~['refused: the target branch ' target-ref.p ' has no tip to test against'])
     [~ state(forge-events (record-forge-event base(outcome why)))]
@@ -5225,7 +5247,7 @@
   =.  forge-events  (record-forge-event base(outcome why, selected `sel, runs ~[id]))
   =.  audit
     %:  record-audit  actor  'event-run'  repo
-      (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' ' action.p ' → run ' (scot %uv id)])
+      (rap 3 ~['pull request #' (crip (a-co:co number.p)) ' ' (pull-activity p) ' → run ' (scot %uv id)])
     ==
   :_  state
   :_  ~
@@ -6817,6 +6839,8 @@
       ['merged' b+merged.u.p]
       ['sourceShip' s+(scot %p source-ship.u.p)]
       ['sourceRepository' s+source-repository.u.p]
+      ['labels' [%a (turn labels.u.p |=(name=@t s+name))]]
+      ['label' ?~(label.u.p ~ s+u.label.u.p)]
   ==
 ::
 ::  an instant as the views show it: unix seconds, UTC, and the wall clock

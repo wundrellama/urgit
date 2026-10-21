@@ -143,3 +143,35 @@ test('N3: an attempt row labels daemon, times and log; its badge stays the statu
     rmSync(cacheDir, { recursive: true, force: true })
   }
 })
+
+// Pull request labels at 320px: below 760px the content keeps 20px each
+// side and the labels panel 12px, so the editor has 256px. The input's
+// 12rem basis fits, the Add button takes its own row, and a 64-byte label
+// with no space wraps inside its chip. Read from the stylesheet, NOT a
+// browser: the parent rechecks geometry in Chromium.
+test('labels: the chips, the editor and the pending change wrap at 320px', () => {
+  assert.equal(decls('.content', narrow).padding, '34px 20px 60px')
+  assert.equal(decls('.pull-labels', narrow).padding, '10px 12px')
+  assert.equal(decls('.pull-labels')['min-width'], '0')
+  assert.equal(decls('.label-chips')['flex-wrap'], 'wrap')
+  assert.equal(decls('.label-chip')['max-width'], '100%')
+  assert.equal(decls('.label-chip')['min-width'], '0')
+  assert.equal(decls('.label-chip > span')['overflow-wrap'], 'anywhere')
+  assert.equal(decls('.label-editor')['flex-wrap'], 'wrap')
+  assert.equal(decls('.label-editor input').flex, '1 1 12rem')
+  assert.equal(decls('.label-editor input')['min-width'], '0')
+  assert.equal(decls('.label-editor > .button', narrow).flex, '1 1 100%')
+  assert.equal(decls('.label-pending p')['overflow-wrap'], 'anywhere')
+  assert.equal(decls('.label-pending .form-actions')['flex-wrap'], 'wrap')
+  assert.equal(decls('.pull-labels .inline-error')['overflow-wrap'], 'anywhere', 'a refusal in the ship\'s words wraps')
+  // a remove control is a touch target, not a glyph
+  assert.equal(decls('.label-remove')['min-width'], '26px')
+  assert.equal(decls('.label-remove')['min-height'], '26px')
+  // the lists: a long label wraps inside its chip and the row text shrinks
+  assert.equal(decls('.issue-labels')['flex-wrap'], 'wrap')
+  assert.equal(decls('.issue-labels span')['overflow-wrap'], 'anywhere')
+  assert.equal(decls('.issue-labels span')['max-width'], '100%')
+  assert.equal(decls('.pull-row > div')['min-width'], '0')
+  // 320 - 2 * 20 - 2 * 12 = 256px for the editor; 12rem is 192px
+  assert.ok(320 - 2 * 20 - 2 * 12 >= 12 * 16)
+})

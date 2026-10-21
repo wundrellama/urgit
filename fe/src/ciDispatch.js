@@ -9,7 +9,7 @@
 // Nothing here fetches or renders markup.
 
 import { branchLabel } from './ci.js'
-import { instant, lateText, pullActivity } from './ciEvents.js'
+import { instant, labelChange, lateText, pullActivity } from './ciEvents.js'
 
 // a number as the ship admits it: plain decimal text, no exponent, no
 // leading zero, at most 32 characters
@@ -200,6 +200,9 @@ export function eventRows(candidate) {
     before: String(event.before || ''),
     after: String(event.after || ''),
     activity: pull ? pullActivity(pull) : '',
+    // a label event's label and who changed it, and the labels after it
+    labelChange: labelChange(pull, event.actor),
+    labels: pull && Array.isArray(pull.labels) ? pull.labels.map(String) : [],
     pull: pull ? { number: Number(pull.number), title: String(pull.title || ''), head: String(pull.head || ''), base: String(pull.base || ''), headBranch: branchLabel(pull.headRef), baseBranch: branchLabel(pull.baseRef), author: String(pull.sourceShip || ''), merged: Boolean(pull.merged) } : null,
     occurrence: occurrence ? { cron: String(occurrence.cron || ''), zone: String(occurrence.timezone || 'UTC (default)'), entry: `${occurrence.workflow} #${occurrence.index}`, due: instant(occurrence.due), admitted: instant(occurrence.admitted), late: Boolean(occurrence.late), lateText: lateText(occurrence.late, occurrence.lateSeconds), promoter: String(occurrence.promoter || '') } : null,
     triggeredBy: kind === 'schedule' ? `the system timer, authorized by ${String(occurrence?.promoter || event.actor || '')}'s promotion` : String(event.actor || ''),

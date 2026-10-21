@@ -232,13 +232,15 @@ These are the owner's decisions in the ship's web interface; explain them
 and check each one is done:
 
 1. **Workflows**: GitHub Actions YAML in \`.github/workflows/\`. What runs:
-   \`runs-on\` of \`ubuntu-latest\` (or \`self-hosted\`, \`linux\`, \`x64\`,
-   \`ubuntu-22.04\`, \`ubuntu-24.04\`, or a label the runner declares),
-   \`needs\`, job and step \`if\`, job outputs, workflow-level
-   \`concurrency\` with \`cancel-in-progress\` (as on GitHub: a cancelled
-   run's result is cancelled and it never lands), \`push\`, \`pull_request\`,
-   \`workflow_dispatch\` with inputs, \`schedule\`, and branch, tag and path
-   filters. Refused with the reason: \`strategy.matrix\`, reusable workflows,
+   \`runs-on\` of \`ubuntu-latest\`, \`self-hosted\`, \`linux\`, \`x64\`,
+   \`ubuntu-22.04\`, \`ubuntu-24.04\` or a label the runner declares,
+   \`needs\`, job and step \`if\`, and job outputs. So does workflow-level
+   \`concurrency\` with \`cancel-in-progress\`, as on GitHub: a cancelled
+   run's result is cancelled and it never lands. The events are \`push\`,
+   \`pull_request\`, \`workflow_dispatch\` with inputs and \`schedule\`, with
+   branch, tag and path filters. Pull request activities include
+   \`labeled\` and \`unlabeled\`, and every pull request payload lists the
+   labels. Refused with the reason: \`strategy.matrix\`, reusable workflows,
    job-level \`concurrency\` and \`pull_request_target\`. Read but ignored,
    so check them yourself: artifacts between jobs, \`GITHUB_TOKEN\` and the
    GitHub API, and Windows or macOS runners. Change such a workflow, or

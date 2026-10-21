@@ -194,8 +194,12 @@ test('one catalog request rides to a ship at a time: a ship still unacked is rec
   assert.match(backend, /^=\/  peer-inflight  \*ledger:git-catalog$/m)
   assert.match(gaps(backend), /(?:^|  )peer-discoveries  ~  peer-inflight  ~  peer-browses  ~(?=  |$)/)
   assert.match(catalogLib, /\+\$  ledger  \(map ship \[request=@uv sent=@da\]\)/)
-  assert.doesNotMatch(stateSur, /state-5|inflight|ledger/)
-  assert.doesNotMatch(gitStateSource, /state-5/)
+  // state-5 (pull request labels) is the four fields of state-4 with
+  // labelled pull requests: no state version carries the ledger, and no
+  // later version exists to carry it
+  assert.doesNotMatch(stateSur, /inflight|ledger/)
+  assert.match(stateSur, /\+\$  state-5\n  \$:  %5\n      repositories=\(map @t repository\)\n      peers=\(set @p\)\n      github-token=\(unit @t\)\n      peer-prepare-queue=\(map @uv peer-prepare-entry\)\n  ==\n/)
+  assert.doesNotMatch(gitStateSource, /state-6/)
   assert.doesNotMatch(ciStateSur, /inflight|ledger|discover/, "%urgit-ci's state carries no catalog ledger")
   // both senders decide through the same gate before a poke goes out
   assert.match(discoverGroup, /=\/  decision  \(plan:git-catalog peer-inflight active-for i\.targets now\.bowl\)/)
@@ -283,9 +287,9 @@ test('the fan-out reads seats from this ship\'s Groups, skips this ship, stops a
   // discoveries stay transient
   assert.match(backend, /^=\/  peer-discoveries  \*\(map @uv peer-discovery\)$/m)
   assert.match(gaps(backend), /(?:^|  )peer-discoveries  ~  peer-inflight  ~  peer-browses  ~(?=  |$)/)
-  assert.doesNotMatch(gitStateSource, /state-5/)
+  assert.doesNotMatch(gitStateSource, /state-6/)
   assert.doesNotMatch(ciStateSur, /inflight|ledger|discover/, "%urgit-ci's state carries no discovery")
-  assert.doesNotMatch(readFileSync(new URL('../../desk/sur/git.hoon', import.meta.url), 'utf8'), /state-5|discover/)
+  assert.doesNotMatch(readFileSync(new URL('../../desk/sur/git.hoon', import.meta.url), 'utf8'), /state-6|discover/)
   assert.match(discoveriesJson, /\['via' \(group-flag-json via\.repo\)\]/)
   assert.match(discoveriesJson, /\['group' \(group-flag-json group\.discovery\)\]/)
 })

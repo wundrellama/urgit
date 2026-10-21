@@ -30,7 +30,10 @@
 ::  lock's catalog concurrency unknown, never "no group".  The checks of
 ::  the shapes before it read the state-7 they convert through
 ::  (+load-7), where their nouns are unchanged.
-::  The current state (state-8) reloads unchanged.  An unknown version, an
+::  state-8 (frozen as sur/ci-state-8) converts to state-9 field by field:
+::  the pull facts of an event run and of a recorded forge event gain no
+::  labels and no label, and the payload text is kept byte for byte.
+::  The current state (state-9) reloads unchanged.  An unknown version, an
 ::  atom, a malformed %0, a corrupt %0, %1, %2, %3, %4 or %5, a state-1
 ::  tagged %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4, a
 ::  state-4 tagged %3 or %5 and a state-6 tagged %4 are refused, and so is
@@ -40,7 +43,7 @@
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -398,11 +401,11 @@
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %8 once converted' %.y =(%8 -.new.s)]
+    ['state-1 is tagged %9 once converted' %.y =(%9 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %8 once converted' %.y =(%8 -.new.t)]
+    ['state-2 is tagged %9 once converted' %.y =(%9 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
@@ -413,7 +416,7 @@
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
     ::  state-3
     ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
-    ['state-3 is tagged %8 once converted' %.y =(%8 -.new.m)]
+    ['state-3 is tagged %9 once converted' %.y =(%9 -.new.m)]
     ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
     ::  the old candidate's every field after its id, against the new one's
     ::  same fields by name (+as-4); its added selection is checked in .added
@@ -497,20 +500,20 @@
     input-evidence  (my ~[[0x77 '{"policyId":"x"}']])
     resolver-inputs  (my ~[[0v1.aaaaa ~['https://example.com/a']]])
   ==
-=/  eighth  (load:ci-migrate s7)
+=/  eighth  (load-8:ci-migrate s7)
 =/  e-open  (~(got by candidates.new.eighth) 0v3.ppppp)
 =/  e-closed  (~(got by candidates.new.eighth) id.manual-cand)
 ::  a state-8 candidate's state-7 fields
 ::
 =/  as-7
-  |=  c=candidate:ci
+  |=  c=candidate:ci-state-8
   :*  id.c  repo.c  ref.c  head.c  base.c  candidate.c  conflict.c  status.c
       attempts.c  plan.c  plan-oid.c  verdict-reason.c  actor.c  via.c  trust.c
       pull.c  created.c  updated.c  mode.c  generation.c  baseline.c  lock.c
       incarnation.c  sandbox.c  trial-of.c  harness-differs.c  trigger.c  selected.c
   ==
 =/  lock-as-7
-  |=  l=lock:ci
+  |=  l=lock:ci-state-8
   [digest repo revision nodes resolved resolver bytes notices inventory]:l
 =/  old-lock-as-7
   |=  l=lock:ci-state-7
@@ -521,25 +524,116 @@
       ['every state-7 candidate keeps every field' %.y =(candidates.s7 (~(run by candidates.new.eighth) as-7))]
       ['an open run takes part in no group, and says why' %.y =([%exempt 'in flight when concurrency groups were added: this run takes part in no group'] concurrency.e-open)]
       ['a closed run has no group recorded' %.y =([%unknown 'finished before concurrency groups were added: no group was recorded for it'] concurrency.e-closed)]
-      ['no run gains a cancellation' %.y (levy ~(val by candidates.new.eighth) |=(c=candidate:ci =(~ cancelled.c)))]
-      ['a run joins a group on upgrade' %.n (lien ~(val by candidates.new.eighth) |=(c=candidate:ci ?=(?(%pending %joined) -.concurrency.c)))]
+      ['no run gains a cancellation' %.y (levy ~(val by candidates.new.eighth) |=(c=candidate:ci-state-8 =(~ cancelled.c)))]
+      ['a run joins a group on upgrade' %.n (lien ~(val by candidates.new.eighth) |=(c=candidate:ci-state-8 ?=(?(%pending %joined) -.concurrency.c)))]
       ['every attempt keeps every field, its decision too' %.y =(attempts.s7 attempts.new.eighth)]
       ['a running attempt stays running' %.y =(%running status:(~(got by attempts.new.eighth) 0v7.aaaaa))]
       ['every lock keeps its digest, nodes and inventory' %.y =((~(run by locks.s7) old-lock-as-7) (~(run by locks.new.eighth) lock-as-7))]
       ['an old lock\'s catalog workflow reads its concurrency as unknown' %.y =(`[~[['ci.yml' 'CI' ~ ~ ~]] ~] triggers:(~(got by locks.new.eighth) 0x77))]
       ['an old lock\'s catalog workflow reads "no group"' %.n =(`[~[['ci.yml' 'CI' ~ ~ `[%none ~]]] ~] triggers:(~(got by locks.new.eighth) 0x77))]
       ['every other state-7 field is kept' %.y =([daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:s7 [daemons assignments ci-protected policies credentials signing ship-keys incarnations generations baselines roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:new.eighth)]
-      ['state-8 reloads unchanged' %.y =(new.eighth new:(load:ci-migrate new.eighth))]
+      ['state-8 reloads unchanged' %.y =(new.eighth new:(load-8:ci-migrate new.eighth))]
       ['a state-7 tagged %8 is refused' %.y (refused [%8 +.s7])]
       ['a state-8 tagged %7 is refused' %.y (refused [%7 +.new.eighth])]
       ['a %7 state with a corrupt locks map is refused' %.y (refused s7(locks [5 ~]))]
-      ['state-6 converts to state-8 through state-7' %.y =(new.sixth (from-state-7:ci-migrate new.sixth-7))]
-      ['state-5 converts to state-8 through state-7' %.y =(new.fifth (from-state-7:ci-migrate new.fifth-7))]
+      ['state-6 converts to state-9 through state-7 and state-8' %.y =(new.sixth (from-state-8:ci-migrate (from-state-7:ci-migrate new.sixth-7)))]
+      ['state-5 converts to state-9 through state-7 and state-8' %.y =(new.fifth (from-state-8:ci-migrate (from-state-7:ci-migrate new.fifth-7)))]
+  ==
+::  state-8 → state-9 (pull request labels): the populated state-8 the
+::  state-7 converts to, with a pull request event run and a recorded
+::  pull request forge event added, loaded as state-9.  the pull facts gain
+::  no labels and no label, the payload text is kept byte for byte, and
+::  every other field is kept
+::
+=/  old-facts=pull-facts:ci-state-8
+  [7 'Add x' 'synchronize' 0xd1 'refs/heads/feature' 'refs/heads/master' 0xb1 %.n ~nec 'erpit']
+=/  new-facts=pull-facts:ci
+  [7 'Add x' 'synchronize' 0xd1 'refs/heads/feature' 'refs/heads/master' 0xb1 %.n ~nec 'erpit' ~ ~]
+=/  old-payload=@t  '{"action":"synchronize","number":7,"pull_request":{"number":7}}'
+=/  pull-run=candidate:ci-state-8
+  %=  e-open
+    id  0v95
+    mode  %event
+    pull  `7
+    trigger  [%event [0v96 %pull-request 'refs/heads/master' ~ `0xd1 `old-facts ~ ~nec 'peer' ~2026.10.18 old-payload]]
+  ==
+=/  pull-event=forge-event:ci-state-8
+  :*  0v96  'erpit'  %pull-request  'refs/heads/master'  ~  `0xd1  `old-facts  ~nec
+      'peer'  ~2026.10.18  ~2026.10.18  '1 workflow(s) selected: run 0v95'  ~  ~[0v95]
+  ==
+=/  s8=state-8:ci-state-8
+  %=  new.eighth
+    candidates  (~(put by candidates.new.eighth) 0v95 pull-run)
+    forge-events  (~(put by forge-events.new.eighth) 0v96 pull-event)
+  ==
+=/  ninth  (load:ci-migrate s8)
+=/  n-run=candidate:ci  (~(got by candidates.new.ninth) 0v95)
+=/  n-event=forge-event:ci  (~(got by forge-events.new.ninth) 0v96)
+=/  event-of
+  |=  c=candidate:ci
+  ^-  (unit run-event:ci)
+  ?.  ?=(%event -.trigger.c)  ~
+  `run-event.trigger.c
+=/  old-event-of
+  |=  c=candidate:ci-state-8
+  ^-  (unit run-event:ci-state-8)
+  ?.  ?=(%event -.trigger.c)  ~
+  `run-event.trigger.c
+::  a candidate's fields but its trigger, in either shape
+=/  rest-8
+  |=  c=candidate:ci-state-8
+  :*  id.c  repo.c  ref.c  head.c  base.c  candidate.c  conflict.c  status.c
+      attempts.c  plan.c  plan-oid.c  verdict-reason.c  actor.c  via.c  trust.c
+      pull.c  created.c  updated.c  mode.c  generation.c  baseline.c  lock.c
+      incarnation.c  sandbox.c  trial-of.c  harness-differs.c  selected.c
+      concurrency.c  cancelled.c
+  ==
+=/  rest-9
+  |=  c=candidate:ci
+  :*  id.c  repo.c  ref.c  head.c  base.c  candidate.c  conflict.c  status.c
+      attempts.c  plan.c  plan-oid.c  verdict-reason.c  actor.c  via.c  trust.c
+      pull.c  created.c  updated.c  mode.c  generation.c  baseline.c  lock.c
+      incarnation.c  sandbox.c  trial-of.c  harness-differs.c  selected.c
+      concurrency.c  cancelled.c
+  ==
+=/  nine=(list [name=@t expect=? got=?])
+  :~  ['state-8 loads as its own frozen shape' %.y =(%state-8 shape.ninth)]
+      ['state-8 is tagged %9 once converted' %.y =(%9 -.new.ninth)]
+      :+  'an old pull request run\'s facts gain no labels and no label'  %.y
+      =(``new-facts (bind (event-of n-run) |=(e=run-event:ci pull.e)))
+      :+  'an old payload is never rewritten'  %.y
+      =(`old-payload (bind (event-of n-run) |=(e=run-event:ci payload.e)))
+      :+  'the rest of the run\'s event is kept'  %.y
+      .=  %+  bind  (old-event-of pull-run)
+          |=(e=run-event:ci-state-8 [id kind ref before after occurrence actor route at payload]:e)
+      %+  bind  (event-of n-run)
+      |=(e=run-event:ci [id kind ref before after occurrence actor route at payload]:e)
+      :+  'a recorded pull request event\'s facts gain no labels and no label'  %.y
+      =(`new-facts pull.n-event)
+      :+  'the rest of the recorded event is kept'  %.y
+      .=  [id repo kind ref before after actor route at received outcome selected runs]:pull-event
+      [id repo kind ref before after actor route at received outcome selected runs]:n-event
+      :+  'every candidate keeps every field but its trigger'  %.y
+      =((~(run by candidates.s8) rest-8) (~(run by candidates.new.ninth) rest-9))
+      :+  'a run that is no pull request event keeps its trigger as it was'  %.y
+      .=  trigger:(~(got by candidates.s8) id.manual-cand)
+      trigger:(~(got by candidates.new.ninth) id.manual-cand)
+      :+  'every other state-8 field is kept'  %.y
+      .=  [daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:s8
+      [daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:new.ninth
+      :+  'state-9 reloads unchanged, as the current state'  %.y
+      ?&  =(%current shape:(load:ci-migrate new.ninth))
+          =(new.ninth new:(load:ci-migrate new.ninth))
+      ==
+      ['state-7 converts to state-9 through state-8' %.y =(new:(load:ci-migrate s7) (from-state-8:ci-migrate new.eighth))]
+      ['a state-8 with pull facts tagged %9 is refused' %.y (refused [%9 +.s8])]
+      ['a state-9 with labelled pull facts tagged %8 is refused' %.y (refused [%8 +.new.ninth])]
+      ['a %8 state with a corrupt forge events map is refused' %.y (refused s8(forge-events [5 ~]))]
   ==
 =/  late=(list [name=@t expect=? got=?])
   :~  ::  state-4 (Delivery 1C)
     ['state-4 loads as its own shape' %.y =(%state-4 shape.f)]
-    ['state-4 is tagged %8 once converted' %.y =(%8 -.new.f)]
+    ['state-4 is tagged %9 once converted' %.y =(%9 -.new.f)]
     ['a state-4 required run keeps every field' %.y =((~(got by candidates.s4) 0v3.ppppp) (as-4 f-cand))]
     ['a state-4 required run\'s workflow selection was never evaluated' %.y =(~ selected.f-cand)]
     ['a state-4 manual run keeps every field and its dispatch' %.y &(=((~(got by candidates.s4) id.manual-cand) (as-4 f-manual)) ?=(%dispatch -.trigger.f-manual))]
@@ -561,9 +655,9 @@
     ['state6 relabelled as state5 is refused' %.y (refused [%5 +.s6])]
     ['corrupt tag bindings are refused' %.y (refused s6(tag-runs [5 ~]))]
     ::  the current state
-    ['state-8 reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
+    ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%9 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%10 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]
@@ -595,7 +689,7 @@
       ['a state-3 lock\'s trigger catalog is unknown, not empty' %.y =(~ triggers.m-lock)]
       ['a state-3 gains no forge event, event id or schedule' %.y &(=(~ forge-events.new.m) =(~ event-ids.new.m) =(~ schedules.new.m))]
   ==
-=/  cases=(list [name=@t expect=? got=?])  :(weld early added late eight)
+=/  cases=(list [name=@t expect=? got=?])  :(weld early added late eight nine)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

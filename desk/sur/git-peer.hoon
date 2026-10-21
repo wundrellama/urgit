@@ -161,6 +161,11 @@
       ::  requester as the actor and judges it by the role bindings, and
       ::  the answer is a %forge-result of kind %policy (number 0)
       [%ci-request request=@uv repository=@t body=@t]
+      ::  a writer on another ship replaces a pull request's labels on the
+      ::  owner's repository: the owner decides with the sender as the
+      ::  requester, as its own labels route does, and answers with a
+      ::  %forge-result of kind %pull
+      [%forge-labels request=@uv repository=@t number=@ud labels=(list @t)]
       [%offer offer=offer]
       [%offer-branches offer-branches=offer-branches]
       [%release transfer=@uv]

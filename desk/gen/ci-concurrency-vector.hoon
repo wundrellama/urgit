@@ -29,6 +29,10 @@
 ::      closes unknown, needing review; a cancelled run's result is
 ::      cancelled, never passed, and a required one never lands;
 ::    - what takes part: trial twins and resolver records never;
+::    - pull request labels: adding ci:fixtures while a synchronize run is
+::      in flight cancels it in ERPit's group refs/pull/<n>/merge, and
+::      ERPit's label expression, pinned from the compiler, is true on the
+::      label run's real payload and false without the label;
 ::    - the gate, evaluation errors refusing a workflow's run, an unknown
 ::      catalog, and every bunt.
 ::  The helpers and scenarios are arms of one core, so the subject stays
@@ -124,6 +128,21 @@
   %+  rap  3
   :~  capture-plan-jobs-1
   ==
+::  ERPit's label expression from fixtures.yml, as the pinned compiler
+::  compiles it: runner/internal/plan labels_pin_test.go reads it from the
+::  real workflow and pins testdata/labels/erpit-labeled.json
+::
+=/  erpit-labeled-1=@t
+  %+  rap  3
+  :~  '{"v":2,"text":"${{ contains(github.event.pull_request.labels.*.name, \'ci'
+      ':fixtures\') }}","line":172,"col":20,"expr":{"k":"call","fn":"contains","'
+      'args":[{"k":"prop","of":{"k":"star","of":{"k":"prop","of":{"k":"prop","o'
+      'f":{"k":"prop","of":{"k":"ctx","name":"github"},"name":"event"},"name":"'
+      'pull_request"},"name":"labels"}},"name":"name"},{"k":"str","s":"ci:fixtu'
+      'res"}]}}'
+  ==
+=/  erpit-labeled=@t
+  erpit-labeled-1
 =>
 |%
 +$  case  [name=@t expect=? got=?]
@@ -199,39 +218,39 @@
     selected  `['basis' ~[['suite.yml' 'suite' %selected 'selected']] ~]
     concurrency  [%pending ~]
   ==
-++  seed  ^-  state-8:ci  *state-8:ci
+++  seed  ^-  state-9:ci  *state-9:ci
 ++  with
-  |=  [s=state-8:ci cs=(list candidate:ci)]
-  ^-  state-8:ci
+  |=  [s=state-9:ci cs=(list candidate:ci)]
+  ^-  state-9:ci
   s(candidates (~(gas by candidates.s) (turn cs |=(c=candidate:ci [id.c c]))))
 ++  got
-  |=  [s=state-8:ci id=candidate-id:ci]
+  |=  [s=state-9:ci id=candidate-id:ci]
   ^-  candidate:ci
   (~(got by candidates.s) id)
 ++  restatus
-  |=  [s=state-8:ci id=candidate-id:ci status=candidate-status:ci]
-  ^-  state-8:ci
+  |=  [s=state-9:ci id=candidate-id:ci status=candidate-status:ci]
+  ^-  state-9:ci
   =/  c=candidate:ci  (got s id)
   s(candidates (~(put by candidates.s) id c(status status)))
 ++  group
-  |=  [s=state-8:ci id=candidate-id:ci wf=@t]
+  |=  [s=state-9:ci id=candidate-id:ci wf=@t]
   ^-  (unit workflow-group:ci)
   (group-of:ci-concurrency (got s id) wf)
 ++  place
-  |=  [s=state-8:ci id=candidate-id:ci wf=@t]
+  |=  [s=state-9:ci id=candidate-id:ci wf=@t]
   ^-  (unit group-place:ci)
   =/  g=(unit workflow-group:ci)  (group s id wf)
   ?~  g  ~
   ?.  ?=(%member -.u.g)  ~
   `place.u.g
 ++  stop
-  |=  [s=state-8:ci id=candidate-id:ci wf=@t]
+  |=  [s=state-9:ci id=candidate-id:ci wf=@t]
   ^-  (unit cancellation:ci)
   (~(get by cancelled:(got s id)) wf)
 ::  the waiting members of a group of the repository, by key
 ::
 ++  waiting-in
-  |=  [s=state-8:ci key=@t]
+  |=  [s=state-9:ci key=@t]
   ^-  @ud
   %-  lent
   %+  skim  (members:ci-concurrency s 'erpit' key)
@@ -282,18 +301,18 @@
 ::  a candidate's plan and attempts put in a state (attempts newest first)
 ::
 ++  planned
-  |=  [s=state-8:ci id=candidate-id:ci plan=(list job:ci) as=(list attempt:ci)]
-  ^-  state-8:ci
+  |=  [s=state-9:ci id=candidate-id:ci plan=(list job:ci) as=(list attempt:ci)]
+  ^-  state-9:ci
   =/  c=candidate:ci  (got s id)
   =.  attempts.s  (~(gas by attempts.s) (turn as |=(a=attempt:ci [id.a a])))
   =/  ids=(list attempt-id:ci)  (turn (flop as) |=(a=attempt:ci id.a))
   s(candidates (~(put by candidates.s) id c(plan `plan, attempts ids)))
 ++  standing-of
-  |=  [s=state-8:ci id=candidate-id:ci wf=@t job=@t]
+  |=  [s=state-9:ci id=candidate-id:ci wf=@t job=@t]
   ^-  standing:ci-plan
   (~(gut by standings:(standings:ci-concurrency s (got s id))) [wf job] %pending)
 ++  decision-of
-  |=  [s=state-8:ci id=candidate-id:ci j=job:ci]
+  |=  [s=state-9:ci id=candidate-id:ci j=job:ci]
   ^-  decision:ci-plan
   =/  c=candidate:ci  (got s id)
   =/  known  (standings:ci-concurrency s c)
@@ -309,11 +328,11 @@
     (run-context:ci-concurrency c)
   ==
 ++  status-of
-  |=  [s=state-8:ci aid=attempt-id:ci]
+  |=  [s=state-9:ci aid=attempt-id:ci]
   ^-  attempt-status:ci
   status:(~(got by attempts.s) aid)
 ++  verdict-of
-  |=  [s=state-8:ci id=candidate-id:ci cancelled=(set @t)]
+  |=  [s=state-9:ci id=candidate-id:ci cancelled=(set @t)]
   ^-  candidate-status:ci
   =/  c=candidate:ci  (got s id)
   -:(verdict-in:ci-plan (fall plan.c ~) standings:(standings:ci-concurrency s c) cancelled)
@@ -332,7 +351,7 @@
       (wjob 'suite.yml' 'report' ~['plan'] ~)
   ==
 ++  sb0
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  planned
     (with seed ~[b1 b2])
     id:b1
@@ -341,14 +360,14 @@
         (attempt 0v102 id:b1 'suite.yml' 'suite' %running ~)
     ==
   ==
-++  sb1  ^-  state-8:ci  (join:ci-concurrency sb0 id:b1 suite-defs now)
-++  sb2  ^-  state-8:ci  (join:ci-concurrency sb1 id:b2 suite-defs (later 1))
+++  sb1  ^-  state-9:ci  (join:ci-concurrency sb0 id:b1 suite-defs now)
+++  sb2  ^-  state-9:ci  (join:ci-concurrency sb1 id:b2 suite-defs (later 1))
 ++  feature-group  ^-  @t  'suite-refs/heads/feature-head'
-++  sb-before  ^-  state-8:ci  (release:ci-concurrency sb2 (later 2))
+++  sb-before  ^-  state-9:ci  (release:ci-concurrency sb2 (later 2))
 ::  notify ran and passed, report is recorded cancelled: the run in
 ::  progress finished, and the group starts b2
 ++  sb3
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  planned
     sb2
     id:b1
@@ -359,24 +378,24 @@
         (attempt 0v104 id:b1 'suite.yml' 'report' %cancelled ~)
     ==
   ==
-++  sb4  ^-  state-8:ci  (release:ci-concurrency sb3 (later 2))
+++  sb4  ^-  state-9:ci  (release:ci-concurrency sb3 (later 2))
 ::
 ::  ---- ERPit on master: one group per commit, both run to the end ----
 ::
 ++  m1  ^-  candidate:ci  (push-run 0v3 'refs/heads/master' head-3 now)
 ++  m2  ^-  candidate:ci  (push-run 0v4 'refs/heads/master' head-4 (later 1))
-++  sm1  ^-  state-8:ci  (join:ci-concurrency (with seed ~[m1 m2]) id:m1 suite-defs now)
-++  sm  ^-  state-8:ci  (join:ci-concurrency sm1 id:m2 suite-defs (later 1))
+++  sm1  ^-  state-9:ci  (join:ci-concurrency (with seed ~[m1 m2]) id:m1 suite-defs now)
+++  sm  ^-  state-9:ci  (join:ci-concurrency sm1 id:m2 suite-defs (later 1))
 ::  a required run's github.sha is its integration object, as its jobs see
 ++  r5
   ^-  candidate:ci
   =/  run=candidate:ci  (push-run 0v5 'refs/heads/master' head-4 now)
   run(candidate `merge-5, mode %required, trigger [%push ~], selected ~)
-++  sr  ^-  state-8:ci  (join:ci-concurrency (with seed ~[r5]) id:r5 suite-defs now)
+++  sr  ^-  state-9:ci  (join:ci-concurrency (with seed ~[r5]) id:r5 suite-defs now)
 ::  a pull request reads refs/pull/<n>/merge, as act gives its jobs
 ++  facts
   ^-  pull-facts:ci
-  [7 'a change' 'synchronize' head-2 'refs/heads/feature' 'refs/heads/master' head-1 %.n ~nec 'erpit']
+  [7 'a change' 'synchronize' head-2 'refs/heads/feature' 'refs/heads/master' head-1 %.n ~nec 'erpit' ~ ~]
 ++  pr
   ^-  candidate:ci
   =/  run=candidate:ci  (push-run 0v6 'refs/heads/master' head-2 now)
@@ -384,7 +403,7 @@
     pull  `7
     trigger  [%event [0v6 %pull-request 'refs/heads/master' ~ `head-2 `facts ~ ~nec 'peer' now '{}']]
   ==
-++  spr  ^-  state-8:ci  (join:ci-concurrency (with seed ~[pr]) id:pr suite-defs now)
+++  spr  ^-  state-9:ci  (join:ci-concurrency (with seed ~[pr]) id:pr suite-defs now)
 ++  pr-github  ^-  val:ci-expr  (github-for:ci-concurrency pr 'suite')
 ++  github-prop
   |=  [v=val:ci-expr key=@t]
@@ -398,12 +417,12 @@
 ++  d2  ^-  candidate:ci  (push-run 0v8 'refs/heads/main' head-2 (later 1))
 ++  d3  ^-  candidate:ci  (push-run 0v9 'refs/heads/main' head-3 (later 2))
 ++  d4  ^-  candidate:ci  (push-run 0va 'refs/heads/main' head-4 (later 3))
-++  sl1  ^-  state-8:ci  (join:ci-concurrency (with seed ~[d1 d2 d3 d4]) id:d1 (lane 'lane' %.n) now)
-++  sl2  ^-  state-8:ci  (join:ci-concurrency sl1 id:d2 (lane 'lane' %.n) (later 1))
+++  sl1  ^-  state-9:ci  (join:ci-concurrency (with seed ~[d1 d2 d3 d4]) id:d1 (lane 'lane' %.n) now)
+++  sl2  ^-  state-9:ci  (join:ci-concurrency sl1 id:d2 (lane 'lane' %.n) (later 1))
 ::  d3 arrives with cancel-in-progress false and still displaces the
 ::  waiting d2: the one-waiting rule ignores the flags
-++  sl3  ^-  state-8:ci  (join:ci-concurrency sl2 id:d3 (lane 'lane' %.n) (later 2))
-++  sl4  ^-  state-8:ci  (join:ci-concurrency sl3 id:d4 (lane 'LANE' %.y) (later 3))
+++  sl3  ^-  state-9:ci  (join:ci-concurrency sl2 id:d3 (lane 'lane' %.n) (later 2))
+++  sl4  ^-  state-9:ci  (join:ci-concurrency sl3 id:d4 (lane 'LANE' %.y) (later 3))
 ++  lane-job  ^-  job:ci  (wjob 'lane.yml' 'build' ~ ~)
 ++  d3-stop  ^-  (unit cancellation:ci)  (stop sl4 id:d3 'lane.yml')
 ++  d3-gate
@@ -413,17 +432,17 @@
 ::  flag decides, so it waits and e1 runs on
 ++  e1  ^-  candidate:ci  (push-run 0vb 'refs/heads/main' head-1 now)
 ++  e2  ^-  candidate:ci  (push-run 0vc 'refs/heads/main' head-2 (later 1))
-++  se1  ^-  state-8:ci  (join:ci-concurrency (with seed ~[e1 e2]) id:e1 (lane 'other' %.y) now)
-++  se  ^-  state-8:ci  (join:ci-concurrency se1 id:e2 (lane 'other' %.n) (later 1))
+++  se1  ^-  state-9:ci  (join:ci-concurrency (with seed ~[e1 e2]) id:e1 (lane 'other' %.y) now)
+++  se  ^-  state-9:ci  (join:ci-concurrency se1 id:e2 (lane 'other' %.n) (later 1))
 ::  d1 closed (it passed): the group starts its waiting run, d4
-++  sl5  ^-  state-8:ci  (release:ci-concurrency (restatus sl4 id:d1 %passed) (later 4))
+++  sl5  ^-  state-9:ci  (release:ci-concurrency (restatus sl4 id:d1 %passed) (later 4))
 ::
 ::  ---- cross-workflow isolation and the operator's cancel ----
 ::
 ++  x  ^-  candidate:ci  (push-run 0vd 'refs/heads/main' head-1 now)
 ++  x-plan  ^-  (list job:ci)  ~[(wjob 'a.yml' 'a1' ~ ~) (wjob 'b.yml' 'b1' ~ ~)]
 ++  sx0
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  planned
     (with seed ~[x])
     id:x
@@ -437,16 +456,16 @@
   :~  ['a.yml' 'A' `[%group ['ga' 1 1 ~[[%lit 'ga']]] [%fixed %.n]]]
       ['b.yml' 'B' `[%none ~]]
   ==
-++  sx1  ^-  state-8:ci  (join:ci-concurrency sx0 id:x x-defs now)
+++  sx1  ^-  state-9:ci  (join:ci-concurrency sx0 id:x x-defs now)
 ++  sx2
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  cancel-workflows:ci-concurrency
     sx1  id:x  ~['a.yml']  [%operator ~zod]  'cancelled by ~zod: stop a'  (later 1)
   ==
 ::  a newcomer with cancel-in-progress in group ga stops x's a.yml alone
 ++  y  ^-  candidate:ci  (push-run 0ve 'refs/heads/main' head-2 (later 1))
 ++  y-defs  ^-  defs  ~[['a.yml' 'A' `[%group ['GA' 1 1 ~[[%lit 'GA']]] [%fixed %.y]]]]
-++  sy  ^-  state-8:ci  (join:ci-concurrency (with sx1 ~[y]) id:y y-defs (later 1))
+++  sy  ^-  state-9:ci  (join:ci-concurrency (with sx1 ~[y]) id:y y-defs (later 1))
 ::
 ::  ---- always(), success(), a privileged attempt, the verdicts ----
 ::
@@ -458,18 +477,18 @@
       (wjob 'd.yml' 'check' ~['deploy'] success-if)
   ==
 ++  sp0
-  ^-  state-8:ci
+  ^-  state-9:ci
   (planned (with seed ~[p]) id:p p-plan ~[(attempt 0v301 id:p 'd.yml' 'deploy' %running `0v1)])
-++  sp1  ^-  state-8:ci  (join:ci-concurrency sp0 id:p ~[['d.yml' 'D' `[%none ~]]] now)
+++  sp1  ^-  state-9:ci  (join:ci-concurrency sp0 id:p ~[['d.yml' 'D' `[%none ~]]] now)
 ++  sp2
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  cancel-workflows:ci-concurrency
     sp1  id:p  ~['d.yml']  [%operator ~zod]  'cancelled by ~zod: stop'  (later 1)
   ==
 ++  closed-deploy  ^-  attempt:ci  (~(got by attempts:sp2) 0v301)
 ::  tidy (always()) ran and passed; check (success()) is recorded cancelled
 ++  sp3
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  planned
     sp2
     id:p
@@ -487,12 +506,12 @@
   =/  run=candidate:ci  (push-run 0vg 'refs/heads/main' head-1 now)
   run(mode %required, trigger [%push ~], baseline `rev, selected ~)
 ++  sq
-  ^-  state-8:ci
-  =/  s=state-8:ci  (with seed ~[req])
+  ^-  state-9:ci
+  =/  s=state-9:ci  (with seed ~[req])
   s(baselines (~(put by baselines.s) ['erpit' 'refs/heads/main'] [rev ~ `0x99 now ~zod 'why' 0 ~]))
 ++  q-plan  ^-  (list job:ci)  ~[(wjob 'ci.yml' 'build' ~ ~) (wjob 'ci.yml' 'test' ~ ~)]
 ++  sq1
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  planned
     sq
     id:req
@@ -502,7 +521,7 @@
     ==
   ==
 ++  sq2
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  cancel-workflows:ci-concurrency
     sq1  id:req  ~['ci.yml']  [%operator ~zod]  'cancelled by ~zod: no'  (later 1)
   ==
@@ -510,9 +529,9 @@
 ++  q-cancelled  ^-  candidate:ci  (got (restatus sq2 id:req q-status) id:req)
 ++  q-passed  ^-  candidate:ci  (got (restatus sq1 id:req %passed) id:req)
 ::  a run no longer pending is finished: nothing of it is cancelled
-++  sq-done  ^-  state-8:ci  (restatus sq2 id:req %cancelled)
+++  sq-done  ^-  state-9:ci  (restatus sq2 id:req %cancelled)
 ++  sq-again
-  ^-  state-8:ci
+  ^-  state-9:ci
   %:  cancel-workflows:ci-concurrency
     sq-done  id:req  ~['other.yml']  [%operator ~zod]  'again'  (later 2)
   ==
@@ -560,8 +579,8 @@
     push-github
   [%obj ~]
 ++  sk
-  ^-  state-8:ci
-  =/  s=state-8:ci  (with seed ~[b1])
+  ^-  state-9:ci
+  =/  s=state-9:ci  (with seed ~[b1])
   %=  s
     locks
       %-  my
@@ -574,7 +593,7 @@
   =/  run=candidate:ci  b1
   run(lock `0x98)
 ++  refused-defs  ^-  defs  ~[['refused.yml' 'Refused group' (def-of 'refused.yml')]]
-++  srf  ^-  state-8:ci  (join:ci-concurrency (with seed ~[b1]) id:b1 refused-defs now)
+++  srf  ^-  state-9:ci  (join:ci-concurrency (with seed ~[b1]) id:b1 refused-defs now)
 ++  refused-group  ^-  (unit workflow-group:ci)  (group srf id:b1 'refused.yml')
 ++  refused-gate
   ^-  (unit decision:ci-plan)
@@ -789,9 +808,96 @@
       ['a decision bunts to a refusal' %.y =(%error verdict:*decision:ci)]
       ['a job standing bunts to pending' %.y =(%pending *standing:ci-plan)]
   ==
+::
+::  ---- pull request labels ----
+::
+::  a pull request run of #7 onto master, its payload the ship's own
+::  (lib/ci-trigger pull-event-payload) for its facts and labels
+::
+++  pull-run
+  |=  [id=candidate-id:ci action=@t labels=(list @t) label=(unit @t) at=@da]
+  ^-  candidate:ci
+  ::  facts is an arm: bind its value before changing fields of it
+  =/  plain=pull-facts:ci  facts
+  =/  f=pull-facts:ci  plain(action action, labels labels, label label)
+  =/  payload=@t  (pull-event-payload:ci-trigger 'erpit' f ~nec `'refs/heads/master')
+  =/  run=candidate:ci  (push-run id 'refs/heads/master' head-2 at)
+  %=  run
+    pull  `7
+    trigger  [%event [id %pull-request 'refs/heads/master' ~ `head-2 `f ~ ~nec 'pull request labels' at payload]]
+  ==
+::  a synchronize run of #7 in flight; then an owner adds ci:fixtures.
+::  ERPit's fixtures.yml groups both runs by refs/pull/7/merge with
+::  cancel-in-progress true off master, so the label run cancels it, as
+::  on GitHub
+::
+++  sync-run  ^-  candidate:ci  (pull-run 0vg 'synchronize' ~ ~ now)
+++  label-run
+  ^-  candidate:ci
+  (pull-run 0vh 'labeled' ~['ci:fixtures'] `'ci:fixtures' (later 1))
+++  other-label-run
+  ^-  candidate:ci
+  (pull-run 0vi 'labeled' ~['docs'] `'docs' (later 1))
+++  carried-run
+  ^-  candidate:ci
+  (pull-run 0vj 'synchronize' ~['ci:fixtures'] ~ (later 2))
+++  fixtures-defs  ^-  defs  ~[['fixtures.yml' 'fixtures' fixtures-def]]
+++  fixtures-group  ^-  @t  'fixtures-refs/pull/7/merge-head'
+++  sf1
+  ^-  state-9:ci
+  (join:ci-concurrency (with seed ~[sync-run label-run]) id:sync-run fixtures-defs now)
+++  sf2  ^-  state-9:ci  (join:ci-concurrency sf1 id:label-run fixtures-defs (later 1))
+::  ERPit's expression, parsed by the ship's parser and evaluated by its
+::  evaluator against a run's github context, whose event is the payload
+::
+++  erpit-labeled-cond
+  ^-  (each condition:ci @t)
+  =/  j=(unit json)  (de:json:html erpit-labeled)
+  ?~  j  |+'the pinned expression is not JSON'
+  (parse-condition:ci-expr u.j)
+++  erpit-labeled-on
+  |=  c=candidate:ci
+  ^-  (each val:ci-expr @t)
+  =/  cond=(each condition:ci @t)  erpit-labeled-cond
+  ?:  ?=(%| -.cond)  |+p.cond
+  =/  =scope:ci-expr
+    [(github-for:ci-concurrency c 'fixtures') [%obj ~] [%obj ~] [%obj ~] [%obj ~] %.n %.n %.n]
+  (eval-condition:ci-expr p.cond scope)
+++  label-cases
+  ^-  (list case)
+  :~  :+  'the synchronize run holds ERPit\'s group, with cancel-in-progress'  %.y
+      =(`[%member fixtures-group fixtures-group %.y %holding ~ now] (group sf1 id:sync-run 'fixtures.yml'))
+      :+  'adding ci:fixtures cancels the in-flight synchronize run of its group'  %.y
+      =/  c=(unit cancellation:ci)  (stop sf2 id:sync-run 'fixtures.yml')
+      ?~  c  %.n
+      ?&  ?=(%superseded -.cause.u.c)
+          =(id:label-run by.cause.u.c)
+          =(fixtures-group group.cause.u.c)
+          =((later 1) at.u.c)
+          .=  reason.u.c
+          %+  rap  3
+          :~  'cancelled: the newer run (pull request #7 at b2b2b2b2 into master) joined group '
+              fixtures-group
+              ' with cancel-in-progress'
+          ==
+      ==
+      :+  'the label run waits in its place until the cancelled run finishes'  %.y
+      =(`[%member fixtures-group fixtures-group %.y %waiting `id:sync-run (later 1)] (group sf2 id:label-run 'fixtures.yml'))
+      :+  'a label run reads refs/pull/7/merge, as act gives its jobs'  %.y
+      =(`[%str 'refs/pull/7/merge'] (github-prop (github-for:ci-concurrency label-run 'fixtures') 'ref'))
+      ['ERPit\'s label expression parses as the pinned compiler compiled it' %.y =/(c=(each condition:ci @t) erpit-labeled-cond ?=(%& -.c))]
+      :+  'it is true on the labeled run\'s real payload, which lists ci:fixtures'  %.y
+      =(&+[%bool %.y] (erpit-labeled-on label-run))
+      :+  'it is false on the synchronize run\'s real payload, which lists no label'  %.y
+      =(&+[%bool %.n] (erpit-labeled-on sync-run))
+      :+  'it is false when another label was added'  %.y
+      =(&+[%bool %.n] (erpit-labeled-on other-label-run))
+      :+  'it is true on a synchronize run of a pull request that carries the label'  %.y
+      =(&+[%bool %.y] (erpit-labeled-on carried-run))
+  ==
 --
 =/  cases=(list case)
-  :(weld wire-cases erpit-cases rule-cases cancel-cases rest-cases)
+  :(weld wire-cases erpit-cases rule-cases cancel-cases rest-cases label-cases)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

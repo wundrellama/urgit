@@ -16,8 +16,17 @@ const branch = (ref) => (ref ? String(ref).replace('refs/heads/', '') : '—')
 // a native pull request opened by its number in the repository's tab
 export const pullHref = (repo, number) => `#/${encodeURIComponent(repo)}?tab=pulls&pull=${encodeURIComponent(number)}`
 
-// a pull request activity as one phrase: `closed (merged)` for a merge
-export const pullActivity = (pull) => (pull ? `${text(pull.action)}${pull.merged ? ' (merged)' : ''}` : '')
+// a pull request activity as one phrase: `closed (merged)` for a merge,
+// `labeled ci:fixtures` for a label change
+export const pullActivity = (pull) => (pull ? `${text(pull.action)}${pull.label ? ` ${text(pull.label)}` : ''}${pull.merged ? ' (merged)' : ''}` : '')
+
+// a label event's change for the run page: the label added or removed,
+// and who changed it (the event's actor, the payload's sender), or null
+export function labelChange(pull, actor) {
+  if (!pull || !pull.label) return null
+  const verb = pull.action === 'unlabeled' ? 'removed' : 'added'
+  return { label: text(pull.label), verb, by: text(actor), text: `${text(pull.label)} ${verb} by ${text(actor)}` }
+}
 
 // a lateness: on time within the minute the ship allows, else how late
 export function lateText(late, seconds) {
@@ -132,7 +141,7 @@ export function forgeEventRows(answer) {
       branch: refLabel(e.ref),
       move: e.kind === 'pull-request' || e.kind === 'default-branch' ? '' : !e.before ? `new at ${short(e.after)}` : !e.after ? `deleted (was ${short(e.before)})` : `${short(e.before)} → ${short(e.after)}`,
       pull: e.pull && typeof e.pull === 'object'
-        ? { number: Number(e.pull.number), title: text(e.pull.title), activity: pullActivity(e.pull), head: text(e.pull.head), headBranch: branch(e.pull.headRef), baseBranch: branch(e.pull.baseRef), author: text(e.pull.sourceShip) }
+        ? { number: Number(e.pull.number), title: text(e.pull.title), activity: pullActivity(e.pull), head: text(e.pull.head), headBranch: branch(e.pull.headRef), baseBranch: branch(e.pull.baseRef), author: text(e.pull.sourceShip), labels: list(e.pull.labels).map(text), label: labelChange(e.pull, e.actor) }
         : null,
       actor: text(e.actor),
       route: text(e.route),

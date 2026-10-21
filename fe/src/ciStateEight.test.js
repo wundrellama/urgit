@@ -5,10 +5,12 @@ import { arm, deskText, type } from './hoonSource.js'
 
 // State-8 (CI-CONCURRENCY-1): state-7 frozen whole, and every record of it
 // converted field by field. Source reading, not a run: the populated
-// ci-migration-vector and a live in-place upgrade are the parent's.
+// ci-migration-vector and a live in-place upgrade are the parent's. State-9
+// (pull request labels) froze state-8 whole as sur/ci-state-8, which is what
+// the conversion from state-7 produces now (ciStateNine.test.js).
 
 const frozen = deskText('sur/ci-state-7.hoon')
-const current = deskText('sur/ci.hoon')
+const current = deskText('sur/ci-state-8.hoon')
 const migrate = deskText('lib/ci-migrate.hoon')
 
 // the faces of a $: type's fields, in order: the first after `$:  `, then

@@ -181,6 +181,8 @@ export function EventFacts({ candidate, repo, onOpenPull }) {
         <div><dt>Triggered by</dt><dd>{e.triggeredBy || e.actor}{e.route && <small className="quiet"> · {e.route}</small>}</dd></div>
         <div><dt>Source</dt><dd>{e.branch} <code>{shortOid(e.source)}</code></dd></div>
         {e.kind === 'push' && <div><dt>Moved</dt><dd><code>{e.before ? shortOid(e.before) : 'new ref'}</code> → <code>{shortOid(e.after)}</code></dd></div>}
+        {e.labelChange && <div><dt>Label</dt><dd data-part="event-label"><strong>{e.labelChange.label}</strong> {e.labelChange.verb} by {e.labelChange.by}</dd></div>}
+        {e.labels.length > 0 && <div><dt>Labels</dt><dd data-part="event-labels">{e.labels.join(', ')} <small className="quiet">after this event</small></dd></div>}
         {e.pull && <div><dt>Pull request</dt><dd><a href={pullHref(repo?.name || '', e.pull.number)} onClick={(event) => { if (onOpenPull) { event.preventDefault(); onOpenPull(e.pull.number) } }}>#{e.pull.number} {e.pull.title}</a> <small className="quiet">{e.pull.headBranch} <code>{shortOid(e.pull.head)}</code> → {e.pull.baseBranch} <code>{shortOid(e.pull.base)}</code> · by {e.pull.author}</small></dd></div>}
         {e.occurrence && <div><dt>Occurrence</dt><dd>{e.occurrence.entry} <code>{e.occurrence.cron}</code> <small className="quiet">{e.occurrence.zone}</small></dd></div>}
         {e.occurrence && <div><dt>Due</dt><dd>{e.occurrence.due?.local} <small className="quiet">{e.occurrence.due?.utc}</small></dd></div>}
