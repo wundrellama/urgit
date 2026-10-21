@@ -693,7 +693,7 @@
       :-  'the newer feature push cancels the older, with cancel-in-progress'
       :-  %.y
       =/  why=@t
-        (rap 3 ~['cancelled: run push of b2b2b2b2 to feature joined group ' feature-group ' with cancel-in-progress'])
+        (rap 3 ~['cancelled: the newer run (push of b2b2b2b2 to feature) joined group ' feature-group ' with cancel-in-progress'])
       =(`[(later 1) %.y [%superseded id:b2 feature-group] why] (stop sb2 id:b1 'suite.yml'))
       ['the newer push waits while the cancelled run finishes' %.y =(`[%member feature-group feature-group %.y %waiting `id:b1 (later 1)] (group sb2 id:b2 'suite.yml'))]
       ['the running job without a status function is stopped' %.y =(%cancelled (status-of sb2 0v102))]
@@ -726,7 +726,7 @@
       ['a waiting newcomer cancels nothing' %.y =(~ cancelled:(got sl2 id:d1))]
       :-  'a newer arrival cancels the older waiting run whatever the flags'
       :-  %.y
-      =(`[(later 2) %.n [%displaced id:d3 'lane'] 'cancelled: a newer run push of c3c3c3c3 to main is waiting in group lane'] (stop sl3 id:d2 'lane.yml'))
+      =(`[(later 2) %.n [%displaced id:d3 'lane'] 'cancelled: a newer run (push of c3c3c3c3 to main) is waiting in group lane'] (stop sl3 id:d2 'lane.yml'))
       ['the displaced run leaves the group never having started' %.y =(`%released (place sl3 id:d2 'lane.yml'))]
       ['the newer arrival waits in its place' %.y =(`%waiting (place sl3 id:d3 'lane.yml'))]
       ['a group keeps one waiting run' %.y &(=(1 (waiting-in sl2 'lane')) =(1 (waiting-in sl3 'lane')) =(1 (waiting-in sl4 'lane')))]
@@ -734,7 +734,7 @@
       ['groups ignore case: LANE is lane' %.y =(`[%member 'LANE' 'lane' %.y %waiting `id:d1 (later 3)] (group sl4 id:d4 'lane.yml'))]
       :-  'cancel-in-progress true cancels the run in progress'
       :-  %.y
-      =(`[(later 3) %.y [%superseded id:d4 'LANE'] 'cancelled: run push of d4d4d4d4 to main joined group LANE with cancel-in-progress'] (stop sl4 id:d1 'lane.yml'))
+      =(`[(later 3) %.y [%superseded id:d4 'LANE'] 'cancelled: the newer run (push of d4d4d4d4 to main) joined group LANE with cancel-in-progress'] (stop sl4 id:d1 'lane.yml'))
       :-  'cancel-in-progress true cancels the waiting run too'
       :-  %.y
       =/  c=(unit cancellation:ci)  d3-stop

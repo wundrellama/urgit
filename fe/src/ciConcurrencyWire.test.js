@@ -60,8 +60,8 @@ test('the reasons the fixtures quote are the ship\'s own words', () => {
   assert.ok(one(migrate, 'in-flight').includes(cord(IN_FLIGHT)), 'in flight at the upgrade')
   assert.ok(one(agent, 'no-cancel-authority').includes(cord(AUTHORITY)), 'the authority')
   const join = one(lib, 'join')
-  assert.ok(join.includes("~['cancelled: run ' label ' joined group ' named ' with cancel-in-progress']"), 'a newcomer with cancel-in-progress')
-  assert.ok(join.includes("~['cancelled: a newer run ' label ' is waiting in group ' named]"), 'a displaced waiting run')
+  assert.ok(join.includes("~['cancelled: the newer run (' label ') joined group ' named ' with cancel-in-progress']"), 'a newcomer with cancel-in-progress')
+  assert.ok(join.includes("~['cancelled: a newer run (' label ') is waiting in group ' named]"), 'a displaced waiting run')
   // the panel words a waiting run as the job decision's reason words it
   assert.ok(one(lib, 'waiting-text').includes("~['waiting for run ' (label-of s u.behind.g) ' in group ' text.g]"), 'waiting for run X in group G')
 })

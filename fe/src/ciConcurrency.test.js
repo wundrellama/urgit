@@ -50,7 +50,7 @@ test('a run cancelled by a newcomer with cancel-in-progress says which run joine
   const [deploy] = rowsOf(supersededRun)
   assert.equal(deploy.badge, 'cancelled')
   assert.equal(deploy.tone, '', 'A CANCELLED RUN READS AS A FAILURE')
-  assert.equal(deploy.text, 'cancelled: run push of 5e6f7a8b to main joined group deploy-main with cancel-in-progress')
+  assert.equal(deploy.text, 'cancelled: the newer run (push of 5e6f7a8b to main) joined group deploy-main with cancel-in-progress')
   assert.match(deploy.fine, /cancelled by run 0v1\.newer/)
   assert.equal(candidateStatusLabel.cancelled, 'cancelled')
   assert.notEqual(candidateStatusLabel.cancelled, candidateStatusLabel.failed)
@@ -60,7 +60,7 @@ test('a run cancelled by a newcomer with cancel-in-progress says which run joine
 test('a cancelled run still finishing says a job whose condition holds when cancelled, such as always(), still runs', () => {
   const [deploy] = rowsOf(stoppingRun)
   assert.equal(deploy.badge, 'cancelled')
-  assert.match(deploy.text, /^cancelled: run push of 5e6f7a8b to main joined group deploy-main with cancel-in-progress — stopping: /)
+  assert.match(deploy.text, /^cancelled: the newer run \(push of 5e6f7a8b to main\) joined group deploy-main with cancel-in-progress — stopping: /)
   assert.match(deploy.text, /always\(\), still runs/)
   assert.equal(deploy.open, false, 'a cancelled workflow is offered Cancel again')
 })
@@ -68,7 +68,7 @@ test('a cancelled run still finishing says a job whose condition holds when canc
 test('an older waiting run displaced by a newer arrival says so and that it never started', () => {
   const [deploy] = rowsOf(displacedRun)
   assert.equal(deploy.badge, 'cancelled')
-  assert.match(deploy.text, /^cancelled: a newer run push of 9c0d1e2f to main is waiting in group deploy-main/)
+  assert.match(deploy.text, /^cancelled: a newer run \(push of 9c0d1e2f to main\) is waiting in group deploy-main/)
   assert.match(deploy.text, /it had not started, so none of its jobs runs/)
 })
 
@@ -181,7 +181,7 @@ test('a job its cancelled workflow run does not run reads as a cancel decision a
   assert.equal(d.outcome.execution, 'not-run')
   const ran = jobDetailsModel({ ...attempt, events: 3, decision: { verdict: 'run', reason: 'no prerequisites', value: null } }, null)
   assert.equal(ran.outcome.label, 'Cancelled after it started')
-  const rows = waitingRows({ status: 'pending', plan: [{ id: 'deploy', workflow: 'deploy.yml', decision: { verdict: 'cancel', reason: 'not run: cancelled: a newer run x is waiting in group g' } }] })
+  const rows = waitingRows({ status: 'pending', plan: [{ id: 'deploy', workflow: 'deploy.yml', decision: { verdict: 'cancel', reason: 'not run: cancelled: a newer run (x) is waiting in group g' } }] })
   assert.equal(rows[0].label, 'Cancel being recorded')
 })
 

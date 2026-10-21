@@ -630,13 +630,13 @@
   =.  s
     ?:  cancel.g
       =/  why=@t
-        (rap 3 ~['cancelled: run ' label ' joined group ' named ' with cancel-in-progress'])
+        (rap 3 ~['cancelled: the newer run (' label ') joined group ' named ' with cancel-in-progress'])
       %+  roll  others
       |=  [o=occupant acc=_s]
       (cancel-workflows acc id.o ~[workflow.o] [%superseded id named] why now)
     =/  why=@t
-      ?~  holder  (rap 3 ~['cancelled: a newer run ' label ' joined group ' named])
-      (rap 3 ~['cancelled: a newer run ' label ' is waiting in group ' named])
+      ?~  holder  (rap 3 ~['cancelled: a newer run (' label ') joined group ' named])
+      (rap 3 ~['cancelled: a newer run (' label ') is waiting in group ' named])
     %+  roll  (skim others |=(o=occupant =(%waiting place.o)))
     |=  [o=occupant acc=_s]
     (cancel-workflows acc id.o ~[workflow.o] [%displaced id named] why now)
