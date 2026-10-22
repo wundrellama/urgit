@@ -681,7 +681,8 @@ func (d *Daemon) runJob(ctx, daemonCtx context.Context, a *ship.Assignment, h sa
 	// the finished stream goes to the store before the result names it
 	// (D1): the ship signs the PUT, the daemon sends the bytes, and the
 	// result carries the size and hash. an upload that fails leaves the
-	// result without a log; the verdict is the stream's, not the store's.
+	// result without a log. the ship then reads a success or a skip as
+	// unknown, because a store outage is never green. a failure stands.
 	logRef := d.uploadLog(ctx, a, streamPath, logf)
 	resp, err := d.client.Result(ctx, a.Attempt, summary.JobResult, logRef)
 	if err != nil {

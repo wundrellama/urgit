@@ -138,6 +138,8 @@
 ++  refusal-prefix  'assignment refused: '
 ++  revoked-refusal  'revoked by the ship'
 ++  storage-refusal  'ship object storage is not configured; CI cannot be enabled'
+++  no-log-reason
+  'the job log was not stored, so its result is unknown: check the object store, then run it again'
 ++  no-tip-refusal  'ref has no tip; push a commit before CI-protecting it'
 ++  linked-refusal  'CI protection is not available for desk-linked repositories in this release'
 ::  a viewer's download link lives five minutes (D2: at most fifteen)
@@ -6731,6 +6733,22 @@
     =/  named=(each (unit object-ref:ci) @t)  (result-log u.found u.jon)
     ?:  ?=(%| -.named)
       (emit (give-error eyre-id 422 p.named))
+    ::  a store outage is unknown, never green (R5.1-A).  a job that
+    ::  claims success or a skip must name the log it stored.  without
+    ::  that log the attempt closes as an infrastructure error, and the
+    ::  candidate reads as unknown.  a failure stands without a log,
+    ::  because it is never green
+    ::
+    ?:  ?&  ?=(%job kind.u.found)
+            ?=(~ p.named)
+            ?=(?(%success %skipped) u.result)
+        ==
+      =.  state  (close-attempt u.found [%infrastructure-error no-log-reason])
+      =/  closed=out  (after-close candidate.u.found)
+      =.  state  state.closed
+      =.  polls  polls.closed
+      %-  emit
+      (weld cards.closed (give-json eyre-id 200 (attempt-json (~(got by attempts) id.u.found))))
     =/  with-log=attempt:ci  u.found(log p.named)
     =.  attempts  (~(put by attempts) id.with-log with-log)
     =.  state  (close-attempt with-log [%job-result u.result])
