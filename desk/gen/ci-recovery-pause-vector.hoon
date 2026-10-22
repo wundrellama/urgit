@@ -17,8 +17,12 @@
 ::      poke, never into %urgit's state.  Its acknowledgement records the
 ::      checkpoint as written, a refusal as not written, and a failed push
 ::      as a failed backup, never confirmed.
-::  The last checks read %urgit through the ship's scry: a ship without
-::  a running %urgit fails them, and says so.  Every case names the
+::  Checkpoint now reads %urgit through the ship's scry.  A generator
+::  often cannot read %urgit that way, even when %urgit runs.  The vector
+::  makes the same read first.  If %urgit is readable, it expects one
+::  write and a pending record.  If %urgit is not readable, it expects no
+::  write and a failed record with the reason.  The live recovery drill
+::  shows the readable path on a running ship.  Every case names the
 ::  verdict it expects.  Prints `passed=N of=M` and ends in a loobean.
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
@@ -280,6 +284,16 @@
   ?.  ?=(%write-recovery-commit -.p.act)  ~
   `p.act
 =/  id=@t  (checkpoint-id:ci-checkpoint now 1 ship)
+::  whether this generator can read %urgit as the agent does
+::
+=/  urgit-readable=?
+  =/  prefix=path  /(scot %p ship)/urgit/(scot %da now)
+  =/  live=(each ? tang)  (mule |.(.^(? %gu (weld prefix /$))))
+  ?.  ?&(?=(%& -.live) p.live)  %.n
+  =/  raw=(each * tang)
+    (mule |.(.^(* %gx (weld prefix /ci-recovery-repo/(scot %t 'ci-checkpoints')/noun))))
+  ?=(%& -.raw)
+~&  [%urgit-readable-from-this-generator urgit-readable]
 =/  after-save=agent:gall  ?:(?=(%| -.saved) calm-agent +.p.saved)
 =/  acked=agent:gall
   +:(~(on-agent after-save bowl) /urgit/checkpoint/(scot %t id) [%poke-ack ~])
@@ -303,6 +317,13 @@
   =/  c=(unit checkpoint:ci)  (record-of a)
   ?~  c  'missing'
   -.written.u.c
+=/  written-reason
+  |=  a=agent:gall
+  ^-  (unit @t)
+  =/  c=(unit checkpoint:ci)  (record-of a)
+  ?~  c  ~
+  ?.  ?=(%failed -.written.u.c)  ~
+  `reason.written.u.c
 ::  a push that %urgit started and that failed.  the record carries the
 ::  push's ticket once its route is a usable one.  the vector answers that
 ::  ticket as failed.  with no usable route, the record is not
@@ -350,9 +371,10 @@
       ['an apply creates a run' %.n ?&(?=(%& -.applied) !=(1 (count-candidates +.p.applied)))]
       ['an apply leaves CI paused' %.y ?&(?=(%& -.applied) (read-paused +.p.applied))]
       ['checkpoint now succeeds' %.y ?=(%& -.saved)]
-      ['checkpoint now writes through %urgit, with one write' %.y =(1 (lent write-pokes))]
+      ['checkpoint now writes through %urgit once when %urgit is readable, and never when it is not' %.y =(?:(urgit-readable 1 0) (lent write-pokes))]
       ['the write names the private checkpoint repository' %.y (levy write-pokes |=(w=action:git ?&(?=(%write-recovery-commit -.w) =('ci-checkpoints' repository.w))))]
-      ['the checkpoint is pending until %urgit answers' %.y =(%pending (written-state after-save))]
+      ['the checkpoint is pending until %urgit answers, or failed when %urgit cannot be read' %.y =(?:(urgit-readable %pending %failed) (written-state after-save))]
+      ['an unreadable %urgit gives the reason, not a silent failure' %.y ?|(urgit-readable =(`'%urgit cannot be read, so the checkpoint repository cannot be checked' (written-reason after-save)))]
       ['an acknowledged write is written' %.y =(%written (written-state acked))]
       ['a refused write is not written' %.y =(%failed (written-state nacked))]
       ['a refused write has nothing to push' %.y =(%skipped (replica-state nacked))]
