@@ -6,9 +6,12 @@ import { arm, deskText, type } from './hoonSource.js'
 // State-9 (pull request labels): state-8 frozen whole, and the pull facts
 // of every event run and recorded forge event given labels. Source reading,
 // not a run: the populated ci-migration-vector and a live in-place upgrade
-// are the parent's.
+// are the parent's. State-9 is itself frozen now (CI-RECOVERY-1), as
+// sur/ci-state-9.hoon: its shape is read there, and ciStateTen.test.js
+// reads the state-10 that sur/ci.hoon holds.
 
 const frozen = deskText('sur/ci-state-8.hoon')
+const nine = deskText('sur/ci-state-9.hoon')
 const current = deskText('sur/ci.hoon')
 const migrate = deskText('lib/ci-migrate.hoon')
 const controller = deskText('app/urgit-ci.hoon')
@@ -53,14 +56,15 @@ function tupleFields(armText, sample) {
 test('state-8 is frozen byte for byte: the baseline\'s sur/ci.hoon (d2876d6)', () => {
   assert.equal(createHash('sha256').update(frozen).digest('hex'), '1abf1efa4083f25f13cf4f60652141552a46da5b3a8894e0acc14326721fff2e')
   assert.match(frozen, /\+\$ {2}state-8\n {2}\$: {2}%8\n/)
-  assert.match(current, /\+\$ {2}state-9\n {2}\$: {2}%9\n/)
-  assert.doesNotMatch(current, /\+\$ {2}state-8\n/, 'sur/ci.hoon holds the current state only')
+  assert.match(nine, /\+\$ {2}state-9\n {2}\$: {2}%9\n/)
+  assert.doesNotMatch(nine, /\+\$ {2}state-8\n/, 'sur/ci-state-9.hoon holds the state-9 shape only')
+  assert.doesNotMatch(current, /\+\$ {2}state-(8|9)\n/, 'sur/ci.hoon holds the current state only')
 })
 
 test('state-9 keeps state-8\'s thirty-six fields in order, and the conversion writes each in its place', () => {
   const eight = fields(type(frozen, 'state-8'))
   assert.equal(eight.length, 36)
-  assert.deepEqual(fields(type(current, 'state-9')), eight)
+  assert.deepEqual(fields(type(nine, 'state-9')), eight)
   const written = tupleFields(arm(migrate, 'from-state-8'), 'o')
   assert.equal(written[0], '%9')
   assert.deepEqual(written.slice(1), eight)
@@ -70,8 +74,8 @@ test('state-9 keeps state-8\'s thirty-six fields in order, and the conversion wr
 
 test('pull facts gain labels and label last, and a recorded fact gets neither', () => {
   const old = fields(type(frozen, 'pull-facts'))
-  assert.deepEqual(fields(type(current, 'pull-facts')), [...old, 'labels', 'label'])
-  assert.match(type(current, 'pull-facts'), /labels=\(list @t\)\n {6}label=\(unit @t\)\n/)
+  assert.deepEqual(fields(type(nine, 'pull-facts')), [...old, 'labels', 'label'])
+  assert.match(type(nine, 'pull-facts'), /labels=\(list @t\)\n {6}label=\(unit @t\)\n/)
   assert.deepEqual(tupleFields(arm(migrate, 'pull-facts-from-8'), 'p'), [...old, '~', '~'])
 })
 
@@ -82,7 +86,7 @@ test('every candidate, run event and forge event field is written in its place; 
     ['forge-event', 'forge-event-from-8', 'e', 'pull'],
   ]) {
     const old = fields(type(frozen, name))
-    assert.deepEqual(fields(type(current, name)), old, `${name} keeps its fields`)
+    assert.deepEqual(fields(type(nine, name)), old, `${name} keeps its fields`)
     assert.deepEqual(tupleFields(arm(migrate, conversion), sample), old, `${conversion} writes every ${name} field in its place`)
     assert.ok(arm(migrate, conversion).includes(changed), `${conversion} converts ${changed}`)
   }
@@ -96,12 +100,14 @@ test('every candidate, run event and forge event field is written in its place; 
 })
 
 test('the wire: a pull request update carries the state, the labels and the label last', () => {
-  assert.deepEqual(fields(type(current, 'pull-update')), [...fields(type(frozen, 'pull-update')), 'state', 'labels', 'label'])
+  assert.deepEqual(fields(type(nine, 'pull-update')), [...fields(type(frozen, 'pull-update')), 'state', 'labels', 'label'])
 })
 
-test('the controller loads state-9, audits a conversion as such, and refuses a malformed update before reading it', () => {
-  assert.match(controller, /^=\| {2}state-9:ci$/m)
-  assert.match(arm(controller, 'on-load'), /converted to state-9/)
+test('every earlier state reaches state-9 through state-8, and the controller refuses a malformed update before reading it', () => {
+  // the state-8 to state-9 conversion is +nine's, on the way to state-10
+  assert.match(arm(migrate, 'nine'), /\(from-state-8 \(eight shape old\)\)/)
+  assert.match(arm(migrate, 'nine'), /\^- {2}state-9:ci-state-9/)
+  assert.match(arm(migrate, 'from-state-8'), /\^- {2}state-9:ci-state-9/)
   const admit = arm(controller, 'admit-pull')
   const order = ['(pull-update-error:ci-forge p)', '(verify-pull repo p)', '(label-outcome:ci-trigger p)', '(governing repo target-ref.p)'].map((s) => admit.indexOf(s))
   assert.ok(order.every((at) => at >= 0), `admit-pull reads ${order}`)

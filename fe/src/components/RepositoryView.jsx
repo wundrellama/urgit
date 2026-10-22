@@ -1092,12 +1092,15 @@ function Settings({ repo, onMutate }) {
   const [ciPolicy, setCiPolicy] = useState(null)
   const [ciError, setCiError] = useState('')
   const [credentials, setCredentials] = useState([])
+  // CI-RECOVERY-1: the credential names a restore brought back with no
+  // value, which need re-entry
+  const [reentry, setReentry] = useState([])
   const [credForm, setCredForm] = useState({ name: '', value: '', scope: 'job', envs: '', multiline: false })
   const [credError, setCredError] = useState('')
   const loadCi = useCallback(async () => {
     try {
       const [policy, creds] = await Promise.all([ci.policy(repo.name), ci.credentials(repo.name)])
-      setCiPolicy(policy); setCredentials(creds.credentials || []); setCiError('')
+      setCiPolicy(policy); setCredentials(creds.credentials || []); setReentry(creds.needsReentry || []); setCiError('')
     } catch (cause) { setCiError(cause.message) }
   }, [repo.name])
   useEffect(() => { loadCi() }, [loadCi])
@@ -1469,7 +1472,8 @@ function Settings({ repo, onMutate }) {
           <div className="section-title"><div><h3>Credentials</h3><p>Released to trusted jobs only, as secrets. A job-scoped credential reaches every trusted job; an env-scoped one only jobs whose <code>environment</code> is listed. Values are never shown again.</p></div></div>
           <div className="writer-list">
             {credentials.map((cred) => <div key={cred.name}><code>{cred.name}</code><small className="quiet">{cred.scope}{cred.scope === 'env' ? `: ${(cred.envs || []).join(', ')}` : ''}</small><button className="text-button danger-text" disabled={busy !== ''} onClick={() => ciAct(`cred-${cred.name}`, ciActions.deleteCredential(repo.name, cred.name))}>Delete</button></div>)}
-            {!credentials.length && <small className="quiet">No credentials stored.</small>}
+            {reentry.map((cred) => <div key={`reentry-${cred.name}`} data-part="credential-reentry"><code>{cred.name}</code><small className="field-error">needs re-entry: a restore brought back its name with no value</small></div>)}
+            {!credentials.length && !reentry.length && <small className="quiet">No credentials stored.</small>}
           </div>
           <form className="ci-credential-form" onSubmit={addCredential} autoComplete="off">
             <div className="three-fields">

@@ -29,18 +29,22 @@
 ::    tagged %8 (CI-CONCURRENCY-1, frozen whole as sur/ci-state-8),
 ::    converts state-7's nested records: a candidate's concurrency and
 ::    cancelled workflows, an attempt's decision, a lock catalog's
-::    concurrency.  the current state is state-9, tagged %9, which gives
-::    the pull facts of an event run and of a recorded forge event their
-::    labels.  every earlier shape converts through state-7 (+seven) and
-::    then state-8 (+eight).  An unknown, partial,
-::    corrupt or ambiguous state is refused — never cast, reset or read
-::    another way — and every conversion is written out field by field.
+::    concurrency.  state-9, tagged %9 (frozen whole as sur/ci-state-9),
+::    gives the pull facts of an event run and of a recorded forge event
+::    their labels.  the current state is state-10, tagged %10
+::    (CI-RECOVERY-1).  it keeps state-9's thirty-six fields and adds the
+::    recovery record.  that record loads unpaused, with no checkpoint, no
+::    staged import and no history.  every earlier shape converts through
+::    state-7 (+seven), then state-8 (+eight), then state-9 (+nine).  An
+::    unknown, partial, corrupt or ambiguous state is refused — never cast,
+::    reset or read another way — and every conversion is written out
+::    field by field.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-9, ci-state-base, ci-state-review06, ci-state-q11
 |%
 ::  the shapes a saved state may have
 ::
-+$  shape  ?(%current %state-8 %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
++$  shape  ?(%current %state-9 %state-8 %state-7 %state-6 %state-5 %state-4 %state-3 %state-2 %state-1 %q11 %review06 %base)
 ::
 ::  the one shape of those found, or why none is chosen
 ::
@@ -60,8 +64,12 @@
   ^-  (each shape @t)
   ?@  old  |+'the saved state is an atom, not a versioned state'
   ?+  -.old  |+(crip "the saved state's version {<-.old>} is not one this agent reads")
+      %10
+    ?:  !=(~ (mole |.(;;(state-10:ci old))))  &+%current
+    |+'a %10 state that is not exactly state-10: partial or corrupt'
+  ::
       %9
-    ?:  !=(~ (mole |.(;;(state-9:ci old))))  &+%current
+    ?:  !=(~ (mole |.(;;(state-9:ci-state-9 old))))  &+%state-9
     |+'a %9 state that is not exactly state-9: partial or corrupt'
   ::
       %8
@@ -111,19 +119,36 @@
 ::
 ++  load
   |=  old=*
-  ^-  [=shape new=state-9:ci]
+  ^-  [=shape new=state-10:ci]
   =/  found=(each shape @t)  (shape-of old)
   ?:  ?=(%| -.found)
     ~|  %urgit-ci-state-refused
     ~|  p.found
     !!
   :-  p.found
-  ?:  =(%current p.found)  ;;(state-9:ci old)
-  (from-state-8 (eight p.found old))
+  ?:  =(%current p.found)  ;;(state-10:ci old)
+  (from-state-9 (nine p.found old))
+::
+::  a saved state of a shape before state-10, as the state-9 it converts
+::  through on its way to state-10 (ci-migration-vector checks the
+::  state-9 conversion on it).  a current state has none
+::
+++  load-9
+  |=  old=*
+  ^-  [=shape new=state-9:ci-state-9]
+  =/  found=(each shape @t)  (shape-of old)
+  ?:  ?=(%| -.found)
+    ~|  %urgit-ci-state-refused
+    ~|  p.found
+    !!
+  ?:  =(%current p.found)
+    ~|  %urgit-ci-state-is-current
+    !!
+  [p.found (nine p.found old)]
 ::
 ::  a saved state of a shape before state-9, as the state-8 it converts
 ::  through on its way to state-9 (ci-migration-vector checks the
-::  state-8 conversion on it).  a current state has none
+::  state-8 conversion on it).  a current state and state-9 have none
 ::
 ++  load-8
   |=  old=*
@@ -135,6 +160,9 @@
     !!
   ?:  =(%current p.found)
     ~|  %urgit-ci-state-is-current
+    !!
+  ?:  =(%state-9 p.found)
+    ~|  %urgit-ci-state-is-state-9
     !!
   [p.found (eight p.found old)]
 ::
@@ -153,10 +181,21 @@
   ?:  =(%current p.found)
     ~|  %urgit-ci-state-is-current
     !!
+  ?:  =(%state-9 p.found)
+    ~|  %urgit-ci-state-is-state-9
+    !!
   ?:  =(%state-8 p.found)
     ~|  %urgit-ci-state-is-state-8
     !!
   [p.found (seven p.found old)]
+::
+::  .old, of a shape before state-10, converted to state-9
+::
+++  nine
+  |=  [=shape old=*]
+  ^-  state-9:ci-state-9
+  ?:  =(%state-9 shape)  ;;(state-9:ci-state-9 old)
+  (from-state-8 (eight shape old))
 ::
 ::  .old, of a shape before state-9, converted to state-8
 ::
@@ -177,6 +216,7 @@
   %-  from-state-5
   ?-  shape
     %current  !!
+    %state-9  !!
     %state-8  !!
     %state-7  !!
     %state-6  !!
@@ -197,6 +237,55 @@
     (from-state-3 (from-state-2 (from-state-1 (from-base ;;(state-0:ci-state-base old)))))
   ==
 ::
+::  state-9 (frozen whole in sur/ci-state-9): its thirty-six fields under
+::  the tag %10, each copied in its place, then the bunt of the recovery
+::  record (CI-RECOVERY-1).  an old ship loads unpaused, with no
+::  checkpoint, no staged import, no restore and no history.  nothing
+::  gains authority and nothing is reset
+::
+++  from-state-9
+  |=  o=state-9:ci-state-9
+  ^-  state-10:ci
+  :*  %10
+      candidates.o
+      daemons.o
+      assignments.o
+      attempts.o
+      ci-protected.o
+      policies.o
+      credentials.o
+      signing.o
+      ship-keys.o
+      incarnations.o
+      generations.o
+      baselines.o
+      locks.o
+      roles.o
+      environments.o
+      approvals.o
+      overrides.o
+      network-policies.o
+      read-capabilities.o
+      shadows.o
+      comparisons.o
+      audit.o
+      sandbox-requirements.o
+      mirror-tokens.o
+      resolve-mappings.o
+      harness-paths.o
+      recovery-reports.o
+      recovery-commands.o
+      forge-events.o
+      event-ids.o
+      schedules.o
+      tag-runs.o
+      automatic-inputs.o
+      input-snapshots.o
+      input-evidence.o
+      resolver-inputs.o
+      *recovery-state:ci
+  ==
+::
 ::  state-8 (frozen whole in sur/ci-state-8): its thirty-six fields under
 ::  the tag %9, and what state-9 adds inside them.  a candidate keeps
 ::  every field, and an event run's pull facts gain no labels and no
@@ -207,7 +296,7 @@
 ::
 ++  from-state-8
   |=  o=state-8:ci-state-8
-  ^-  state-9:ci
+  ^-  state-9:ci-state-9
   :*  %9
       (~(run by candidates.o) candidate-from-8)
       daemons.o
@@ -249,7 +338,7 @@
 ::
 ++  candidate-from-8
   |=  c=candidate:ci-state-8
-  ^-  candidate:ci
+  ^-  candidate:ci-state-9
   :*  id.c
       repo.c
       ref.c
@@ -287,7 +376,7 @@
 ::
 ++  trigger-from-8
   |=  t=trigger:ci-state-8
-  ^-  trigger:ci
+  ^-  trigger:ci-state-9
   ?-  -.t
     %push  [%push ~]
     %dispatch  t
@@ -296,8 +385,8 @@
 ::
 ++  run-event-from-8
   |=  e=run-event:ci-state-8
-  ^-  run-event:ci
-  =/  pull=(unit pull-facts:ci)
+  ^-  run-event:ci-state-9
+  =/  pull=(unit pull-facts:ci-state-9)
     ?~  pull.e  ~
     `(pull-facts-from-8 u.pull.e)
   :*  id.e
@@ -315,8 +404,8 @@
 ::
 ++  forge-event-from-8
   |=  e=forge-event:ci-state-8
-  ^-  forge-event:ci
-  =/  pull=(unit pull-facts:ci)
+  ^-  forge-event:ci-state-9
+  =/  pull=(unit pull-facts:ci-state-9)
     ?~  pull.e  ~
     `(pull-facts-from-8 u.pull.e)
   :*  id.e
@@ -341,7 +430,7 @@
 ::
 ++  pull-facts-from-8
   |=  p=pull-facts:ci-state-8
-  ^-  pull-facts:ci
+  ^-  pull-facts:ci-state-9
   :*  number.p
       title.p
       action.p

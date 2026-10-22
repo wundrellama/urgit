@@ -40,15 +40,15 @@
   (pairs:enjs:format ~[['version' n+'1'] ['sources' [%a (turn sources |=(s=@t s+s))]]])
 ::
 ++  captured
-  |=  [s=state-9:ci id=candidate-id:ci]
+  |=  [s=state-10:ci id=candidate-id:ci]
   ^-  (list @t)
   (~(gut by input-snapshots.s) id ~)
 ::
 ::  Shared by the actual action and native semantic vectors. Check authority
 ::  and the observed generation before changing even an empty list.
 ++  edit
-  |=  [s=state-9:ci repo=@t sources=(list @t) expected=@ud allowed=?]
-  ^-  (each state-9:ci @t)
+  |=  [s=state-10:ci repo=@t sources=(list @t) expected=@ud allowed=?]
+  ^-  (each state-10:ci @t)
   ?.  allowed  [%| 'ci-policy authority is required to edit automatic inputs']
   ?.  =(expected (~(gut by generations.s) repo 0))
     [%| 'CI policy changed; reload before editing automatic inputs']

@@ -436,6 +436,11 @@ export const ci = {
   // the storage reachability probe (P3 D5): the store's endpoint and one
   // unsigned URL under the CI prefix for THIS browser to fetch
   storageProbe: () => ciRequest('/storage/probe'),
+  // CI recovery (CI-RECOVERY-1): the pause, the checkpoints with "written"
+  // and "replica" apart, the checkpoint repository, the staged checkpoint
+  // with its manifest and diff, and what restores brought back. The
+  // recovery actions are POSTed through action
+  recoveryState: () => ciRequest('/recovery'),
   // the poke as JSON; the ship answers 200 {ok} or the refusal
   action: (body) => ciRequest('/action', { method: 'POST', body: JSON.stringify(body) }),
   // manual runs (Delivery 1A): the workflows each branch's promoted

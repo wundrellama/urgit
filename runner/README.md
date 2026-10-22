@@ -14,6 +14,7 @@ The repository's **CI** tab shows a checklist of these steps, each ticked from t
 5. [Watch](#5-watch)
 6. [Runners](#6-runners)
 7. [Limitations in this release](#7-limitations-in-this-release)
+8. [Backup and restore](#8-backup-and-restore)
 
 ## Prepare your repository
 
@@ -234,6 +235,79 @@ Nothing at the launcher is touched. A record of the attempt there refuses the re
 - The saved `act` stream is uploaded as `log.jsonl`. Step summaries and artifacts stay in the sandbox and are not uploaded.
 - **Concurrency**: a job stopped by a cancellation stops whole. A step with `if: always()` (or `cancelled()`) inside it does not run, because its sandbox is stopped. A job-level `if: always()` does run. Job-level `concurrency` is refused.
 - The store's `public-url-base` setting is not read: the endpoint `%storage` names is the one both the runner and every browser must reach.
+
+## 8. Backup and restore
+
+Your ship writes a checkpoint of its CI configuration whenever that configuration changes. You can also write one at any time with **Settings → CI recovery → Checkpoint now**.
+
+A checkpoint holds the CI configuration only:
+
+- each repository's CI policy, its promoted baselines and the locks they name
+- environment rules, role bindings and override roles
+- runner records: id, labels, repository binding, and enrolled and revoked times
+- credential references: repository, name, scope and environments, never a value
+- the CI signing public key and its certificate, never a private key
+- the newest 100 run summaries, with their log handles in your object store
+- the approval and override audit, as history
+
+A checkpoint never holds any of these:
+
+- a repository object, an LFS payload or store bytes
+- a credential value or a private key
+- a bearer or token hash, a mirror token or a read capability
+- a live lease or an approval in force
+- the GitHub token
+
+Back up your repositories themselves with `git clone --mirror`.
+
+### Where checkpoints go
+
+The ship commits each checkpoint to its private repository `ci-checkpoints`. The first checkpoint creates that repository. Each commit holds the newest checkpoint under `checkpoint/`, and Git history holds every earlier one. `checkpoint/manifest.json` lists each file with its byte length and its sha-256.
+
+A copy on the same ship is no backup. After each write, the ship pushes `ci-checkpoints` to that repository's own origin, its replica. Set one up before the first checkpoint, in one of these two ways.
+
+- **GitHub.** Create a private GitHub repository with one commit, and connect a GitHub token in **Settings**. Then import that repository into urgit under the name `ci-checkpoints`.
+- **Another ship you control.** Create a repository with one commit on that ship, and make this ship a writer of it. Then fork it to this ship under the name `ci-checkpoints`.
+
+With neither, the ship cannot push, and it says so. Hold a copy yourself instead:
+
+```sh
+git clone https://<your-ship>/git/ci-checkpoints.git
+cd ci-checkpoints && git pull
+```
+
+Run `git pull` again after every checkpoint.
+
+**Settings → CI recovery** shows the last checkpoint as two separate facts:
+
+- **Checkpoint: Written** means the commit is in `ci-checkpoints`.
+- **Backup: Replica confirmed** means the replica accepted the push. This is the only state that is a backup.
+- **Backup failed** and **Replica not confirmed** mean the replica does not hold this checkpoint. Fix the replica, then press **Checkpoint now**.
+
+### The restore drill
+
+Run the drill on a fresh, disposable ship first. Each step below is one action.
+
+1. Install the urgit desk on the ship.
+2. In **Settings → CI recovery**, press **Pause CI**. While CI is paused it admits no run, offers no runner work, admits no scheduled run and lands nothing.
+3. Create each repository on the ship, and push it from its own Git replica with `git push --mirror`. Do this before the apply, because the apply skips a CI-protected branch that has no commit yet.
+4. Create a private repository named `ci-checkpoints`. Push your replica's branch into it: `git push https://<ship>/git/ci-checkpoints.git main`.
+5. Press **Import**. Leave the commit empty to import the newest checkpoint. To import an older one, enter its commit from `git log`. A corrupt, truncated or unsupported checkpoint is refused whole, with the reason.
+6. Read the staged checkpoint's manifest and its diff. Each role grant it adds is a line of its own.
+7. Press **Apply…**, tick the box, and press **Apply**. The apply waits until no attempt is running.
+8. Re-enter each credential listed under **Credentials to re-enter**, in its repository's settings.
+9. Mint a new token for each runner listed under **Runners to re-enroll**, and enroll that runner again.
+10. If a default branch runs workflows on a schedule, promote its baseline again. An apply arms no schedule.
+11. Press **Resume CI**. Resuming starts no run and lands nothing. The next push, pull request or dispatch runs under the restored configuration.
+12. Press **Checkpoint now**, so that the replica holds the restored configuration. No checkpoint is written automatically while CI is paused.
+
+An apply never rewinds authority:
+
+- A credential comes back as a name that needs re-entry, with no value.
+- Approvals and overrides come back as inert history only.
+- Runners come back as records that must re-enroll, with no bearer.
+- The ship keeps its own new CI signing key. The old public key is kept as history.
+- Run summaries come back as history, and none of them can land anything.
 
 ## How it works
 

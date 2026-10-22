@@ -88,14 +88,26 @@
 ::    the labels after it and the label, and a label change on a closed
 ::    or merged pull request is recorded and runs nothing.
 ::
-::    persisted state is state-9 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-8, state-7, state-6, state-5,
-::    state-4, state-3, state-2, state-1, and the three tagged %0 — is converted to
-::    it explicitly on load by lib/ci-migrate, or refused with its reason.
-::    the open long-polls are transient and dropped on every load.
+::    CI-RECOVERY-1 (R5.2-A) adds checkpoints and a paused restore
+::    (lib/ci-checkpoint).  a checkpoint, the CI-configuration projection
+::    only, is written as files to the private repository ci-checkpoints
+::    through %urgit on every CI-policy change and on the owner's Checkpoint
+::    now, then pushed to the repository's own origin as its replica.
+::    "written" and "replica confirmed" are separate facts.  the owner
+::    pauses CI, imports a checkpoint into the staged area, reviews its
+::    manifest and diff, applies it and resumes, each as its own action.
+::    while paused no run is admitted, no assignment offered, no schedule
+::    admitted and nothing landed.  an apply never rewinds authority.
+::
+::    persisted state is state-10 (contract §8c; state-migration ruling
+::    01): every earlier shape — state-9, state-8, state-7, state-6,
+::    state-5, state-4, state-3, state-2, state-1, and the three tagged %0
+::    — is converted to it explicitly on load by lib/ci-migrate, or
+::    refused with its reason.  the open long-polls are transient and
+::    dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-forge, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-checkpoint, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-forge, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-clay, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -145,7 +157,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-9:ci
+=|  state-10:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -178,7 +190,7 @@
     |=  old=vase
     ^-  (quip card _this)
     ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-9, or converted to it explicitly, or refused with its
+    ::  current state-10, or converted to it explicitly, or refused with its
     ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
     ::  every active schedule's armed wake is set again (Delivery 1C): a
     ::  timer that survived is then set twice, and the armed-due and
@@ -192,7 +204,7 @@
         our.bowl
         'state-migration'
         ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-9")
+        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-10")
       ==
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
@@ -201,6 +213,11 @@
     |=  [=mark =vase]
     ^-  (quip card _this)
     =/  before=snapshot:hc  snap:hc
+    ::  CI-RECOVERY-1: the CI policy as it stood, and the audit, so that a
+    ::  change of policy writes a checkpoint, named by its audit entry
+    ::
+    =/  print=*  policy-print:hc
+    =/  told=(list audit-entry:ci)  audit
     =/  =out:hc
       ?+  mark  ~|([%urgit-ci-bad-mark mark] !!)
           %ci-action
@@ -221,8 +238,10 @@
     ::  (inline, not an arm: the agent door has exactly its ten.)
     ::
     =/  next  this(state state.out, polls polls.out)
+    =/  saved=out:hc  (auto-checkpoint:~(. +>.next bowl) print told)
+    =.  next  next(state state.saved, polls polls.saved)
     =/  live  (live-facts:~(. +>.next bowl) before announced)
-    [(weld cards.live cards.out) next(announced announced.live)]
+    [:(weld cards.live cards.out cards.saved) next(announced announced.live)]
   ::
   ::  the live feed's paths (D4): a repository's candidates, and the runner
   ::  records.  session-authorized: only this ship may watch.  the initial
@@ -270,6 +289,15 @@
     ?+  path  (on-peek:def path)
         [%x %state %version ~]
       ``noun+!>(-.state)
+    ::
+        ::  CI-RECOVERY-1: whether CI is paused for a restore.  %urgit's CI
+        ::  gate reads it and refuses every write to a CI-protected ref
+        ::  while it is.  the recovery record, for the dojo
+        ::
+        [%x %recovery-paused ~]
+      ``noun+!>(`?`ci-paused:hc)
+        [%x %recovery ~]
+      ``noun+!>(recovery)
     ::
         [%x %eligible @ @ @ ~]
       ``noun+!>((eligible:hc i.t.t.path i.t.t.t.path i.t.t.t.t.path))
@@ -419,6 +447,15 @@
     ^-  (quip card _this)
     ?.  ?=([%urgit *] wire)  (on-agent:def wire sign)
     ?.  ?=(%poke-ack -.sign)  (on-agent:def wire sign)
+    ::  CI-RECOVERY-1: %urgit's answer to a checkpoint's write, and to the
+    ::  start of a replica push
+    ::
+    ?:  ?=([%urgit %checkpoint @ ~] wire)
+      =/  =out:hc  (checkpoint-acked:hc i.t.t.wire p.sign)
+      [cards.out this(state state.out, polls polls.out)]
+    ?:  ?=([%urgit %replica @ ~] wire)
+      =/  =out:hc  (replica-acked:hc i.t.t.wire p.sign)
+      [cards.out this(state state.out, polls polls.out)]
     ?~  p.sign  `this
     %-  (slog leaf+"urgit-ci: %urgit rejected {<wire>}" u.p.sign)
     `this
@@ -493,6 +530,14 @@
       =/  next  this(state state.out, polls polls.out)
       =/  live  (live-facts:~(. +>.next bowl) before announced)
       [(weld cards.live cards.out) next(announced announced.live)]
+    ::
+        ::  CI-RECOVERY-1: a replica push still unanswered fifteen minutes
+        ::  after it started is a failed backup
+        ::
+        [%replica-timeout @ ~]
+      ?.  ?=([%behn %wake *] sign-arvo)  (on-arvo:def wire sign-arvo)
+      =/  =out:hc  (replica-silent:hc i.t.wire)
+      [cards.out this(state state.out, polls polls.out)]
     ==
   ::
   ++  on-fail  on-fail:def
@@ -1014,6 +1059,8 @@
 ++  eligible
   |=  [repo-segment=@t ref-segment=@t oid-segment=@t]
   ^-  ?
+  ::  CI-RECOVERY-1: nothing lands while CI is paused
+  ?:  ci-paused  %.n
   =/  repo=@t  (decode-segment repo-segment)
   =/  ref=@t  (decode-segment ref-segment)
   =/  oid=(unit oid:git)  (parse-oid (decode-segment oid-segment))
@@ -1050,6 +1097,8 @@
 ++  landing-for
   |=  [repo-segment=@t ref-segment=@t oid-segment=@t tip-segment=@t]
   ^-  (unit [id=candidate-id:ci pull=(unit @ud)])
+  ::  CI-RECOVERY-1: no authority lands anything while CI is paused
+  ?:  ci-paused  ~
   =/  repo=@t  (decode-segment repo-segment)
   =/  ref=@t  (decode-segment ref-segment)
   =/  oid=(unit oid:git)  (parse-oid (decode-segment oid-segment))
@@ -1214,6 +1263,8 @@
       ::  against the same base is the same candidate and keeps its record
       ::
       %stage-candidate
+    ::  CI-RECOVERY-1: no run is admitted while CI is paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     ::  the trust class is the actor's standing with the repository as
     ::  %urgit answers it (D3): a writer's revision is trusted, anyone
     ::  else's is untrusted.  an unreadable answer refuses the staging
@@ -1281,6 +1332,8 @@
       ::  answer refuses.
       ::
       %approve-candidate
+    ::  CI-RECOVERY-1: an approval twin is a new run: none while paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
     ?~  found  ~|('no such candidate' !!)
     =/  writable=(unit ?)  (can-write repo.u.found actor.act)
@@ -1373,6 +1426,7 @@
       ::  same trust class; every job runs again from a fresh plan
       ::
       %rerun-candidate
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =/  found=(unit candidate:ci)  (~(get by candidates) id.act)
     ?~  found  ~|('no such candidate' !!)
     =/  old=candidate:ci  u.found
@@ -1417,6 +1471,8 @@
       ::
       %set-credential
     ?:  =('' name.act)  ~|('credential name is required' !!)
+    ::  CI-RECOVERY-1: a value entered settles its re-entry mark
+    =.  state  (reentered:ci-checkpoint state repo.act name.act)
     ?:  (gth (met 3 name.act) 64)  ~|('credential name is at most 64 characters' !!)
     ?:  (lth (met 3 value.act) min-credential)
       ~|  'credential values must be at least 8 characters'
@@ -1433,6 +1489,8 @@
   ::
       %delete-credential
     =.  credentials  (~(del by credentials) [repo.act name.act])
+    ::  CI-RECOVERY-1: a deleted credential needs no re-entry either
+    =.  state  (reentered:ci-checkpoint state repo.act name.act)
     (emit ~)
   ::
       %rotate-ci-key
@@ -1598,6 +1656,8 @@
       ::  an operator re-runs a job with it.
       ::
       %assign
+    ::  CI-RECOVERY-1: no assignment is offered while CI is paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
     ?~  found  ~|('no such candidate' !!)
     ?:  (tagged-run u.found)
@@ -1802,6 +1862,8 @@
       ::  repositories this ship creates for it, and posts the lock
       ::
       %resolve-dependencies
+    ::  CI-RECOVERY-1: a resolve is an assignment: none while paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =+  (require-authority repo.act %ci-policy ~ actor.act)
     =.  incarnations  (ensure-incarnation repo.act)
     =/  chosen=(unit daemon-id:ci)  (select-resolver repo.act)
@@ -2061,6 +2123,9 @@
       ::  not this: %approve-candidate releases nothing.
       ::
       %approve-environment
+    ::  CI-RECOVERY-1: nothing runs while CI is paused, so nothing is
+    ::  approved for a run then
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
     ?~  found  ~|('no such candidate' !!)
     =/  c=candidate:ci  u.found
@@ -2114,6 +2179,8 @@
       ::  fifteen minutes to use, and the landing asked at once
       ::
       %record-override
+    ::  CI-RECOVERY-1: an override lands at once: never while paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =+  (require-authority repo.act %override `ref.act actor.act)
     ?:  =('' reason.act)  ~|('an override names its reason' !!)
     =/  found=(unit candidate:ci)  (~(get by candidates) candidate.act)
@@ -2170,7 +2237,7 @@
       ::  may use a runner profile toward these destinations
       ::
       %set-automatic-inputs
-    =/  changed=(each state-9:ci @t)
+    =/  changed=(each state-10:ci @t)
       %:  edit:ci-input  state  repo.act  sources.act  expected.act
         (authorized repo.act %ci-policy ~ actor.act)
       ==
@@ -2238,6 +2305,7 @@
       ::  source
       ::
       %stage-shadow
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =+  (require-authority repo.act %ci-policy ~ actor.act)
     =.  incarnations  (ensure-incarnation repo.act)
     =/  id=candidate-id:ci
@@ -2568,6 +2636,8 @@
       ::  role's, the actor the session's ship (or the dojo's), never JSON.
       ::
       %dispatch-workflow
+    ::  CI-RECOVERY-1: no run is admitted while CI is paused
+    ?:  ci-paused  ~|(paused-refusal:ci-checkpoint !!)
     =+  (require-authority repo.act %ci-policy ~ actor.act)
     =/  admitted  (admit-dispatch act)
     ?:  ?=(%| -.admitted)  ~|(reason.p.admitted !!)
@@ -2607,6 +2677,131 @@
 ::
     %run-ready  (run-ready id.act candidate.act)
     %run-conflict  (run-conflict id.act reason.act)
+  ::
+      ::  CI-RECOVERY-1 (R5.2-A): the owner's recovery actions.  none is
+      ::  delegable, and the actor is the session's ship.  only Checkpoint
+      ::  now sends a card, the checkpoint's own write.  pause, resume,
+      ::  import, discard and apply send none, so none of them can start a
+      ::  run, a schedule wake or a webhook
+      ::
+      %checkpoint-now
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =.  audit  (record-audit actor.act 'checkpoint-requested' '' 'checkpoint now')
+    (write-checkpoint 'operator: checkpoint now' actor.act)
+  ::
+      %pause-ci
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =/  problem=(unit @t)  (pause-refusal:ci-checkpoint state)
+    ?^  problem  ~|(u.problem !!)
+    =/  why=@t  ?:(=('' reason.act) 'paused for a restore' reason.act)
+    =.  paused.recovery  `[now.bowl actor.act why]
+    =.  audit  (record-audit actor.act 'ci-paused' '' why)
+    [~ state polls]
+  ::
+      %resume-ci
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =/  problem=(unit @t)  (resume-refusal:ci-checkpoint state)
+    ?^  problem  ~|(u.problem !!)
+    =.  paused.recovery  ~
+    =.  audit
+      (record-audit actor.act 'ci-resumed' '' 'CI resumed: resuming ran nothing and landed nothing')
+    [~ state polls]
+  ::
+      ::  a checkpoint read from the checkpoint repository, at its default
+      ::  branch's tip or at the named commit, checked whole and staged.
+      ::  a refusal changes nothing
+      ::
+      %import-checkpoint
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =/  problem=(unit @t)  (import-refusal:ci-checkpoint state)
+    ?^  problem  ~|(u.problem !!)
+    =/  repo=@t  repository:ci-checkpoint
+    =/  info=(unit (unit recovery-repo:ci))  (checkpoint-repo-info repo)
+    ?~  info
+      ~|('%urgit cannot be read, so the checkpoint repository cannot be read' !!)
+    ?~  u.info
+      ~|('this ship has no repository ci-checkpoints: push the replica into it first' !!)
+    =/  at=(unit oid:git)  ?^(commit.act commit.act tip.u.u.info)
+    ?~  at
+      ~|('the checkpoint repository has no commit on its default branch: push the replica into it first' !!)
+    =/  names=(list @t)
+      :-  manifest-file:ci-checkpoint
+      (turn sections:ci-checkpoint |=([* file=@t *] file))
+    =/  found=(list [@t octs])
+      %+  murn  names
+      |=  file=@t
+      ^-  (unit [@t octs])
+      =/  data=(unit octs)
+        (file-at repo u.at (rap 3 ~[directory:ci-checkpoint '/' file]))
+      ?~  data  ~
+      `[file u.data]
+    =/  read=(each [manifest=checkpoint-manifest:ci content=checkpoint-content:ci] @t)
+      (import:ci-checkpoint (malt found))
+    ?:  ?=(%| -.read)  ~|(p.read !!)
+    =/  staged=staged-checkpoint:ci
+      [u.at now.bowl actor.act manifest.p.read content.p.read]
+    =.  staged.recovery  `staged
+    =.  audit
+      %:  record-audit  actor.act  'checkpoint-imported'  ''
+        (rap 3 ~[id.manifest.p.read ' from commit ' (oid-text:git-codec u.at)])
+      ==
+    [~ state polls]
+  ::
+      %discard-checkpoint
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =/  waiting=(unit staged-checkpoint:ci)  staged.recovery
+    ?~  waiting  ~|('no checkpoint is staged' !!)
+    =.  staged.recovery  ~
+    =.  audit
+      (record-audit actor.act 'checkpoint-discarded' '' id.manifest.u.waiting)
+    [~ state polls]
+  ::
+      ::  the staged checkpoint applied, named by the id the operator
+      ::  reviewed, while CI is paused and no attempt runs.  the ship's
+      ::  refs and revisions are read first, so a CI-protected ref with no
+      ::  tip and a baseline whose revision is missing are skipped
+      ::
+      %apply-checkpoint
+    ?.  =(our.bowl actor.act)  ~|(owner-refusal !!)
+    =/  problem=(unit @t)  (apply-refusal:ci-checkpoint state id.act)
+    ?^  problem  ~|(u.problem !!)
+    =/  waiting=(unit staged-checkpoint:ci)  staged.recovery
+    ?~  waiting  ~|('no checkpoint is staged' !!)
+    =/  content=checkpoint-content:ci  content.u.waiting
+    =/  tips=(list [repo=@t ref=@t])
+      %+  skim  (wanted-tips:ci-checkpoint content)
+      |=  [repo=@t ref=@t]
+      =/  tip=(unit (unit [tip=oid:git linked=?]))  (ref-tip repo ref)
+      ?&(?=(^ tip) ?=(^ u.tip))
+    =/  revisions=(list [repo=@t revision=oid:git])
+      %+  skim  (wanted-revisions:ci-checkpoint content)
+      |=  [repo=@t revision=oid:git]
+      =/  found=(each oid:git @t)  (tag-commit repo revision)
+      ?=(%& -.found)
+    =/  here=presence:ci-checkpoint  [(silt tips) (silt revisions)]
+    =/  done=[s=state-10:ci =restore:ci]
+      (apply:ci-checkpoint state here actor.act now.bowl eny.bowl)
+    =.  state  s.done
+    =.  audit
+      %:  record-audit  actor.act  'checkpoint-applied'  ''
+        %+  rap  3
+        :~  id.restore.done  ': '
+            (crip (a-co:co (lent repos.restore.done)))  ' repositories restored, '
+            (crip (a-co:co (lent skipped.restore.done)))  ' items skipped, '
+            (crip (a-co:co (lent cancelled.restore.done)))  ' open runs cancelled'
+        ==
+      ==
+    [~ state polls]
+  ::
+      ::  %urgit's answer to a replica push (local only): each checkpoint
+      ::  the push carried is confirmed only on the replica's acceptance
+      ::
+      %replica-result
+    =.  checkpoints.recovery
+      %:  push-answered:ci-checkpoint
+        checkpoints.recovery  ticket.act  ok.act  message.act  now.bowl
+      ==
+    start-push
   ==
 ::
 ::  the manual-run inventory of one ref (Delivery 1A): the workflows that
@@ -3124,6 +3319,8 @@
 ++  deliver
   |=  daemon=daemon-id:ci
   ^-  out
+  ::  CI-RECOVERY-1: no assignment is handed out while CI is paused
+  ?:  ci-paused  [~ state polls]
   =/  waiting=(unit poll)  (~(get by polls) daemon)
   ?~  waiting  (emit ~)
   =/  undelivered=(list assignment:ci)
@@ -3296,6 +3493,9 @@
 ::
 ++  schedule
   ^-  out
+  ::  CI-RECOVERY-1: while CI is paused nothing is planned, assigned,
+  ::  re-offered, resolved or joined, and no card goes out
+  ?:  ci-paused  [~ state polls]
   =.  state  reoffer-unfetched
   =/  tags=out  advance-tags
   =.  state  state.tags
@@ -3920,6 +4120,13 @@
   =/  release=card
     (urgit-git-poke /release/(scot %uv id) [%delete-ref repo.next (scratch-ref next)])
   ?.  (landable next)  (emit ~[release])
+  ::  CI-RECOVERY-1: nothing lands while CI is paused, and resuming lands
+  ::  nothing either: the reason says what to do
+  ?:  ci-paused
+    =/  why=@t
+      'passed while CI was paused for a restore: nothing was landed. Push the same commit again after CI resumes to land it'
+    =.  candidates  (~(put by candidates) id next(verdict-reason `why))
+    (emit ~[release])
   (emit (snoc (land-cards next) release))
 ::
 ::  CI-CONCURRENCY-1: the workflows of a run whose runs were cancelled;
@@ -4832,6 +5039,11 @@
   ::  source of workflow events
   ?.  (~(has by incarnations) repo.act)  (emit ~)
   ?:  (mirror-repository repo.act)  (emit ~)
+  ::  CI-RECOVERY-1: the checkpoint repository is recovery storage, never
+  ::  a source of workflow events.  while CI is paused an event is
+  ::  recorded and remembered, and runs nothing, now or later
+  ?:  =(repository:ci-checkpoint repo.act)  (emit ~)
+  ?:  ci-paused  (paused-events act)
   ::  each fold's product is cast to [(list card) _state]: its accumulator
   ::  names its head (cards=), and a list that keeps that face cannot be
   ::  welded (weld's homo reads i.b through the formal (list) faces only)
@@ -5461,6 +5673,14 @@
         (scag 16 `(list missed-interval:ci)`[u.missed.verdict missed.e])
     ==
   =/  timers=(list card)  ?~(next-due ~ ~[(timer-card k u.next-due definition.e)])
+  ::  CI-RECOVERY-1: a wake while CI is paused admits nothing.  its
+  ::  occurrence is recorded as not admitted and the next one is armed.
+  ::  there is no catch-up when CI resumes
+  ?:  ci-paused
+    =/  why=@t  (rap 3 ~['not admitted at ' (iso-utc:ci-cron due) ': CI was paused for a restore'])
+    =.  schedules  (~(put by schedules) k advanced(reason `why))
+    =.  audit  (record-audit our.bowl 'schedule-paused' repo why)
+    [timers state polls]
   =/  ready=(each oid:git @t)  (due-problem k e)
   ?:  ?=(%| -.ready)
     =/  why=@t  (rap 3 ~['not admitted at ' (iso-utc:ci-cron due) ': ' p.ready])
@@ -5510,6 +5730,463 @@
     (urgit-git-poke /scratch/(scot %uv id) [%set-ref repo (scratch-ref run) tip])
   =/  scheduled=out  schedule
   [:(weld ~[keep] timers cards.scheduled) state.scheduled polls.scheduled]
+::
+::
+::  ---- CI-RECOVERY-1 (R5.2-A): checkpoints and the paused restore ----
+::
+++  owner-refusal
+  ^-  @t
+  'only the ship\'s owner checkpoints, pauses, resumes, imports or applies: recovery is never delegated'
+::
+++  ci-paused
+  ^-  ?
+  ?=(^ paused.recovery)
+::
+::  what a checkpoint is written on a change of: two equal prints are the
+::  same CI policy.  runner heartbeats and labels, runs, locks and the
+::  audit are not in it, and no credential value is
+::
+++  policy-print
+  ^-  *
+  =/  creds  (~(run by credentials) |=(c=credential:ci [scope.c envs.c created.c]))
+  =/  runners=(list [daemon-id:ci (unit (set @t)) (unit @da)])
+    %+  murn  ~(tap by daemons)
+    |=  [id=daemon-id:ci d=daemon:ci]
+    ^-  (unit [daemon-id:ci (unit (set @t)) (unit @da)])
+    ?~  enrolled.d  ~
+    `[id repos.d revoked.d]
+  :*  ci-protected
+      policies
+      sandbox-requirements
+      harness-paths
+      network-policies
+      automatic-inputs
+      baselines
+      roles
+      environments
+      creds
+      ?~(signing ~ `[pub.u.signing cert.u.signing])
+      (silt runners)
+  ==
+::
+::  after every poke: a changed CI policy writes a checkpoint, named by
+::  the audit entry the change wrote.  none is written while CI is paused
+::
+++  auto-checkpoint
+  |=  [print=* told=(list audit-entry:ci)]
+  ^-  out
+  ?:  =(print policy-print)  [~ state polls]
+  ?:  ci-paused  [~ state polls]
+  =/  cause=@t
+    ?:  =(told audit)  'policy change'
+    ?~  audit  'policy change'
+    =/  where=@t  ?:(=('' repo.i.audit) '' (rap 3 ~[' (' repo.i.audit ')']))
+    (rap 3 ~['policy change: ' kind.i.audit where])
+  (write-checkpoint cause our.bowl)
+::
+::  the checkpoint repository as %urgit answers it: ~ when %urgit cannot
+::  be read, [~ ~] when the repository does not exist
+::
+++  checkpoint-repo-info
+  |=  repo=@t
+  ^-  (unit (unit recovery-repo:ci))
+  =/  raw=(unit *)  (urgit-peek /ci-recovery-repo/(scot %t repo))
+  ?~  raw  ~
+  =/  got=(each (unit recovery-repo:ci) tang)
+    (mule |.(;;((unit recovery-repo:ci) u.raw)))
+  ?.  ?=(%& -.got)  ~
+  `p.got
+::
+::  the desk this agent runs from, and its Clay revision
+::
+++  desk-revision
+  ^-  [desk=@t revision=@ud]
+  =/  got=(each @ud tang)
+    %-  mule
+    |.
+    ud:.^(cass:clay %cw /(scot %p our.bowl)/[q.byk.bowl]/(scot %da now.bowl))
+  [q.byk.bowl ?:(?=(%& -.got) p.got 0)]
+::
+::  a checkpoint that could not be written: recorded, with the reason
+::
+++  record-unwritten
+  |=  [id=@t cause=@t actor=@p reason=@t]
+  ^-  out
+  =/  record=checkpoint:ci
+    :*  id  now.bowl  cause  actor  repository:ci-checkpoint  ''  ~  0x0  ''  ~
+        [%failed now.bowl reason]
+        [%skipped 'the checkpoint was not written, so there is nothing to push']
+    ==
+  =.  checkpoints.recovery  (add-record:ci-checkpoint checkpoints.recovery record)
+  [~ state polls]
+::
+::  one checkpoint: its files and its commit are built here, so the record
+::  knows its commit before %urgit writes it.  the repository is created
+::  private when it does not exist.  a repository that is public or bound
+::  to a desk is never written to
+::
+++  write-checkpoint
+  |=  [cause=@t actor=@p]
+  ^-  out
+  =/  seq=@ud  +(sequence.recovery)
+  =.  sequence.recovery  seq
+  =/  id=@t  (checkpoint-id:ci-checkpoint now.bowl seq our.bowl)
+  =/  repo=@t  repository:ci-checkpoint
+  =/  info=(unit (unit recovery-repo:ci))  (checkpoint-repo-info repo)
+  ?~  info
+    (record-unwritten id cause actor '%urgit cannot be read, so the checkpoint repository cannot be checked')
+  =/  existing=(unit recovery-repo:ci)  u.info
+  ?:  ?&(?=(^ existing) public.u.existing)
+    (record-unwritten id cause actor 'the repository ci-checkpoints is public: a checkpoint is written only to a private repository')
+  ?:  ?&(?=(^ existing) linked.u.existing)
+    (record-unwritten id cause actor 'the repository ci-checkpoints is bound to a Clay desk: a checkpoint is not written there')
+  =/  ref=@t  ?~(existing 'refs/heads/main' head.u.existing)
+  =/  parent=(unit oid:git)  ?~(existing ~ tip.u.existing)
+  =/  where=[desk=@t revision=@ud]  desk-revision
+  =/  content=checkpoint-content:ci  (project:ci-checkpoint state our.bowl now.bowl)
+  =/  made=written-files:ci-checkpoint
+    %:  export:ci-checkpoint
+      content  id  our.bowl  desk.where  revision.where  now.bowl  cause
+    ==
+  =/  tree=(map path octs)  (malt files.made)
+  =/  message=@t  (rap 3 ~['checkpoint ' id ': ' cause])
+  =/  snapped=(unit [commit=oid:git objects=(map oid:git object:git)])
+    (snapshot:git-clay tree ~ parent our.bowl now.bowl message)
+  ?~  snapped
+    (record-unwritten id cause actor 'the checkpoint tree could not be built')
+  =/  record=checkpoint:ci
+    :*  id  now.bowl  cause  actor  repo  ref  parent  commit.u.snapped
+        digest.made  sections.manifest.made  [%pending ~]  [%waiting ~]
+    ==
+  =.  checkpoints.recovery  (add-record:ci-checkpoint checkpoints.recovery record)
+  =/  objects=(list object:git)  ~(val by objects.u.snapped)
+  =/  write=card
+    %+  urgit-git-poke  /checkpoint/(scot %t id)
+    [%write-recovery-commit repo ref parent commit.u.snapped objects]
+  ?^  existing  [~[write] state polls]
+  :_  [state polls]
+  :~  (urgit-git-poke /checkpoint-repo [%create repo %.n])
+      write
+  ==
+::
+::  %urgit's answer to a checkpoint's write.  written means its replica
+::  push is queued.  not written carries %urgit's reason
+::
+++  checkpoint-acked
+  |=  [segment=@ta error=(unit tang)]
+  ^-  out
+  =/  id=@t  (fall (slaw %t segment) segment)
+  ?^  error
+    =.  checkpoints.recovery
+      (not-written:ci-checkpoint checkpoints.recovery id now.bowl (trace-reason u.error))
+    [~ state polls]
+  =.  checkpoints.recovery  (written:ci-checkpoint checkpoints.recovery id now.bowl)
+  start-push
+::
+::  the replica path of the checkpoint repository: a GitHub origin with
+::  a stored token, or the ship it was forked from.  else %| with whether
+::  no path is configured (%.y) or the path cannot be used (%.n)
+::
+++  replica-route
+  |=  [info=(unit (unit recovery-repo:ci)) ref=@t]
+  ^-  (each @t [unconfigured=? reason=@t])
+  ?~  info  [%| %.n '%urgit cannot be read, so the replica path cannot be checked']
+  ?~  u.info  [%| %.n 'the repository ci-checkpoints is gone']
+  =/  r=recovery-repo:ci  u.u.info
+  ?^  github.r
+    ?.  token.r
+      [%| %.n 'the repository has a GitHub origin, but no GitHub token is connected']
+    [%& (rap 3 ~['GitHub ' owner.u.github.r '/' repository.u.github.r])]
+  ?^  peer.r
+    ?.  =(ref head.r)
+      [%| %.n 'a peer replica receives only the default branch, and the checkpoint branch is another']
+    [%& (rap 3 ~['ship ' (scot %p ship.u.peer.r) ', repository ' repository.u.peer.r])]
+  :+  %|  %.y
+  %+  rap  3
+  :~  'no replica is configured: ci-checkpoints has no GitHub origin and is no fork of '
+      'another ship\'s repository. Clone it over Smart HTTP to hold a copy'
+  ==
+::
+::  the next replica push, when none is in flight: the newest written
+::  checkpoint carries every waiting one, its commit being their
+::  descendant.  a push that cannot start is a failed backup.  no path at
+::  all leaves each one written with its replica not confirmed
+::
+++  start-push
+  ^-  out
+  =/  next=(unit checkpoint:ci)  (next-push:ci-checkpoint checkpoints.recovery)
+  ?~  next  [~ state polls]
+  =/  route=(each @t [unconfigured=? reason=@t])
+    (replica-route (checkpoint-repo-info repository.u.next) ref.u.next)
+  ?:  ?=(%| -.route)
+    =.  checkpoints.recovery
+      ?:  unconfigured.p.route
+        (push-unconfigured:ci-checkpoint checkpoints.recovery reason.p.route)
+      =/  ticket=@uv  (fresh-nonce [%replica id.u.next])
+      =/  started  (push-started:ci-checkpoint checkpoints.recovery ticket '' now.bowl)
+      (push-answered:ci-checkpoint started ticket %.n reason.p.route now.bowl)
+    [~ state polls]
+  =/  ticket=@uv  (fresh-nonce [%replica id.u.next])
+  =.  checkpoints.recovery
+    (push-started:ci-checkpoint checkpoints.recovery ticket p.route now.bowl)
+  :_  [state polls]
+  :~  %+  urgit-git-poke  /replica/(scot %uv ticket)
+      [%push-recovery-replica repository.u.next ref.u.next ticket]
+      [%pass /replica-timeout/(scot %uv ticket) %arvo %b %wait (add now.bowl replica-wait:ci-checkpoint)]
+  ==
+::
+::  %urgit refused to start a push: a failed backup, with its reason
+::
+++  replica-acked
+  |=  [segment=@ta error=(unit tang)]
+  ^-  out
+  ?~  error  [~ state polls]
+  =/  ticket=(unit @uv)  (slaw %uv segment)
+  ?~  ticket  [~ state polls]
+  =.  checkpoints.recovery
+    %:  push-answered:ci-checkpoint
+      checkpoints.recovery  u.ticket  %.n  (trace-reason u.error)  now.bowl
+    ==
+  start-push
+::
+::  a push with no answer in its time: a failed backup
+::
+++  replica-silent
+  |=  segment=@ta
+  ^-  out
+  =/  ticket=(unit @uv)  (slaw %uv segment)
+  ?~  ticket  [~ state polls]
+  =.  checkpoints.recovery
+    %:  push-answered:ci-checkpoint
+      checkpoints.recovery  u.ticket  %.n  push-silence:ci-checkpoint  now.bowl
+    ==
+  start-push
+::
+::  the forge events of one %urgit event while CI is paused: each one is
+::  recorded and remembered, and admits nothing, now or later
+::
+++  paused-events
+  |=  act=action:ci
+  ^-  out
+  ?>  ?=(%forge-events -.act)
+  =/  why=@t  'not admitted: CI was paused for a restore, so this event runs nothing'
+  =.  state
+    %+  roll  refs.act
+    |=  [u=ref-update:ci acc=_state]
+    =.  state  acc
+    ?:  (~(has by event-ids) id.u)  state
+    =.  event-ids  (remember-id id.u)
+    =/  e=forge-event:ci
+      :*  id.u  repo.act  %push  ref.u  old.u  new.u  ~  actor.act  route.act
+          at.act  now.bowl  why  ~  ~
+      ==
+    =.  forge-events  (record-forge-event e)
+    state
+  =.  state
+    %+  roll  pulls.act
+    |=  [p=pull-update:ci acc=_state]
+    =.  state  acc
+    ?:  (~(has by event-ids) id.p)  state
+    =.  event-ids  (remember-id id.p)
+    =/  facts=pull-facts:ci
+      :*  number.p  title.p  action.p  head.p  source-ref.p  target-ref.p
+          base.p  merged.p  source-ship.p  source-repository.p  labels.p  label.p
+      ==
+    =/  e=forge-event:ci
+      :*  id.p  repo.act  %pull-request  target-ref.p  ~  `head.p  `facts
+          actor.act  route.act  at.act  now.bowl  why  ~  ~
+      ==
+    =.  forge-events  (record-forge-event e)
+    state
+  [~ state polls]
+::
+::  the Recovery section's data (GET ci/recovery): the ship's session only
+::
+++  handle-recovery
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  ^-  out
+  ?.  (viewer req)
+    (emit (give-error eyre-id 401 'session required'))
+  (emit (give-json eyre-id 200 recovery-section-json))
+::
+++  seconds-json
+  |=  at=@da
+  ^-  json
+  (numb:enjs:format (unix-seconds at))
+::
+++  write-json
+  |=  w=checkpoint-write:ci
+  ^-  json
+  =/  fields=(list [@t json])
+    ?-  -.w
+      %pending  ~[['state' s+'pending']]
+      %written  ~[['state' s+'written'] ['at' (seconds-json at.w)]]
+      %failed  ~[['state' s+'failed'] ['at' (seconds-json at.w)] ['reason' s+reason.w]]
+    ==
+  (pairs:enjs:format fields)
+::
+++  replica-json
+  |=  r=checkpoint-replica:ci
+  ^-  json
+  =/  fields=(list [@t json])
+    ?-  -.r
+      %waiting  ~[['state' s+'waiting']]
+      %pushing  ~[['state' s+'pushing'] ['at' (seconds-json at.r)] ['route' s+route.r]]
+      %confirmed  ~[['state' s+'confirmed'] ['at' (seconds-json at.r)] ['route' s+route.r]]
+        %failed
+      :~  ['state' s+'failed']  ['at' (seconds-json at.r)]
+          ['route' s+route.r]  ['reason' s+reason.r]
+      ==
+      %unconfigured  ~[['state' s+'unconfigured'] ['reason' s+reason.r]]
+      %skipped  ~[['state' s+'skipped'] ['reason' s+reason.r]]
+    ==
+  (pairs:enjs:format fields)
+::
+++  checkpoint-json
+  |=  c=checkpoint:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.c]
+      ['at' (seconds-json at.c)]
+      ['cause' s+cause.c]
+      ['actor' s+(scot %p actor.c)]
+      ['repository' s+repository.c]
+      ['ref' s+ref.c]
+      ['commit' ?:(=(0x0 commit.c) ~ s+(oid-text:git-codec commit.c))]
+      ['parent' ?~(parent.c ~ s+(oid-text:git-codec u.parent.c))]
+      ['manifest' s+manifest.c]
+      ['sections' [%a (turn sections.c section-json:ci-checkpoint)]]
+      ['written' (write-json written.c)]
+      ['replica' (replica-json replica.c)]
+  ==
+::
+++  staged-json
+  |=  st=staged-checkpoint:ci
+  ^-  json
+  =/  m=checkpoint-manifest:ci  manifest.st
+  =/  changes=(list change:ci-checkpoint)  (diff:ci-checkpoint state content.st)
+  %-  pairs:enjs:format
+  :~  ['id' s+id.m]
+      ['commit' s+(oid-text:git-codec commit.st)]
+      ['imported' (seconds-json imported.st)]
+      ['actor' s+(scot %p actor.st)]
+      :-  'manifest'
+      %-  pairs:enjs:format
+      :~  ['id' s+id.m]
+          ['ship' s+(scot %p ship.m)]
+          ['desk' s+desk.m]
+          ['revision' (numb:enjs:format revision.m)]
+          ['created' (seconds-json at.m)]
+          ['cause' s+cause.m]
+          ['sections' [%a (turn sections.m section-json:ci-checkpoint)]]
+          ['excluded' [%a (turn excluded:ci-checkpoint |=(t=@t s+t))]]
+      ==
+      :-  'diff'
+      :-  %a
+      %+  turn  changes
+      |=  c=change:ci-checkpoint
+      %-  pairs:enjs:format
+      :~  ['section' s+section.c]
+          ['repo' s+repo.c]
+          ['kind' s+kind.c]
+          ['text' s+text.c]
+      ==
+  ==
+::
+++  restore-json
+  |=  r=restore:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.r]
+      ['commit' s+(oid-text:git-codec commit.r)]
+      ['at' (seconds-json at.r)]
+      ['actor' s+(scot %p actor.r)]
+      ['repos' [%a (turn repos.r |=(t=@t s+t))]]
+      ['skipped' [%a (turn skipped.r |=(t=@t s+t))]]
+      ['cancelled' (numb:enjs:format (lent cancelled.r))]
+  ==
+::
+++  history-json
+  |=  h=restored-history:ci
+  ^-  json
+  %-  pairs:enjs:format
+  :~  :-  'keys'
+      :-  %a
+      %+  turn  keys.h
+      |=  k=key-record:ci
+      %-  pairs:enjs:format
+      :~  ['pub' s+(hex-bytes pub.k 32)]
+          ['ship' s+(scot %p ship.k)]
+          ['created' (seconds-json created.k)]
+      ==
+      :-  'runners'
+      :-  %a
+      %+  turn  runners.h
+      |=  r=runner-record:ci
+      %-  pairs:enjs:format
+      :~  ['id' s+(scot %uv id.r)]
+          ['labels' [%a (turn labels.r |=(t=@t s+t))]]
+          ['repos' ?~(repos.r ~ [%a (turn u.repos.r |=(t=@t s+t))])]
+      ==
+      :-  'credentials'
+      :-  %a
+      %+  turn  credentials.h
+      |=  r=credential-ref:ci
+      %-  pairs:enjs:format
+      :~  ['repo' s+repo.r]
+          ['name' s+name.r]
+          ['scope' s+scope.r]
+      ==
+      ['runs' (numb:enjs:format (lent runs.h))]
+      ['authorizations' (numb:enjs:format (lent authorizations.h))]
+      ['audit' (numb:enjs:format (lent audit.h))]
+  ==
+::
+++  recovery-repo-json
+  |=  info=(unit (unit recovery-repo:ci))
+  ^-  json
+  =/  name=json  s+repository:ci-checkpoint
+  ?~  info
+    (pairs:enjs:format ~[['name' name] ['readable' b+%.n] ['exists' b+%.n]])
+  ?~  u.info
+    (pairs:enjs:format ~[['name' name] ['readable' b+%.y] ['exists' b+%.n]])
+  =/  r=recovery-repo:ci  u.u.info
+  =/  route=(each @t [unconfigured=? reason=@t])  (replica-route info head.r)
+  %-  pairs:enjs:format
+  :~  ['name' name]
+      ['readable' b+%.y]
+      ['exists' b+%.y]
+      ['private' b+!public.r]
+      ['linked' b+linked.r]
+      ['branch' s+head.r]
+      ['tip' ?~(tip.r ~ s+(oid-text:git-codec u.tip.r))]
+      ['replica' ?:(?=(%& -.route) s+p.route ~)]
+      ['replicaProblem' ?:(?=(%& -.route) ~ s+reason.p.route)]
+  ==
+::
+::  the whole Recovery section.  the session is the ship's owner, who
+::  holds every role, so it may manage recovery
+::
+++  recovery-section-json
+  ^-  json
+  =/  info=(unit (unit recovery-repo:ci))  (checkpoint-repo-info repository:ci-checkpoint)
+  %-  pairs:enjs:format
+  :~  ['authority' (pairs:enjs:format ~[['manage' b+%.y] ['ship' s+(scot %p our.bowl)]])]
+      :-  'paused'
+      ?~  paused.recovery  ~
+      %-  pairs:enjs:format
+      :~  ['at' (seconds-json at.u.paused.recovery)]
+          ['actor' s+(scot %p actor.u.paused.recovery)]
+          ['reason' s+reason.u.paused.recovery]
+      ==
+      ['repository' (recovery-repo-json info)]
+      ['checkpoints' [%a (turn checkpoints.recovery checkpoint-json)]]
+      ['staged' ?~(staged.recovery ~ (staged-json u.staged.recovery))]
+      ['restores' [%a (turn restores.recovery restore-json)]]
+      ['history' (history-json history.recovery)]
+      ['running' (numb:enjs:format (running-attempts:ci-checkpoint state))]
+      ['now' (numb:enjs:format (unix-seconds now.bowl))]
+  ==
 ::
 ++  handle-http
   |=  [eyre-id=@ta req=inbound-request:eyre]
@@ -5631,6 +6308,11 @@
     ?.  =(%'GET' method)
       (emit (give-error eyre-id 405 'method not allowed'))
     (handle-storage-probe eyre-id req)
+  ::  CI-RECOVERY-1: the Recovery section's data, the ship's session only
+  ?:  ?=([%apps %urgit %api %ci %recovery ~] site)
+    ?.  =(%'GET' method)
+      (emit (give-error eyre-id 405 'method not allowed'))
+    (handle-recovery eyre-id req)
   ::  the recorded forge events and the schedules of a repository
   ::  (Delivery 1C), for the CI tab; the ship's session
   ?:  ?=([%apps %urgit %api %ci %repository @ %events ~] site)
@@ -5833,7 +6515,10 @@
   =/  scheduled=out  schedule
   =.  state  state.scheduled
   =.  polls  polls.scheduled
+  ::  CI-RECOVERY-1: while CI is paused no assignment is handed out, not
+  ::  even one created before the pause: the poll waits
   =/  pending=(list assignment:ci)
+    ?:  ci-paused  ~
     %+  skim  ~(val by assignments)
     |=  =assignment:ci
     ?.  =(daemon.assignment id.u.found)  %.n
@@ -7559,6 +8244,21 @@
           ['envs' [%a (turn ~(tap in envs) |=(e=@t s+e))]]
           ['created' (numb:enjs:format (unix-seconds created))]
       ==
+      ::  CI-RECOVERY-1: the references a restore brought back with no
+      ::  value, which need re-entry
+      :-  'needsReentry'
+      :-  %a
+      %+  murn  credentials.history.recovery
+      |=  r=credential-ref:ci
+      ^-  (unit json)
+      ?.  =(repo repo.r)  ~
+      :-  ~
+      %-  pairs:enjs:format
+      :~  ['name' s+name.r]
+          ['scope' s+scope.r]
+          ['envs' [%a (turn envs.r |=(e=@t s+e))]]
+          ['created' (numb:enjs:format (unix-seconds created.r))]
+      ==
   ==
 ::
 ::  the operator actions as JSON (D6): the poke, with the acting ship
@@ -7688,6 +8388,9 @@
     (emit (give-refusal eyre-id p.parsed))
   ?.  (authorized repo %ci-policy ~ our.bowl)
     (emit (give-error eyre-id 403 no-dispatch-authority))
+  ::  CI-RECOVERY-1: no run is admitted while CI is paused
+  ?:  ci-paused
+    (emit (give-error eyre-id 409 paused-refusal:ci-checkpoint))
   =/  checked  (admit-dispatch p.parsed)
   ?:  ?=(%| -.checked)
     (emit (give-refusal eyre-id p.checked))
@@ -8066,6 +8769,28 @@
       [%| 'revision and evidence are required']
     ?~  u.revision  [%| 'revision and evidence are required']
     [%& [%request-history-transition u.id u.u.revision u.evidence actor]]
+  ::
+      ::  CI-RECOVERY-1: the Recovery section's actions.  the actor is
+      ::  the session's ship.  an import names a commit (40 hex) or none,
+      ::  for the tip.  an apply names the staged checkpoint it reviewed
+      ::
+      %checkpoint-now  [%& [%checkpoint-now actor]]
+      %pause-ci  [%& [%pause-ci (fall (string-at 'reason' jon) '') actor]]
+      %resume-ci  [%& [%resume-ci actor]]
+      %discard-checkpoint  [%& [%discard-checkpoint actor]]
+  ::
+      %import-checkpoint
+    =/  text=(unit @t)  (string-at 'commit' jon)
+    ?~  text  [%& [%import-checkpoint ~ actor]]
+    ?:  =('' u.text)  [%& [%import-checkpoint ~ actor]]
+    =/  commit=(unit oid:git)  (parse-oid u.text)
+    ?~  commit  [%| 'commit must be 40 hex']
+    [%& [%import-checkpoint commit actor]]
+  ::
+      %apply-checkpoint
+    =/  checkpoint=(unit @t)  (string-at 'checkpoint' jon)
+    ?~  checkpoint  [%| 'checkpoint (the staged checkpoint\'s id) is required']
+    [%& [%apply-checkpoint u.checkpoint actor]]
   ==
 ::
 ++  oid-field

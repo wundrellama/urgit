@@ -116,7 +116,11 @@ test('peer results authenticate and consume one active outgoing offer', () => {
 })
 
 test('outgoing offers have a terminal timeout independent of activity history', () => {
-  assert.equal([...backend.matchAll(/\/peer\/offer-timeout\/\(scot %uv transfer\)/g)].length, 2)
+  // every offer arms its own timeout: the push, the pull request, and the
+  // checkpoint replica's push (CI-RECOVERY-1)
+  const offers = [...backend.matchAll(/\/peer\/offer\/\(scot %uv transfer\)/g)].length
+  assert.equal(offers, 3)
+  assert.equal([...backend.matchAll(/\/peer\/offer-timeout\/\(scot %uv transfer\)/g)].length, offers)
   assert.match(backend, /\[%peer %offer-timeout @ ~\]/)
   assert.match(backend, /peer-outgoing\s+\(~\(del by peer-outgoing\) u\.transfer\)/)
   assert.match(backend, /peer-results\s+[\s\S]*\[%.n message repository\.u\.outgoing\]/)

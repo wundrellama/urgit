@@ -72,6 +72,10 @@
       repository=@t
       message=@t
   ==
+::  CI-RECOVERY-1: a replica push %urgit-ci asked for, keyed by its GitHub
+::  job or its peer transfer: the ticket it is answered with, and its route
+::
++$  recovery-push  [ticket=@uv route=?(%github %peer)]
 ++  push-event-json
   |=  commands=(list receive-command:git)
   ^-  json
@@ -249,6 +253,8 @@
 =/  github-in-flight  *(map @uv github-request)
 =/  github-results  *(map @uv github-result)
 =/  webhook-in-flight  *(map @uv webhook-flight)
+::  CI-RECOVERY-1: the replica pushes in flight that %urgit-ci asked for
+=/  recovery-pushes  *(map @uv recovery-push)
 ^-  agent:gall
 =>
   ::  the door's helper core (fence touch 5): the %groups readers and the
@@ -374,7 +380,18 @@
       ;;(? .^(* %gx (weld prefix /ci-protected/(scot %t repo-name)/(scot %t ref)/noun)))
     ?.  ?=(%& -.protected)
       [%| 'ci: protection could not be read; the write is refused']
-    [%& p.protected]
+    ?.  p.protected  [%& %.n]
+    ::  CI-RECOVERY-1: while %urgit-ci is paused for a restore no
+    ::  CI-protected ref moves, so its write is refused with the reason
+    =/  paused=(each ? tang)
+      %-  mule
+      |.
+      ;;(? .^(* %gx (weld prefix /recovery-paused/noun)))
+    ?.  ?=(%& -.paused)
+      [%| 'ci: the CI pause could not be read, so the write is refused']
+    ?:  p.paused
+      [%| 'ci: CI is paused for a restore, so a CI-protected ref moves only after it resumes']
+    [%& %.y]
   ::
   ::  what the CI gate makes of one write (Q5).  a change that moves
   ::  nothing is not asked about.  a CI-protected ref is never deleted and
@@ -519,6 +536,53 @@
     ?:  api-response.u.parked  [our.bowl 'web editor (linked desk)']
     ?:  =('' eyre-id.u.parked)  [our.bowl 'CI landing (linked desk)']
     [our.bowl 'smart-http push (linked desk)']
+  ::
+  ::  CI-RECOVERY-1: the replica pushes %urgit-ci asked for that ended in
+  ::  this event, each answered to %urgit-ci with its ticket, and those
+  ::  still in flight.  a GitHub push ends when its result is no longer
+  ::  active, and GitHub's report-status line decided it.  a peer push
+  ::  ends when its offer is no longer outgoing.  only the peer's answer
+  ::  "fast-forward update accepted" confirms it.  a staged or refused
+  ::  answer is a failed backup
+  ::
+  ++  recovery-told
+    |=  $:  pushes=(map @uv recovery-push)
+            results=(map @uv github-result)
+            outgoing=(map @uv peer-offer-flight)
+            peers=(map @uv peer-result)
+        ==
+    ^-  [cards=(list card) pushes=(map @uv recovery-push)]
+    =/  done=(list [id=@uv push=recovery-push ok=? message=@t])
+      %+  murn  ~(tap by pushes)
+      |=  [id=@uv push=recovery-push]
+      ^-  (unit [id=@uv push=recovery-push ok=? message=@t])
+      ?-  route.push
+          %github
+        =/  r=(unit github-result)  (~(get by results) id)
+        ?~  r  `[id push %.n 'the GitHub push left no result']
+        ?:  active.u.r  ~
+        `[id push ok.u.r message.u.r]
+      ::
+          %peer
+        ?:  (~(has by outgoing) id)  ~
+        =/  r=(unit peer-result)  (~(get by peers) id)
+        ?~  r  `[id push %.n 'the peer push left no result']
+        =/  accepted=?  ?&(status.u.r =('fast-forward update accepted' message.u.r))
+        `[id push accepted message.u.r]
+      ==
+    =/  ended=(set @uv)  (silt (turn done |=([id=@uv *] id)))
+    =/  left=(map @uv recovery-push)
+      %-  malt
+      %+  skip  ~(tap by pushes)
+      |=([id=@uv *] (~(has in ended) id))
+    :_  left
+    %+  turn  done
+    |=  [id=@uv push=recovery-push ok=? message=@t]
+    ^-  card
+    :*  %pass  /ci/replica/(scot %uv ticket.push)
+        %agent  [our.bowl %urgit-ci]  %poke  %ci-action
+        !>(`action:ci`[%replica-result ticket.push ok message])
+    ==
   --
 |_  =bowl:gall
 +*  this  .
@@ -594,6 +658,7 @@
         github-in-flight  ~
         github-results  ~
         webhook-in-flight  ~
+        recovery-pushes  ~
       ==
   (weld requeued connect-cards)
 ::
@@ -2827,6 +2892,8 @@
           %publish-desk  publish-desk
           %add-peer  `this(peers (~(put in peers) peer.act))
           %remove-peer  `this(peers (~(del in peers) peer.act))
+          %write-recovery-commit  write-recovery-commit
+          %push-recovery-replica  push-recovery-replica
         ==
       ::
       ++  create
@@ -2926,6 +2993,110 @@
         =/  repo=repository:git  u.found(refs (~(del by refs.u.found) ref.act))
         =.  repositories  (~(put by repositories) repository.act repo)
         (dispatch-webhooks repository.act %push (push-event-json ~[[old ~ ref.act]]))
+      ::
+      ::  CI-RECOVERY-1: a checkpoint commit %urgit-ci built.  every object
+      ::  id is computed here, and the commit must reach a complete tree.
+      ::  the repository must be private and bound to no desk.  the branch
+      ::  moves only from the tip the checkpoint was built on.  the CI gate
+      ::  still applies.  a recovery write sends no webhook.  a refusal
+      ::  nacks with the reason, which %urgit-ci records
+      ::
+      ++  write-recovery-commit
+        ^-  (quip card _this)
+        ?>  ?=(%write-recovery-commit -.act)
+        =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+        ?~  found  ~|('the checkpoint repository does not exist' !!)
+        ?:  public-read.u.found
+          ~|('the checkpoint repository is public: a checkpoint is written only to a private repository' !!)
+        ?^  binding.u.found
+          ~|('the checkpoint repository is bound to a Clay desk: a checkpoint is not written there' !!)
+        ?.  ?&  (valid-ref:git-protocol ref.act)
+                (starts-with 'refs/heads/' ref.act)
+            ==
+          ~|('the checkpoint ref is not a branch' !!)
+        =/  current=(unit oid:git)  (~(get by refs.u.found) ref.act)
+        ?.  =(current expected.act)
+          ~|('the checkpoint branch moved after the checkpoint was built, so nothing was written' !!)
+        =/  incoming=(map oid:git object:git)
+          %-  malt
+          %+  turn  objects.act
+          |=(o=object:git [(object-oid:git-codec kind.o data.o) o])
+        =/  head=(unit object:git)  (~(get by incoming) commit.act)
+        ?.  ?&(?=(^ head) =(%commit kind.u.head))
+          ~|('the checkpoint commit is not among the objects written' !!)
+        =/  merged=(map oid:git object:git)  (merge-objects objects.u.found incoming)
+        =/  closure=(unit (set oid:git))  (reachable:git-graph merged (silt ~[commit.act]))
+        ?~  closure
+          ~|('the checkpoint commit does not reach a complete tree' !!)
+        =/  refusal=(unit [status=@ud message=@t])
+          (ci-write-refusal:hc repository.act ~[[current `commit.act ref.act]])
+        ?^  refusal  ~|(message.u.refusal !!)
+        =/  repo=repository:git
+          u.found(objects merged, refs (~(put by refs.u.found) ref.act commit.act))
+        `this(repositories (~(put by repositories) repository.act repo))
+      ::
+      ::  CI-RECOVERY-1: a checkpoint branch pushed to the repository's own
+      ::  origin through the existing paths.  that is a GitHub origin with
+      ::  the stored token, else the ship the repository was forked from.
+      ::  the push ends later, and the tail of that event answers %urgit-ci
+      ::  with the ticket (+recovery-told).  no origin at all nacks with the
+      ::  reason
+      ::
+      ++  push-recovery-replica
+        ^-  (quip card _this)
+        ?>  ?=(%push-recovery-replica -.act)
+        =/  found=(unit repository:git)  (~(get by repositories) repository.act)
+        ?~  found  ~|('the checkpoint repository is gone' !!)
+        ?:  public-read.u.found
+          ~|('the checkpoint repository is public: its replica is not pushed' !!)
+        ?.  (~(has by refs.u.found) ref.act)
+          ~|('the checkpoint branch is missing' !!)
+        ?^  github-origin.u.found
+          ?~  github-token
+            ~|('the checkpoint repository has a GitHub origin, but no GitHub token is connected' !!)
+          =/  owner=@t  owner.u.github-origin.u.found
+          =/  remote=@t  repository.u.github-origin.u.found
+          =/  job=@uv  `@uv`(shas %git-github-request (cat 3 eny.bowl request-count))
+          =.  request-count  +(request-count)
+          =/  ctx=github-request
+            [job %push repository.act owner remote public-read.u.found ref.act ~ 0 ~ 0]
+          =.  github-in-flight  (~(put by github-in-flight) job ctx)
+          =.  github-results
+            (~(put by github-results) job [%.y %.n %push repository.act 'contacting GitHub'])
+          =.  recovery-pushes  (~(put by recovery-pushes) job [ticket.act %github])
+          =/  =request:http
+            :*  %'GET'
+                (git-url:git-github owner remote '/info/refs?service=git-receive-pack')
+                (receive-headers:git-github github-token ~)
+                ~
+            ==
+          :_  this
+          :~  [%pass /github/(scot %uv job) %arvo %i %request request *outbound-config:iris]
+          ==
+        ?^  peer-origin.u.found
+          ?.  =(ref.act head.u.found)
+            ~|('a peer replica receives only the default branch, and the checkpoint branch is another' !!)
+          =/  peer=@p  ship.u.peer-origin.u.found
+          =/  raw-transfer=@uv  `@uv`(shas %git-peer-push (cat 3 eny.bowl request-count))
+          =/  transfer=@uv  (peer-object-transfer raw-transfer)
+          =.  request-count  +(request-count)
+          =.  peer-results
+            (~(put by peer-results) transfer [%.n 'offering update' repository.act])
+          =.  peer-outgoing
+            (~(put by peer-outgoing) transfer [peer repository.act %push])
+          =.  peer-activities
+            %:  peer-activity-start
+              transfer  %push  %outgoing  peer  repository.act  'offering update'
+            ==
+          =.  recovery-pushes  (~(put by recovery-pushes) transfer [ticket.act %peer])
+          :_  this
+          :~  %^  peer-card
+                peer
+                /peer/offer/(scot %uv transfer)
+              [%offer transfer repository.u.peer-origin.u.found repository.act %.n '']
+              [%pass /peer/offer-timeout/(scot %uv transfer) %arvo %b %wait (add now.bowl ~m11)]
+          ==
+        ~|('no replica is configured: the checkpoint repository has no GitHub origin and is no fork of another ship\'s repository' !!)
       ::
       ++  set-protected
         ^-  (quip card _this)
@@ -8863,7 +9034,17 @@
     =/  who=[actor=@p route=@t]
       (poke-attribution:hc mark vase repos-before receiving.before)
     (forge-cards:hc repos-before =>(synced repositories) actor.who route.who)
-  [(weld (peer-ui-notify before after -.result) forge) synced]
+  ::  CI-RECOVERY-1: the replica pushes that ended in this event, answered
+  ::  to %urgit-ci
+  =/  told=[cards=(list card) pushes=(map @uv recovery-push)]
+    %:  recovery-told:hc
+      =>(synced recovery-pushes)
+      =>(synced github-results)
+      =>(synced peer-outgoing)
+      =>(synced peer-results)
+    ==
+  :-  :(weld (peer-ui-notify before after -.result) forge cards.told)
+  synced(recovery-pushes pushes.told)
 ::
 ++  on-peek
   |=  =path
@@ -8982,6 +9163,34 @@
       !>  ^-  (unit @t)
           ?~  found  ~
           `head.u.found
+    ::
+        ::  CI-RECOVERY-1: the checkpoint repository as %urgit-ci reads it.
+        ::  it says whether the repository is public or bound to a desk.  it
+        ::  gives the default branch, its tip and the replica path.  ~ when
+        ::  the repository does not exist, never [~ ~].  the GitHub token is
+        ::  never answered, only whether one is stored
+        ::
+        [%x %ci-recovery-repo @ ~]
+      =/  name=@t  (ci-segment i.t.t.path)
+      =/  found=(unit repository:git)  (~(get by repositories) name)
+      :^  ~  ~  %noun
+      !>  ^-  (unit recovery-repo:ci)
+          ?~  found  ~
+          =/  github=(unit [owner=@t repository=@t])
+            ?~  github-origin.u.found  ~
+            `[owner.u.github-origin.u.found repository.u.github-origin.u.found]
+          =/  peer=(unit [ship=@p repository=@t])
+            ?~  peer-origin.u.found  ~
+            `[ship.u.peer-origin.u.found repository.u.peer-origin.u.found]
+          :-  ~
+          :*  public-read.u.found
+              head.u.found
+              (~(get by refs.u.found) head.u.found)
+              ?=(^ binding.u.found)
+              github
+              peer
+              ?=(^ github-token)
+          ==
     ::
         [%x %ci-tag-commit @ @ ~]
       =/  name=@t  (ci-segment i.t.t.path)
@@ -10597,6 +10806,16 @@
   =/  forge=(list card)
     =/  who=[actor=@p route=@t]  (arvo-attribution:hc wire parked)
     (forge-cards:hc repos-before =>(synced repositories) actor.who route.who)
-  [(weld (peer-ui-notify before after -.result) forge) synced]
+  ::  CI-RECOVERY-1: the replica pushes that ended in this event, answered
+  ::  to %urgit-ci
+  =/  told=[cards=(list card) pushes=(map @uv recovery-push)]
+    %:  recovery-told:hc
+      =>(synced recovery-pushes)
+      =>(synced github-results)
+      =>(synced peer-outgoing)
+      =>(synced peer-results)
+    ==
+  :-  :(weld (peer-ui-notify before after -.result) forge cards.told)
+  synced(recovery-pushes pushes.told)
 ++  on-fail  on-fail:def
 --

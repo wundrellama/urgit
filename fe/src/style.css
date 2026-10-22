@@ -922,3 +922,37 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px c
 .ci-input-add { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
 .ci-input-add input { width: 100%; min-width: 0; box-sizing: border-box; }
 .ci-input-add .button { align-self: flex-start; }
+
+/* Settings → CI recovery (CI-RECOVERY-1): checkpoints, their replica, and a
+   paused restore. The panel spans the settings grid and every row wraps, so
+   it fits a 320px viewport. A failed or unconfigured replica uses the
+   error colour, never the warning one */
+.settings-columns > .ci-backup { grid-column: 1 / -1; }
+.ci-backup { min-width: 0; overflow-wrap: anywhere; }
+.ci-backup code { overflow-wrap: anywhere; word-break: break-all; }
+.ci-backup-block { min-width: 0; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.ci-backup-block h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.ci-backup-facts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.ci-backup-fact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; min-width: 0; max-width: 100%; }
+.ci-backup-fact.bad small { color: var(--danger); }
+.ci-backup-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; min-width: 0; }
+.ci-backup-pause, .ci-backup-import { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.ci-backup-pause input, .ci-backup-import input { flex: 1 1 12rem; width: auto; min-width: 0; }
+.ci-backup-paused { margin-top: 0.75rem; }
+.ci-backup-staged { min-width: 0; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--line); border-radius: 8px; }
+.ci-backup-table { max-width: 100%; overflow-x: auto; }
+.ci-backup-table table { border-collapse: collapse; font-size: 0.85rem; }
+.ci-backup-table th, .ci-backup-table td { padding: 0.2rem 0.5rem; text-align: left; }
+.ci-backup-diff ul { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; font-size: 0.9rem; }
+.ci-backup-diff li { overflow-wrap: anywhere; }
+.ci-backup-kind { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.ci-backup-add .ci-backup-kind { color: #178342; }
+.ci-backup-remove .ci-backup-kind { color: var(--danger); }
+.ci-backup-confirm { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--danger); border-radius: 8px; }
+.ci-backup-steps { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; }
+.ci-backup-history { margin-top: 1rem; font-size: 0.9rem; }
+@media (max-width: 760px) {
+  .ci-backup-controls, .ci-backup-pause, .ci-backup-import { flex-direction: column; align-items: stretch; }
+  .ci-backup-controls .button, .ci-backup-pause .button, .ci-backup-import .button { width: 100%; }
+  .ci-backup-pause input, .ci-backup-import input { flex: 0 0 auto; width: 100%; }
+}

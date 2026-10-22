@@ -32,8 +32,13 @@
 ::  (+load-7), where their nouns are unchanged.
 ::  state-8 (frozen as sur/ci-state-8) converts to state-9 field by field:
 ::  the pull facts of an event run and of a recorded forge event gain no
-::  labels and no label, and the payload text is kept byte for byte.
-::  The current state (state-9) reloads unchanged.  An unknown version, an
+::  labels and no label, and the payload text is kept byte for byte.  Its
+::  checks read the state-9 it converts through (+load-9).
+::  state-9 (frozen as sur/ci-state-9) converts to state-10 (CI-RECOVERY-1)
+::  field by field.  Every one of its thirty-six fields is kept, and the
+::  recovery record is the bunt: unpaused, with no checkpoint, no staged
+::  import, no restore and no history.
+::  The current state (state-10) reloads unchanged.  An unknown version, an
 ::  atom, a malformed %0, a corrupt %0, %1, %2, %3, %4 or %5, a state-1
 ::  tagged %2, a state-2 tagged %1 or %3, a state-3 tagged %2 or %4, a
 ::  state-4 tagged %3 or %5 and a state-6 tagged %4 are refused, and so is
@@ -43,7 +48,7 @@
 ::
 ::    NOT RUN in the source stage that wrote it: it needs a ship.
 ::
-/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-base, ci-state-review06, ci-state-q11
+/-  ci, ci-state-1, ci-state-2, ci-state-3, ci-state-4, ci-state-5, ci-state-6, ci-state-7, ci-state-8, ci-state-9, ci-state-base, ci-state-review06, ci-state-q11
 /+  ci-migrate
 :-  %say
 |=  *
@@ -401,11 +406,11 @@
     ::  state-1
     ['state-1 loads as its own shape' %.y =(%state-1 shape.s)]
     ['state-1 converts to what its Q11 fields convert to' %.y =(new.s new.q)]
-    ['state-1 is tagged %9 once converted' %.y =(%9 -.new.s)]
+    ['state-1 is tagged %10 once converted' %.y =(%10 -.new.s)]
     ['a state-1 attempt gains pinned addresses' %.n !=(~ pinned.s-running)]
     ::  state-2
     ['state-2 loads as its own shape' %.y =(%state-2 shape.t)]
-    ['state-2 is tagged %9 once converted' %.y =(%9 -.new.t)]
+    ['state-2 is tagged %10 once converted' %.y =(%10 -.new.t)]
     ['a state-2 candidate is kept whole, a push run' %.y (kept-as-push candidates.s2-state candidates.new.t)]
     ['a state-2 candidate becomes a manual run' %.n (lien ~(val by candidates.new.t) |=(c=candidate:ci ?=(%dispatch -.trigger.c)))]
     ['a state-2 lock is kept whole' %.y =(lock-2 (lock-as-2 t-lock))]
@@ -416,7 +421,7 @@
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c))]
     ::  state-3
     ['a manual run\'s state-3 loads as its own shape' %.y =(%state-3 shape.m)]
-    ['state-3 is tagged %9 once converted' %.y =(%9 -.new.m)]
+    ['state-3 is tagged %10 once converted' %.y =(%10 -.new.m)]
     ['a manual run keeps its event, inputs and request' %.y =(trigger.manual-cand trigger.m-cand)]
     ::  the old candidate's every field after its id, against the new one's
     ::  same fields by name (+as-4); its added selection is checked in .added
@@ -536,12 +541,13 @@
       ['a state-7 tagged %8 is refused' %.y (refused [%8 +.s7])]
       ['a state-8 tagged %7 is refused' %.y (refused [%7 +.new.eighth])]
       ['a %7 state with a corrupt locks map is refused' %.y (refused s7(locks [5 ~]))]
-      ['state-6 converts to state-9 through state-7 and state-8' %.y =(new.sixth (from-state-8:ci-migrate (from-state-7:ci-migrate new.sixth-7)))]
-      ['state-5 converts to state-9 through state-7 and state-8' %.y =(new.fifth (from-state-8:ci-migrate (from-state-7:ci-migrate new.fifth-7)))]
+      ['state-6 converts to state-10 through state-7, state-8 and state-9' %.y =(new.sixth (from-state-9:ci-migrate (from-state-8:ci-migrate (from-state-7:ci-migrate new.sixth-7))))]
+      ['state-5 converts to state-10 through state-7, state-8 and state-9' %.y =(new.fifth (from-state-9:ci-migrate (from-state-8:ci-migrate (from-state-7:ci-migrate new.fifth-7))))]
   ==
 ::  state-8 → state-9 (pull request labels): the populated state-8 the
 ::  state-7 converts to, with a pull request event run and a recorded
-::  pull request forge event added, loaded as state-9.  the pull facts gain
+::  pull request forge event added, loaded as the state-9 it converts
+::  through (+load-9).  the pull facts gain
 ::  no labels and no label, the payload text is kept byte for byte, and
 ::  every other field is kept
 ::
@@ -566,7 +572,7 @@
     candidates  (~(put by candidates.new.eighth) 0v95 pull-run)
     forge-events  (~(put by forge-events.new.eighth) 0v96 pull-event)
   ==
-=/  ninth  (load:ci-migrate s8)
+=/  ninth  (load-9:ci-migrate s8)
 =/  n-run=candidate:ci  (~(got by candidates.new.ninth) 0v95)
 =/  n-event=forge-event:ci  (~(got by forge-events.new.ninth) 0v96)
 =/  event-of
@@ -621,19 +627,51 @@
       :+  'every other state-8 field is kept'  %.y
       .=  [daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:s8
       [daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:new.ninth
-      :+  'state-9 reloads unchanged, as the current state'  %.y
-      ?&  =(%current shape:(load:ci-migrate new.ninth))
-          =(new.ninth new:(load:ci-migrate new.ninth))
+      :+  'state-9 reloads as its own frozen shape, not as the current state'  %.y
+      ?&  =(%state-9 shape:(load-9:ci-migrate new.ninth))
+          =(new.ninth new:(load-9:ci-migrate new.ninth))
       ==
-      ['state-7 converts to state-9 through state-8' %.y =(new:(load:ci-migrate s7) (from-state-8:ci-migrate new.eighth))]
+      ['state-7 converts to state-9 through state-8' %.y =(new:(load-9:ci-migrate s7) (from-state-8:ci-migrate new.eighth))]
       ['a state-8 with pull facts tagged %9 is refused' %.y (refused [%9 +.s8])]
       ['a state-9 with labelled pull facts tagged %8 is refused' %.y (refused [%8 +.new.ninth])]
       ['a %8 state with a corrupt forge events map is refused' %.y (refused s8(forge-events [5 ~]))]
   ==
+::  state-9 → state-10 (CI-RECOVERY-1): the populated state-9 above,
+::  loaded as state-10.  every one of its thirty-six fields is kept, and
+::  the recovery record is the bunt: unpaused, with no checkpoint, no
+::  staged import, no restore and no history
+::
+=/  ten=(list [name=@t expect=? got=?])
+  =/  s9=state-9:ci-state-9  new.ninth
+  =/  tenth  (load:ci-migrate s9)
+  =/  busy=state-10:ci
+    new.tenth(paused.recovery `[~2026.10.21 ~zod 'a restore drill'], sequence.recovery 3)
+  :~  ['state-9 loads as its own frozen shape' %.y =(%state-9 shape.tenth)]
+      ['state-9 is tagged %10 once converted' %.y =(%10 -.new.tenth)]
+      :+  'every state-9 field is kept'  %.y
+      .=  [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:s9
+      [candidates daemons assignments attempts ci-protected policies credentials signing ship-keys incarnations generations baselines locks roles environments approvals overrides network-policies read-capabilities shadows comparisons audit sandbox-requirements mirror-tokens resolve-mappings harness-paths recovery-reports recovery-commands forge-events event-ids schedules tag-runs automatic-inputs input-snapshots input-evidence resolver-inputs]:new.tenth
+      ['the populated state-9 has candidates, attempts and forge events' %.y &(!=(~ candidates.s9) !=(~ attempts.s9) !=(~ forge-events.s9))]
+      ['an old ship loads unpaused' %.y =(~ paused.recovery.new.tenth)]
+      ['an old ship loads paused' %.n ?=(^ paused.recovery.new.tenth)]
+      ['an old ship loads with no checkpoint' %.y =(~ checkpoints.recovery.new.tenth)]
+      ['an old ship loads with no staged import, restore or history' %.y &(=(~ staged.recovery.new.tenth) =(~ restores.recovery.new.tenth) =(*restored-history:ci history.recovery.new.tenth))]
+      ['the recovery record is exactly the bunt' %.y =(*recovery-state:ci recovery.new.tenth)]
+      :+  'state-10 reloads unchanged, as the current state'  %.y
+      ?&  =(%current shape:(load:ci-migrate new.tenth))
+          =(new.tenth new:(load:ci-migrate new.tenth))
+      ==
+      ['a paused state-10 with a counter reloads unchanged' %.y =(busy new:(load:ci-migrate busy))]
+      ['state-8 converts to state-10 through state-9' %.y =(new:(load:ci-migrate s8) (from-state-9:ci-migrate new.ninth))]
+      ['a state-9 tagged %10 is refused' %.y (refused [%10 +.s9])]
+      ['a state-10 tagged %9 is refused' %.y (refused [%9 +.new.tenth])]
+      ['a %10 state with a corrupt recovery record is refused' %.y (refused new.tenth(recovery [5 5]))]
+      ['a %9 state with a corrupt audit is refused' %.y (refused s9(audit [5 5]))]
+  ==
 =/  late=(list [name=@t expect=? got=?])
   :~  ::  state-4 (Delivery 1C)
     ['state-4 loads as its own shape' %.y =(%state-4 shape.f)]
-    ['state-4 is tagged %9 once converted' %.y =(%9 -.new.f)]
+    ['state-4 is tagged %10 once converted' %.y =(%10 -.new.f)]
     ['a state-4 required run keeps every field' %.y =((~(got by candidates.s4) 0v3.ppppp) (as-4 f-cand))]
     ['a state-4 required run\'s workflow selection was never evaluated' %.y =(~ selected.f-cand)]
     ['a state-4 manual run keeps every field and its dispatch' %.y &(=((~(got by candidates.s4) id.manual-cand) (as-4 f-manual)) ?=(%dispatch -.trigger.f-manual))]
@@ -657,7 +695,7 @@
     ::  the current state
     ['the current state reloads unchanged' %.y &(=(%current shape.c) =(new.q new.c) =(%current -:(load:ci-migrate new.p)) =(new.p new:(load:ci-migrate new.p)) =(new.f new:(load:ci-migrate new.f)))]
     ::  refusals: nothing cast, reset or read another way
-    ['an unknown version is refused' %.y (refused [%10 +.new.q])]
+    ['an unknown version is refused' %.y (refused [%11 +.new.q])]
     ['a state-1 tagged %2 is refused' %.y (refused [%2 +.s1-state])]
     ['a state-2 tagged %1 is refused' %.y (refused [%1 +.s2-state])]
     ['a state-2 tagged %3 is refused' %.y (refused [%3 +.s2-state])]
@@ -689,7 +727,7 @@
       ['a state-3 lock\'s trigger catalog is unknown, not empty' %.y =(~ triggers.m-lock)]
       ['a state-3 gains no forge event, event id or schedule' %.y &(=(~ forge-events.new.m) =(~ event-ids.new.m) =(~ schedules.new.m))]
   ==
-=/  cases=(list [name=@t expect=? got=?])  :(weld early added late eight nine)
+=/  cases=(list [name=@t expect=? got=?])  :(weld early added late eight nine ten)
 =/  failed=(list @t)
   %+  murn  cases
   |=  [name=@t expect=? got=?]

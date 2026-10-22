@@ -102,7 +102,7 @@
 ::  evidence from another generation stands for nothing (P11)
 ::
 ++  standings
-  |=  [s=state-9:ci c=candidate:ci]
+  |=  [s=state-10:ci c=candidate:ci]
   ^-  [standings=(map key:ci-plan standing:ci-plan) newest=(map key:ci-plan attempt:ci)]
   =/  newest=(map key:ci-plan attempt:ci)
     %+  roll  (flop attempts.c)
@@ -228,7 +228,7 @@
 ::  eligibility scries and its settle read this one arm
 ::
 ++  landable
-  |=  [s=state-9:ci c=candidate:ci]
+  |=  [s=state-10:ci c=candidate:ci]
   ^-  ?
   ?&  =(%passed status.c)
       =(%trusted trust.c)
@@ -240,7 +240,7 @@
 ::  the candidate's bindings against the repository's current policy
 ::
 ++  bindings-current
-  |=  [s=state-9:ci c=candidate:ci]
+  |=  [s=state-10:ci c=candidate:ci]
   ^-  ?
   =/  base=(unit baseline:ci)  (~(get by baselines.s) [repo.c ref.c])
   ?&  =(generation.c (~(gut by generations.s) repo.c 0))
@@ -260,7 +260,7 @@
 ::  run in progress
 ::
 ++  gate
-  |=  [s=state-9:ci c=candidate:ci =job:ci]
+  |=  [s=state-10:ci c=candidate:ci =job:ci]
   ^-  (unit decision:ci-plan)
   ?:  ?=(%pending -.concurrency.c)
     `[%wait 'waiting to join its concurrency groups']
@@ -279,7 +279,7 @@
 ::  cancelled() read for its own workflow's run
 ::
 ++  decide-with
-  |=  $:  s=state-9:ci
+  |=  $:  s=state-10:ci
           c=candidate:ci
           =job:ci
           plan=(list job:ci)
@@ -355,7 +355,7 @@
 ::  a recorded run's name, or that it is no longer recorded
 ::
 ++  label-of
-  |=  [s=state-9:ci id=candidate-id:ci]
+  |=  [s=state-10:ci id=candidate-id:ci]
   ^-  @t
   =/  c=(unit candidate:ci)  (~(get by candidates.s) id)
   ?~  c  'a run no longer recorded'
@@ -364,7 +364,7 @@
 ::  why a waiting workflow's run waits, in plain words
 ::
 ++  waiting-text
-  |=  [s=state-9:ci g=workflow-group:ci]
+  |=  [s=state-10:ci g=workflow-group:ci]
   ^-  @t
   ?.  ?=(%member -.g)  'waiting for its concurrency group'
   ?~  behind.g  (rap 3 ~['waiting in group ' text.g])
@@ -494,7 +494,7 @@
 ::  not on this ship, a catalog never read (unknown)
 ::
 ++  catalog-of
-  |=  [s=state-9:ci c=candidate:ci]
+  |=  [s=state-10:ci c=candidate:ci]
   ^-  (each trigger-catalog:ci @t)
   ?~  lock.c  |+'the run is bound to no lock: its workflow revision has no workflows'
   =/  l=(unit lock:ci)  (~(get by locks.s) u.lock.c)
@@ -506,7 +506,7 @@
 ::  cannot be read; a workflow the catalog does not list is unknown
 ::
 ++  definitions
-  |=  [s=state-9:ci c=candidate:ci workflows=(list @t)]
+  |=  [s=state-10:ci c=candidate:ci workflows=(list @t)]
   ^-  (each (list [workflow=@t name=@t def=(unit concurrency-def:ci)]) @t)
   =/  cat=(each trigger-catalog:ci @t)  (catalog-of s c)
   ?:  ?=(%| -.cat)  [%| p.cat]
@@ -524,7 +524,7 @@
 ::  and whose on: can be read (a shadow plans every push job)
 ::
 ++  push-workflows
-  |=  [s=state-9:ci c=candidate:ci]
+  |=  [s=state-10:ci c=candidate:ci]
   ^-  (each (list @t) @t)
   =/  cat=(each trigger-catalog:ci @t)  (catalog-of s c)
   ?:  ?=(%| -.cat)  [%| p.cat]
@@ -543,7 +543,7 @@
 ::  runs still in progress (a closed run holds nothing)
 ::
 ++  members
-  |=  [s=state-9:ci repo=@t key=@t]
+  |=  [s=state-10:ci repo=@t key=@t]
   ^-  (list occupant)
   %-  zing
   %+  turn  ~(val by candidates.s)
@@ -563,7 +563,7 @@
 ::  the run in progress in a group
 ::
 ++  holder-of
-  |=  [s=state-9:ci repo=@t key=@t]
+  |=  [s=state-10:ci repo=@t key=@t]
   ^-  (unit candidate-id:ci)
   =/  held=(list occupant)
     (skim (members s repo key) |=(o=occupant =(%holding place.o)))
@@ -573,8 +573,8 @@
 ::  a workflow's run added to its candidate's groups
 ::
 ++  add-run
-  |=  [s=state-9:ci id=candidate-id:ci run=workflow-run:ci]
-  ^-  state-9:ci
+  |=  [s=state-10:ci id=candidate-id:ci run=workflow-run:ci]
+  ^-  state-10:ci
   =/  c=candidate:ci  (~(got by candidates.s) id)
   ?.  ?=(%joined -.concurrency.c)  s
   =/  next=candidate:ci
@@ -608,12 +608,12 @@
 ::  a group keeps one waiting run
 ::
 ++  join
-  |=  $:  s=state-9:ci
+  |=  $:  s=state-10:ci
           id=candidate-id:ci
           defs=(list [workflow=@t name=@t def=(unit concurrency-def:ci)])
           now=@da
       ==
-  ^-  state-9:ci
+  ^-  state-10:ci
   =/  first=candidate:ci  (~(got by candidates.s) id)
   =.  candidates.s
     (~(put by candidates.s) id first(concurrency [%joined now ~], updated now))
@@ -668,8 +668,8 @@
 ::  progress starts its waiting run (the newest, of which there is one)
 ::
 ++  release
-  |=  [s=state-9:ci now=@da]
-  ^-  state-9:ci
+  |=  [s=state-10:ci now=@da]
+  ^-  state-10:ci
   =.  candidates.s
     %-  ~(run by candidates.s)
     |=  c=candidate:ci
@@ -707,7 +707,7 @@
   =/  flat=(list waiter)  (zing found)
   =/  waiting=(list waiter)
     (sort flat |=([a=waiter b=waiter] (gth since.a since.b)))
-  |-  ^-  state-9:ci
+  |-  ^-  state-10:ci
   ?~  waiting  s
   =/  held=(unit candidate-id:ci)  (holder-of s repo.i.waiting key.i.waiting)
   ?^  held  $(waiting t.waiting)
@@ -731,14 +731,14 @@
 ::  cancelled
 ::
 ++  cancel-workflows
-  |=  $:  s=state-9:ci
+  |=  $:  s=state-10:ci
           id=candidate-id:ci
           workflows=(list @t)
           cause=cancel-cause:ci
           reason=@t
           now=@da
       ==
-  ^-  state-9:ci
+  ^-  state-10:ci
   =/  found=(unit candidate:ci)  (~(get by candidates.s) id)
   ?~  found  s
   ?.  =(%pending status.u.found)  s
@@ -761,7 +761,7 @@
 ::  of its place in its group (a workflow in no group is in progress)
 ::
 ++  workflow-finished
-  |=  [s=state-9:ci c=candidate:ci workflow=@t]
+  |=  [s=state-10:ci c=candidate:ci workflow=@t]
   ^-  ?
   =/  g=(unit workflow-group:ci)  (group-of c workflow)
   =/  place=group-place:ci
@@ -779,8 +779,8 @@
 ::  planned later, with its plan attempt closed: nothing is left to plan
 ::
 ++  cancel-whole-run
-  |=  [s=state-9:ci id=candidate-id:ci cause=cancel-cause:ci reason=@t now=@da]
-  ^-  state-9:ci
+  |=  [s=state-10:ci id=candidate-id:ci cause=cancel-cause:ci reason=@t now=@da]
+  ^-  state-10:ci
   =/  c=candidate:ci  (~(got by candidates.s) id)
   =/  open=(list @t)
     (skip (run-workflows c) |=(w=@t (workflow-finished s c w)))
@@ -815,8 +815,8 @@
 ::  do not keep running under cancellation, closed
 ::
 ++  stop-attempts
-  |=  [s=state-9:ci id=candidate-id:ci workflow=@t reason=@t now=@da]
-  ^-  state-9:ci
+  |=  [s=state-10:ci id=candidate-id:ci workflow=@t reason=@t now=@da]
+  ^-  state-10:ci
   =/  c=candidate:ci  (~(got by candidates.s) id)
   =/  ids=(list attempt-id:ci)  attempts.c
   |-
@@ -835,7 +835,7 @@
 ::  its decision again with cancelled() true runs it
 ::
 ++  keeps-running
-  |=  [s=state-9:ci c=candidate:ci a=attempt:ci]
+  |=  [s=state-10:ci c=candidate:ci a=attempt:ci]
   ^-  ?
   ?~  plan.c  %.n
   =/  planned=(unit job:ci)  (planned-job c workflow.a job.a)
@@ -853,8 +853,8 @@
 ::  unknown, never as if nothing happened (rider 02)
 ::
 ++  close-cancelled
-  |=  [s=state-9:ci a=attempt:ci reason=@t now=@da]
-  ^-  state-9:ci
+  |=  [s=state-10:ci a=attempt:ci reason=@t now=@da]
+  ^-  state-10:ci
   ?^  approval.a
     =/  why=@t
       %+  rap  3
@@ -875,8 +875,8 @@
 ::  capability end with it.  the candidate's verdict is the caller's
 ::
 ++  close
-  |=  [s=state-9:ci =attempt:ci =attempt-result:ci now=@da]
-  ^-  state-9:ci
+  |=  [s=state-10:ci =attempt:ci =attempt-result:ci now=@da]
+  ^-  state-10:ci
   =/  status=attempt-status:ci
     ?-  -.attempt-result
       %job-result  ?:(=(%success result.attempt-result) %passed %failed)

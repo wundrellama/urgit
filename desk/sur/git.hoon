@@ -517,5 +517,11 @@
       [%publish-desk repository=@t message=@t]
       [%add-peer peer=@p]
       [%remove-peer peer=@p]
+      ::  CI-RECOVERY-1, from %urgit-ci only.  write a checkpoint commit
+      ::  whose objects %urgit-ci built, moving the branch only from the
+      ::  expected tip and sending no webhook.  push a checkpoint branch to
+      ::  the repository's own origin, which answers the ticket later
+      [%write-recovery-commit repository=@t ref=@t expected=(unit oid) commit=oid objects=(list object)]
+      [%push-recovery-replica repository=@t ref=@t ticket=@uv]
   ==
 --

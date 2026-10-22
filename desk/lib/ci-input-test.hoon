@@ -6,7 +6,7 @@
   =/  url=@t  'https://inputs.example/tool'
   =/  desired=(list @t)  ~[url]
   =/  scope=@t  (scope:ci-input desired)
-  =/  s=state-9:ci  *state-9:ci
+  =/  s=state-10:ci  *state-10:ci
   =/  denied  (edit:ci-input s 'demo' ~ 0 %.n)
   =/  stale  (edit:ci-input s 'demo' desired 1 %.y)
   =/  good  (edit:ci-input s 'demo' desired 0 %.y)

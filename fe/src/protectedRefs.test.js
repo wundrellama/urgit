@@ -47,6 +47,8 @@ const helper = (name) => arm(backend, name)
 // reach it; a missing one throws here, before any test runs
 const setRef = actionArm(backend, 'set-ref')
 const deleteRef = actionArm(backend, 'delete-ref')
+// CI-RECOVERY-1: %urgit-ci's checkpoint commit
+const writeRecovery = actionArm(backend, 'write-recovery-commit')
 const publishDesk = actionArm(backend, 'publish-desk')
 const branchCreate = routeArm(backend, 'repository-settings-api', 'post-repository-branches', 'POST', '[%apps %urgit %api %repository @ %branches ~]')
 const branchDelete = routeArm(backend, 'repository-settings-api', 'delete-repository-branches', 'DELETE', '[%apps %urgit %api %repository @ %branches ~]')
@@ -132,6 +134,7 @@ test('census: every ref mutation in %urgit belongs to a writer this test gates',
     'peer-finish', 'peer-finish', 'peer-finish',
     'handle-action %set-ref',
     'handle-action %delete-ref',
+    'handle-action %write-recovery-commit',
     'handle-api POST [%apps %urgit %api %repository @ %file *]',
     'handle-api DELETE [%apps %urgit %api %repository @ %file *]',
     'handle-api POST [%apps %urgit %api %repository @ %tags ~]',
@@ -229,6 +232,15 @@ test('lib/ci-writer: a protected change is staged or refused, never let through,
 test('W7 %set-ref: an owner poke never sets a CI-protected ref', () => {
   precedes(setRef, '(ci-write-refusal:hc repository.act ~[[old `oid.act ref.act]])', 'refs (~(put by refs.u.found) ref.act oid.act)', '%set-ref')
   assert.match(setRef, /\?\^  refusal  ~\|\(message\.u\.refusal !!\)/)
+})
+
+test('W20 %write-recovery-commit (CI-RECOVERY-1): a checkpoint commit passes the gate, moves only from its expected tip, and sends no webhook', () => {
+  precedes(writeRecovery, '(ci-write-refusal:hc repository.act ~[[current `commit.act ref.act]])', 'refs (~(put by refs.u.found) ref.act commit.act)', '%write-recovery-commit')
+  assert.match(writeRecovery, /\?\^  refusal  ~\|\(message\.u\.refusal !!\)/)
+  precedes(writeRecovery, '?.  =(current expected.act)', 'refs (~(put by refs.u.found) ref.act commit.act)', 'the compare-and-swap')
+  precedes(writeRecovery, '?:  public-read.u.found', 'refs (~(put by refs.u.found) ref.act commit.act)', 'a public repository is refused')
+  precedes(writeRecovery, '(reachable:git-graph merged (silt ~[commit.act]))', 'refs (~(put by refs.u.found) ref.act commit.act)', 'the commit reaches a complete tree')
+  assert.doesNotMatch(writeRecovery, /dispatch-webhooks/, 'a recovery write sends no webhook')
 })
 
 test('W8 %delete-ref: an owner poke never deletes a CI-protected ref', () => {

@@ -62,10 +62,12 @@ test('authentic tag replay stays deduplicated after the recent event window expi
   assert.match(arm(controller, 'on-save'), /!>\(state\)/)
   assert.match(arm(controller, 'on-load'), /load:ci-migrate/)
   const load = arm(deskText('lib/ci-migrate.hoon'), 'load')
-  // state-9 (pull request labels): every shape before it converts through
-  // +eight to state-8, and every shape before state-8, state-6 among them,
-  // through +seven to state-7 first (CI-CONCURRENCY-1)
-  assert.match(load, /\(from-state-8 \(eight p\.found old\)\)/)
+  // state-10 (CI-RECOVERY-1): every shape before it converts through +nine
+  // to state-9, every shape before state-9 through +eight to state-8, and
+  // every shape before state-8, state-6 among them, through +seven to
+  // state-7 first (CI-CONCURRENCY-1)
+  assert.match(load, /\(from-state-9 \(nine p\.found old\)\)/)
+  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'nine'), /\(from-state-8 \(eight shape old\)\)/)
   assert.match(arm(deskText('lib/ci-migrate.hoon'), 'eight'), /\(from-state-7 \(seven shape old\)\)/)
   assert.match(arm(deskText('lib/ci-migrate.hoon'), 'seven'), /state-6:ci/)
 })

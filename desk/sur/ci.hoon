@@ -48,6 +48,10 @@
 ::    state-9, tagged %9, adds pull request labels to the pull facts of a
 ::    run's event and of a recorded forge event.  state-8 is frozen whole
 ::    as sur/ci-state-8.
+::    state-10, tagged %10 (CI-RECOVERY-1), adds one field after state-9's
+::    thirty-six: the recovery record.  it holds the pause, the checkpoint
+::    records, the staged import, the restores and the inert history they
+::    brought back.  state-9 is frozen whole as sur/ci-state-9.
 ::
 /-  git
 |%
@@ -1005,6 +1009,231 @@
 ::
 +$  pin  [name=@t addrs=(list @t)]
 ::
+::  CI-RECOVERY-1 (R5.2-A).  a checkpoint is the CI-configuration
+::  projection only, written as JSON files to a private urgit repository
+::  and pushed to an independently held replica (lib/ci-checkpoint).
+::  "written" and "replica" are two separate facts of each record.
+::
+::  whether a checkpoint's commit was written to the repository
+::
++$  checkpoint-write
+  $~  [%pending ~]
+  $%  [%pending ~]
+      [%written at=@da]
+      [%failed at=@da reason=@t]
+  ==
+::
+::  what became of a checkpoint's replica push.  %waiting is written and
+::  queued behind a push in flight.  %pushing carries the push's ticket.
+::  %confirmed is the replica's own acceptance.  %failed is a failed
+::  backup.  %unconfigured means no push path exists, so the checkpoint is
+::  written and its replica is not confirmed.  %skipped means nothing was
+::  written to push
+::
++$  checkpoint-replica
+  $~  [%skipped 'nothing was written']
+  $%  [%waiting ~]
+      [%pushing at=@da route=@t ticket=@uv]
+      [%confirmed at=@da route=@t]
+      [%failed at=@da route=@t reason=@t]
+      [%unconfigured reason=@t]
+      [%skipped reason=@t]
+  ==
+::
+::  the checkpoint repository as %urgit answers it (/ci-recovery-repo).
+::  it says whether the repository is public and its default branch and
+::  tip.  it says whether it is bound to a desk.  its replica path is a
+::  GitHub origin, with or without a stored token, or the ship and
+::  repository it was forked from
+::
++$  recovery-repo
+  $:  public=?
+      head=@t
+      tip=(unit oid:git)
+      linked=?
+      github=(unit [owner=@t repository=@t])
+      peer=(unit [ship=@p repository=@t])
+      token=?
+  ==
+::
+::  one section of a checkpoint as its manifest lists it.  it names the
+::  file, its record count, the sha-256 of its bytes as hex, and its length
+::
++$  checkpoint-section  [name=@t file=@t count=@ud sha256=@t bytes=@ud]
+::
+::  a checkpoint this ship wrote.  it has its id, cause and actor, and the
+::  repository and branch.  it has the parent tip it was built on and the
+::  commit it builds.  it has the sha-256 of its manifest, and the
+::  manifest's sections
+::
++$  checkpoint
+  $:  id=@t
+      at=@da
+      cause=@t
+      actor=@p
+      repository=@t
+      ref=@t
+      parent=(unit oid:git)
+      commit=oid:git
+      manifest=@t
+      sections=(list checkpoint-section)
+      written=checkpoint-write
+      replica=checkpoint-replica
+  ==
+::
+::  a repository's CI policy as a checkpoint carries it.  a ~ sandbox or
+::  harness-path list is the default
+::
++$  repo-policy
+  $:  repo=@t
+      protected=(list @t)
+      untrusted=untrusted-policy
+      sandbox=(unit sandbox-need)
+      harness-paths=(unit (list @t))
+      automatic-inputs=(list @t)
+      network-policies=(list network-policy)
+      baselines=(list [ref=@t =baseline])
+  ==
+::
+::  a runner's public record: never a bearer or a token hash
+::
++$  runner-record
+  $:  id=daemon-id
+      labels=(list @t)
+      repos=(unit (list @t))
+      enrolled=(unit @da)
+      revoked=(unit @da)
+  ==
+::
+::  a credential reference: never a value
+::
++$  credential-ref
+  $:  repo=@t
+      name=@t
+      scope=?(%job %env)
+      envs=(list @t)
+      created=@da
+  ==
+::
+::  the CI signing key's public half, its certificate, and the ship's own
+::  public signing key and life it was certified under: never a private key
+::
++$  key-record
+  $:  pub=@ux
+      cert=@ux
+      created=@da
+      ship=@p
+      life=(unit @ud)
+      ship-key=(unit @ux)
+  ==
+::
+::  a run as history: its summary and each attempt's log handle in the
+::  store, never the bytes
+::
++$  attempt-handle
+  $:  id=attempt-id
+      workflow=(unit @t)
+      job=(unit @t)
+      status=attempt-status
+      log=(unit object-ref)
+  ==
++$  run-summary
+  $:  id=candidate-id
+      repo=@t
+      ref=@t
+      head=oid:git
+      status=candidate-status
+      verdict=(unit @t)
+      =mode
+      created=@da
+      updated=@da
+      attempts=(list attempt-handle)
+  ==
+::
+::  an approval or override record, kept as inert history only
+::
++$  authorization
+  $%  [%approval =approval]
+      [%override =override]
+  ==
+::
+::  what one checkpoint holds, typed: the sections of its files
+::
++$  checkpoint-content
+  $:  policy=(list repo-policy)
+      locks=(list [=lock evidence=(unit @t)])
+      environments=(list [repo=@t =environment])
+      bindings=(list [repo=@t =binding])
+      runners=(list runner-record)
+      credentials=(list credential-ref)
+      key=(unit key-record)
+      runs=(list run-summary)
+      authorizations=(list authorization)
+      audit=(list audit-entry)
+  ==
+::
+::  a checkpoint's manifest: its id, the ship and desk revision that wrote
+::  it, when and why, and its sections
+::
++$  checkpoint-manifest
+  $:  id=@t
+      ship=@p
+      desk=@t
+      revision=@ud
+      at=@da
+      cause=@t
+      sections=(list checkpoint-section)
+  ==
+::
+::  a checkpoint imported and validated whole, waiting for an apply
+::
++$  staged-checkpoint
+  $:  commit=oid:git
+      imported=@da
+      actor=@p
+      manifest=checkpoint-manifest
+      content=checkpoint-content
+  ==
+::
+::  one apply: the checkpoint, who and when, the repositories it applied,
+::  what it skipped and why, and the open runs it cancelled
+::
++$  restore
+  $:  id=@t
+      commit=oid:git
+      at=@da
+      actor=@p
+      repos=(list @t)
+      skipped=(list @t)
+      cancelled=(list candidate-id)
+  ==
+::
+::  what applies brought back as inert history.  it holds old public keys,
+::  runners that must re-enroll and credential references that need
+::  re-entry.  it holds run summaries, approval and override records, and
+::  audit entries
+::
++$  restored-history
+  $:  keys=(list key-record)
+      runners=(list runner-record)
+      credentials=(list credential-ref)
+      runs=(list run-summary)
+      authorizations=(list authorization)
+      audit=(list audit-entry)
+  ==
+::
+::  the recovery record of state-10.  its bunt is unpaused, with no
+::  checkpoint, no staged import and no history
+::
++$  recovery-state
+  $:  paused=(unit [at=@da actor=@p reason=@t])
+      checkpoints=(list checkpoint)
+      staged=(unit staged-checkpoint)
+      restores=(list restore)
+      history=restored-history
+      sequence=@ud
+  ==
+::
 +$  state-5
   $:  %5
       candidates=(map candidate-id candidate)
@@ -1102,13 +1331,12 @@
       tag-runs=(map candidate-id (unit attempt-id))
   ==
 
-::  state-9: state-8's thirty-six fields under the tag %9.  what changed
-::  is nested — the pull facts of a candidate's event trigger and of a
-::  recorded forge event carry the labels (sur/ci-state-8 holds the
-::  frozen state-8 shape, and sur/ci-state-7 the state-7 one)
+::  state-10 (CI-RECOVERY-1): state-9's thirty-six fields under the tag
+::  %10, then the recovery record (sur/ci-state-9 holds the frozen
+::  state-9 shape, and sur/ci-state-8 the state-8 one)
 ::
-+$  state-9
-  $:  %9
++$  state-10
+  $:  %10
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -1160,6 +1388,9 @@
       input-snapshots=(map candidate-id (list @t))
       input-evidence=(map @ux @t)
       resolver-inputs=(map daemon-id (list @t))
+      ::  CI-RECOVERY-1: the pause, the checkpoints, the staged import,
+      ::  the restores and the inert history they brought back
+      recovery=recovery-state
   ==
 
 ::
@@ -1318,5 +1549,19 @@
       [%materialize-run id=candidate-id repo=@t ref=@t head=oid:git base=oid:git]
       [%run-ready id=candidate-id candidate=oid:git]
       [%run-conflict id=candidate-id reason=@t]
+      ::  CI-RECOVERY-1.  the owner's recovery actions, never delegable.
+      ::  they are a checkpoint now, and the pause and its end.  they are
+      ::  the import of a checkpoint into the staged area, at the checkpoint
+      ::  branch's tip or at a named commit.  they are its discard, and its
+      ::  apply, named by the staged id the operator reviewed.  the actor is
+      ::  the session's ship.  %urgit answers a replica push with
+      ::  %replica-result
+      [%checkpoint-now actor=@p]
+      [%pause-ci reason=@t actor=@p]
+      [%resume-ci actor=@p]
+      [%import-checkpoint commit=(unit oid:git) actor=@p]
+      [%discard-checkpoint actor=@p]
+      [%apply-checkpoint id=@t actor=@p]
+      [%replica-result ticket=@uv ok=? message=@t]
   ==
 --
