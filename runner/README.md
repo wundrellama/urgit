@@ -89,6 +89,13 @@ The runner has two parts:
 
 There is no prebuilt download in this release: build both from the urgit source that matches the desk your ship runs.
 
+**Get the source.** The runner is in the `runner/` directory of the urgit repository. Use the commit that matches the `%urgit` desk your ship runs. A runner from another commit can refuse the ship's assignments. Get the repository in one of these two ways:
+
+- From GitHub: `git clone https://github.com/yapishu/urgit.git`
+- From Urbit: in your ship's urgit, open **Peers**, browse `~matwet`, and fork `urgit`. Then clone the fork from your own ship: `git clone https://<your-ship>/git/urgit`
+
+Until the native CI pull request is merged, the runner is only on the `ci/delivery-1` branch of `https://github.com/wundrellama/urgit.git`. Clone that branch for this release: `git clone -b ci/delivery-1 https://github.com/wundrellama/urgit.git`
+
 **The host.** Linux x86_64 with KVM (`/dev/kvm`), cgroup v2 (`stat -fc %T /sys/fs/cgroup` prints `cgroup2fs`), systemd, Git, outbound HTTP(S) to the ship, Go 1.27 or later to build, and about 25 GiB of disk per concurrent job. It may be the ship's own host.
 
 **Build.**

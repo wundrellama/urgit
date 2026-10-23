@@ -141,8 +141,17 @@ Report what you found. Stop if KVM or cgroup v2 is missing.
 
 ## Step 2: get the source and build
 
-Ask the owner where to get the urgit source that matches the desk their
-ship runs (this release has no prebuilt runner download). In that checkout:
+The runner is in the \`runner/\` directory of the urgit repository. Use the
+commit that matches the \`%urgit\` desk the ship runs. This release has no
+prebuilt runner download. Ask the owner which source to use:
+
+- GitHub: \`git clone https://github.com/yapishu/urgit.git\`
+- Urbit: the owner forks \`~matwet\`'s \`urgit\` in the Peers view, then you
+  clone the fork with \`git clone ${origin}/git/urgit\`
+- Until the native CI pull request is merged, the runner is only on the
+  \`ci/delivery-1\` branch: \`git clone -b ci/delivery-1 https://github.com/wundrellama/urgit.git\`
+
+In that checkout:
 
 \`\`\`sh
 cd runner
