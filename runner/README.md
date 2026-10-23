@@ -15,6 +15,10 @@ The repository's **CI** tab shows a checklist of these steps, each ticked from t
 6. [Runners](#6-runners)
 7. [Limitations in this release](#7-limitations-in-this-release)
 8. [Backup and restore](#8-backup-and-restore)
+9. [Upgrade and roll back](#9-upgrade-and-roll-back)
+10. [Rotate credentials and keys](#10-rotate-credentials-and-keys)
+11. [Retention](#11-retention)
+12. [Override a required check](#12-override-a-required-check)
 
 ## Prepare your repository
 
@@ -210,7 +214,7 @@ Nothing at the launcher is touched. A record of the attempt there refuses the re
 
 **Re-enrolling a runner that withholds slots.** Re-enrolling today means deleting the state file, which discards every retention it holds — real quarantines included — and returns their slots without proof. Do not delete the state file of a runner whose **Retentions** lists anything.
 
-**Upgrading the ship.** An upgrade of `%urgit-ci` keeps its state, and with it every runner's enrollment and bearer (contract §8c; state-migration ruling 01). A runner goes on polling, and needs no re-enrollment. Its state file, with its retentions and recorded refusals, is never touched by the ship's upgrade. Do not nuke `%urgit-ci` to upgrade it: a nuke forgets every runner. A saved state of a shape the agent does not know is refused, not reset. No upgrade of an agent on a ship has been qualified yet.
+**Upgrading the ship.** An upgrade of `%urgit-ci` keeps its state, and with it every runner's enrollment and bearer (contract §8c; state-migration ruling 01). A runner goes on polling, and needs no re-enrollment. Its state file, with its retentions and recorded refusals, is never touched by the ship's upgrade. Do not nuke `%urgit-ci` to upgrade it: a nuke forgets every runner. A saved state of a shape the agent does not know is refused, not reset. Each state change in this release was upgraded on a populated fake ship, and every record was kept. An upgrade on a live ship has not been qualified yet.
 
 **Late bookkeeping.** A sandbox whose cleanup finished before its deadline is released once the launcher has kept its evidence and durably withdrawn its record — even if that withdrawal is confirmed after the deadline, which is then said apart: serve logs `RELEASED, ACCOUNTING CONFIRMED LATE`, the evidence under `released/` records it, and `urgit-vm-launcher list` reports every such release. Until the withdrawal is confirmed the slot stays charged. The launcher keeps that evidence only in a real `released/` directory in its state directory, and certifies the directory's link at every release: if the state directory's fsync fails, or `released/` is not a directory, every release stays charged until it is repaired, and `urgit-vm-launcher list` reports a `released/` that is not a directory as unreadable evidence. `urgit-runner -recover` releases a VM's slot only on the launcher's evidence of that exact reservation's release: a reservation the launcher no longer holds, gone without evidence, is never taken for released.
 
@@ -308,6 +312,71 @@ An apply never rewinds authority:
 - Runners come back as records that must re-enroll, with no bearer.
 - The ship keeps its own new CI signing key. The old public key is kept as history.
 - Run summaries come back as history, and none of them can land anything.
+
+## 9. Upgrade and roll back
+
+**Before an upgrade.** Do these steps before you install a new version of the desk or the runner:
+
+1. Press **Settings → CI recovery → Checkpoint now**, and make sure the checkpoint reads *written*.
+2. Clone each repository with `git clone --mirror`.
+3. Clone the `ci-checkpoints` repository.
+4. Keep the previous `urgit-runner` binary and the previous desk commit.
+
+A copy of the pier is not a backup. Do not use one as a rollback.
+
+**Upgrade the ship.** Install the new desk. `%urgit-ci` converts its saved state on load, one version at a time, and writes a `state-migration` entry in the audit. Runners keep their enrollment and do not need a restart. Do not nuke `%urgit-ci` to upgrade it: a nuke forgets every runner, credential and policy.
+
+**Upgrade a runner.** Stop the runner, replace the binary, and start it again. Keep its state file and its `executions/` ledger. A runner that comes from a version without the ledger pauses until you confirm its transition (§6).
+
+**Roll back.** There is no downgrade of saved state. An older `%urgit-ci` refuses a state from a newer version. It does not reset the state, and it does not run with it. A rollback is possible only across releases that did not change the state version. In that case, install the previous desk commit. Across a state change, keep the newer version and fix forward. If the ship itself is lost, restore onto a fresh ship as §8 describes.
+
+A runner downgrade is not qualified. Keep the previous binary for a fix-forward comparison, not as a rollback.
+
+## 10. Rotate credentials and keys
+
+**A credential value.** In **Settings → Credentials**, enter the same name with the new value. The new value replaces the old one. Jobs that start after the change get the new value. A job that is already running keeps the value it was given, until its deadline. To remove a credential, press its delete button. The ship never shows a stored value.
+
+**The CI signing key.** Press **Settings → Runners → Rotate CI key**. Then do these steps for each enrolled runner:
+
+1. Wait for the runner to show `refused`. Jobs that were running finish first.
+2. Check its **Retentions**. Do not continue while it lists anything (§6).
+3. Stop the runner.
+4. Delete its state file.
+5. Mint a new token, and put it in the runner's config as `enroll_token`.
+6. Start the runner. It enrolls again and pins the new key.
+7. **Revoke** and **Remove** the old row.
+
+**A runner's bearer.** **Revoke** the runner, then mint a token and enroll it again as above. A revoked bearer gets HTTP 401 at its next poll.
+
+**The object store credentials.** Change them in the ship's `%storage` settings. The ship reads `%storage` each time it signs a request, so the next upload and the next log link use the new credentials. A log link that the ship signed before the change expires within five minutes.
+
+## 11. Retention
+
+CI deletes nothing on its own. Plan for these:
+
+- **Logs in the object store.** Every job log stays under the `ci/` prefix of the bucket. Set a lifecycle rule on that prefix if you want logs to expire. A run whose log was deleted keeps its verdict. Its log link then answers with the store's error.
+- **Run records on the ship.** Every run and its attempts stay in `%urgit-ci`. Deleting a repository deletes its CI records.
+- **Job streams on the runner host.** The runner keeps each job's `<attempt>.act.jsonl` in its `work_dir` after it uploads the stream. You can delete the stream of an attempt that the ship shows as finished.
+- **The runner's execution ledger.** `executions/` grows by two small files per job and must not be pruned (§6).
+- **Checkpoints.** Each checkpoint is one commit in `ci-checkpoints`, and it holds at most the newest 100 run summaries.
+
+## 12. Override a required check
+
+An override lands one exact candidate without the evidence it is missing. Use it only for an emergency.
+
+1. In **Settings → CI policy → Roles**, bind the `override` role for the branch to the ships that may override. The owner holds the role always.
+2. Open the candidate on the **CI** tab. The **Override** block shows only for a required candidate that has not landed.
+3. Write the reason. The ship records the reason, your ship and what was missing.
+4. Press **Record override and land**, and confirm.
+
+The ship refuses an override in these cases:
+
+- CI is paused.
+- The candidate is not built yet.
+- The candidate is a trial or a shadow run.
+- The branch has moved since you opened the candidate.
+
+An override is valid for fifteen minutes. A change of CI policy cancels an override that was not used. The candidate's own status does not change. The audit and the candidate both show the override.
 
 ## How it works
 
