@@ -142,7 +142,7 @@
 ::  reached the ship from outside is scrubbed of them before it is written
 ::
 ++  secret-forms
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list @t)
   =/  values=(list @t)
     (turn ~(val by credentials.s) |=(c=credential:ci value.c))
@@ -160,7 +160,7 @@
 ::  projection only, every free text scrubbed
 ::
 ++  project
-  |=  [s=state-10:ci ship=@p now=@da]
+  |=  [s=state-0:ci ship=@p now=@da]
   ^-  checkpoint-content:ci
   =/  secrets=(list @t)  (secret-forms s)
   :*  (policy-of s secrets)
@@ -178,7 +178,7 @@
 ::  every repository with any CI policy
 ::
 ++  policy-repos
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list @t)
   =/  protected=(list @t)
     (turn ~(tap in ci-protected.s) |=([r=@t *] r))
@@ -199,7 +199,7 @@
   (sort ~(tap in (silt all)) aor)
 ::
 ++  policy-of
-  |=  [s=state-10:ci secrets=(list @t)]
+  |=  [s=state-0:ci secrets=(list @t)]
   ^-  (list repo-policy:ci)
   =/  names=(list @t)  (policy-repos s)
   %+  turn  names
@@ -232,7 +232,7 @@
 ::  evidence their digest binds
 ::
 ++  locks-of
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list [=lock:ci evidence=(unit @t)])
   =/  named=(list @ux)
     %+  murn  ~(val by baselines.s)
@@ -246,7 +246,7 @@
   `[u.found (~(get by input-evidence.s) d)]
 ::
 ++  environments-of
-  |=  [s=state-10:ci secrets=(list @t)]
+  |=  [s=state-0:ci secrets=(list @t)]
   ^-  (list [repo=@t =environment:ci])
   =/  all=(list [repo=@t =environment:ci])
     %+  turn  ~(tap by environments.s)
@@ -259,7 +259,7 @@
   (aor name.environment.a name.environment.b)
 ::
 ++  bindings-of
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list [repo=@t =binding:ci])
   =/  repos=(list @t)  (sort ~(tap in ~(key by roles.s)) aor)
   =/  nested=(list (list [repo=@t =binding:ci]))
@@ -274,7 +274,7 @@
 ::  revoked.  the token hash and the bearer hash are never read
 ::
 ++  runners-of
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list runner-record:ci)
   =/  all=(list daemon:ci)
     (sort ~(val by daemons.s) |=([a=daemon:ci b=daemon:ci] (lth id.a id.b)))
@@ -291,7 +291,7 @@
 ::  back that still needs re-entry.  the value is never read
 ::
 ++  credentials-of
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (list credential-ref:ci)
   =/  live=(list credential-ref:ci)
     %+  turn  ~(tap by credentials.s)
@@ -311,7 +311,7 @@
 ::  public signing key: neither private key is read
 ::
 ++  key-of
-  |=  [s=state-10:ci ship=@p]
+  |=  [s=state-0:ci ship=@p]
   ^-  (unit key-record:ci)
   ?~  signing.s  ~
   =/  life=(unit @ud)  ?~(ship-keys.s ~ `life.u.ship-keys.s)
@@ -322,7 +322,7 @@
 ::  brought back, one record per run, newest first
 ::
 ++  runs-of
-  |=  [s=state-10:ci secrets=(list @t)]
+  |=  [s=state-0:ci secrets=(list @t)]
   ^-  (list run-summary:ci)
   =/  live=(list run-summary:ci)
     %+  turn  ~(val by candidates.s)
@@ -388,7 +388,7 @@
 ::  with those an earlier restore brought back, newest first
 ::
 ++  authorizations-of
-  |=  [s=state-10:ci secrets=(list @t) now=@da]
+  |=  [s=state-0:ci secrets=(list @t) now=@da]
   ^-  (list authorization:ci)
   =/  spent-approvals=(list approval:ci)
     (skip ~(val by approvals.s) |=(a=approval:ci (approval-in-force a now)))
@@ -424,7 +424,7 @@
 ::  restores, with those an earlier restore brought back, newest first
 ::
 ++  audit-of
-  |=  [s=state-10:ci secrets=(list @t)]
+  |=  [s=state-0:ci secrets=(list @t)]
   ^-  (list audit-entry:ci)
   =/  kept=(list audit-entry:ci)
     %+  skim  audit.s
@@ -1746,7 +1746,7 @@
   (silt flat)
 ::
 ++  access-changes
-  |=  [s=state-10:ci content=checkpoint-content:ci repos=(list @t)]
+  |=  [s=state-0:ci content=checkpoint-content:ci repos=(list @t)]
   ^-  (list change)
   =/  nested=(list (list change))
     %+  turn  repos
@@ -1800,7 +1800,7 @@
 ::  what comes back as history, never as authority
 ::
 ++  history-changes
-  |=  [s=state-10:ci content=checkpoint-content:ci]
+  |=  [s=state-0:ci content=checkpoint-content:ci]
   ^-  (list change)
   =/  creds=(list change)
     %+  turn  credentials.content
@@ -1853,7 +1853,7 @@
   (sort ~(tap in (silt named)) aor)
 ::
 ++  diff
-  |=  [s=state-10:ci content=checkpoint-content:ci]
+  |=  [s=state-0:ci content=checkpoint-content:ci]
   ^-  (list change)
   =/  current=(map @t repo-policy:ci)
     (malt (turn (policy-of s ~) |=(p=repo-policy:ci [repo.p p])))
@@ -1869,7 +1869,7 @@
 ::  ---- pause, import and apply: the refusals ----
 ::
 ++  paused
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  ?
   ?=(^ paused.recovery.s)
 ::
@@ -1880,19 +1880,19 @@
   'CI is paused for a restore: no run is admitted, offered or landed until it resumes'
 ::
 ++  pause-refusal
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (unit @t)
   ?^  paused.recovery.s  `'CI is already paused'
   ~
 ::
 ++  resume-refusal
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (unit @t)
   ?~  paused.recovery.s  `'CI is not paused'
   ~
 ::
 ++  import-refusal
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  (unit @t)
   ?~  paused.recovery.s
     `'pause CI before importing a checkpoint: an import into a running CI is refused'
@@ -1901,12 +1901,12 @@
 ::  the attempts still running: an apply waits for none
 ::
 ++  running-attempts
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  @ud
   (lent (skim ~(val by attempts.s) |=(a=attempt:ci =(%running status.a))))
 ::
 ++  apply-refusal
-  |=  [s=state-10:ci id=@t]
+  |=  [s=state-0:ci id=@t]
   ^-  (unit @t)
   ?~  paused.recovery.s
     `'pause CI before applying a checkpoint: an apply to a running CI is refused'
@@ -1989,7 +1989,7 @@
 ::  that hold no value on this ship, one per repository and name
 ::
 ++  merge-credentials
-  |=  [s=state-10:ci new=(list credential-ref:ci)]
+  |=  [s=state-0:ci new=(list credential-ref:ci)]
   ^-  (list credential-ref:ci)
   =/  wanted=(list credential-ref:ci)
     (skip new |=(r=credential-ref:ci (~(has by credentials.s) [repo.r name.r])))
@@ -2020,7 +2020,7 @@
 ::  cancelled.  a CI-protected ref with no tip here and a baseline whose
 ::  revision or lock is missing here are skipped, with why
 ::
-+$  applied  [s=state-10:ci skipped=(list @t) cancelled=(list candidate-id:ci)]
++$  applied  [s=state-0:ci skipped=(list @t) cancelled=(list candidate-id:ci)]
 ::
 ++  apply-repo
   |=  $:  acc=applied
@@ -2033,7 +2033,7 @@
           eny=@uvJ
       ==
   ^-  applied
-  =/  s=state-10:ci  s.acc
+  =/  s=state-0:ci  s.acc
   =/  p=repo-policy:ci
     =/  hits=(list repo-policy:ci)  (skim policy.content |=(q=repo-policy:ci =(repo repo.q)))
     ?^  hits  i.hits
@@ -2142,13 +2142,13 @@
 ::  attempt, an approval in force, a daemon or a credential value
 ::
 ++  apply
-  |=  $:  s=state-10:ci
+  |=  $:  s=state-0:ci
           =presence
           actor=@p
           now=@da
           eny=@uvJ
       ==
-  ^-  [s=state-10:ci =restore:ci]
+  ^-  [s=state-0:ci =restore:ci]
   ::  bound first: a refinement of .s itself would fix its type
   =/  waiting=(unit staged-checkpoint:ci)  staged.recovery.s
   ?>  ?=(^ waiting)
@@ -2195,8 +2195,8 @@
 ::  setting or deleting a credential settles its re-entry mark
 ::
 ++  reentered
-  |=  [s=state-10:ci repo=@t name=@t]
-  ^-  state-10:ci
+  |=  [s=state-0:ci repo=@t name=@t]
+  ^-  state-0:ci
   =.  credentials.history.recovery.s
     %+  skip  credentials.history.recovery.s
     |=(r=credential-ref:ci &(=(repo repo.r) =(name name.r)))

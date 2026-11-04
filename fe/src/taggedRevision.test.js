@@ -1,6 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { arm, deskText } from './hoonSource.js'
 
 // Private SOURCE checks. These inspect the real producer path, not a
@@ -22,16 +21,6 @@ test('a release with different YAML cannot borrow the default branch catalog', (
   assert.match(tag, /\(tag-commit repo\.e object\)/, 'peel the event object, never today\'s branch')
   assert.match(tag, /\(cached-lock:ci-tag locks repo\.e p\.peeled\)/)
   assert.doesNotMatch(tag, /\(governing |\(ref-tip |get by baselines/)
-})
-
-test('state5 is frozen exactly and pending tag resolution has a new persisted version', () => {
-  const old = deskText('sur/ci-state-5.hoon')
-  assert.equal(createHash('sha256').update(old).digest('hex'),
-    '019ff935802afee00028550aee1c66b17c39c8d6e8978035e0820a784ea0a77b')
-  const current = deskText('sur/ci.hoon')
-  assert.match(current, /\+\$  state-6\n/)
-  assert.match(current, /tag-runs=\(map candidate-id \(unit attempt-id\)\)/)
-  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'from-state-5'), /schedules\.o\s+~/)
 })
 
 test('the actual completion binds its exact attempt and the scheduler excludes unresolved tags', () => {
@@ -60,16 +49,7 @@ test('authentic tag replay stays deduplicated after the recent event window expi
   assert.ok(durable >= 0 && durable < push.indexOf('(verify-push repo u)'))
   assert.match(arm(controller, 'bind-tag-lock'), /=\(%pending status\.c\).*\?=\(~ selected\.c\)/)
   assert.match(arm(controller, 'on-save'), /!>\(state\)/)
-  assert.match(arm(controller, 'on-load'), /load:ci-migrate/)
-  const load = arm(deskText('lib/ci-migrate.hoon'), 'load')
-  // state-10 (CI-RECOVERY-1): every shape before it converts through +nine
-  // to state-9, every shape before state-9 through +eight to state-8, and
-  // every shape before state-8, state-6 among them, through +seven to
-  // state-7 first (CI-CONCURRENCY-1)
-  assert.match(load, /\(from-state-9 \(nine p\.found old\)\)/)
-  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'nine'), /\(from-state-8 \(eight shape old\)\)/)
-  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'eight'), /\(from-state-7 \(seven shape old\)\)/)
-  assert.match(arm(deskText('lib/ci-migrate.hoon'), 'seven'), /state-6:ci/)
+  assert.match(arm(controller, 'on-load'), /!<\(state-0:ci old\)/)
 })
 
 test('tag authority is narrow and leaves the promoted and privileged paths guarded', () => {

@@ -2,6 +2,8 @@
 
 **Where the runner code is.** A path that starts with `runner/` is in the [urgit-runner](https://github.com/wundrellama/urgit-runner) repository, without the `runner/` prefix. The runner was split out of this repository. The paths below keep the names they had when this record was written.
 
+**State conversions.** Rows about a conversion from one `%urgit-ci` state to the next describe development states. Those states and their conversions were removed before publication (contract §8c). The release ships one state, `state-0`.
+
 
 Every original obligation the brief names, its status in this tree, and the code/test evidence or the explicit P5 owner. Status words: `planned` (the S0 design names the evidence that will exist; not yet built — none left at the end of the build), `done` (implemented and exercised in this tree, evidence named), `held` (blocked on a ruling or an authorized privileged step; the question is named), `P5` (owed by the next phase by the brief's own map), `retired` (an earlier exception intentionally ended, with the tests that changed). A `done` row cites a test or a harness row; a checkpoint line in PROGRESS is not evidence. This ledger is updated at every stage transition; the acceptance table (BRIEF §6) is the coverage oracle and its row set equals `.scratch/ci-p4/rows.txt`.
 

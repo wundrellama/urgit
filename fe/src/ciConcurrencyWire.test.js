@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { armsNamed, deskText, gaps, type } from './hoonSource.js'
-import { AUTHORITY, IN_FLIGHT, TRIAL, UNREAD } from './ciConcurrencyFixtures.js'
+import { AUTHORITY, TRIAL, UNREAD } from './ciConcurrencyFixtures.js'
 
 // The concurrency panel reads the candidate route's fields by name and
 // shows the ship's reasons as the ship words them (CI-CONCURRENCY-1). The
@@ -14,7 +14,6 @@ import { AUTHORITY, IN_FLIGHT, TRIAL, UNREAD } from './ciConcurrencyFixtures.js'
 const agent = deskText('app/urgit-ci.hoon')
 const sur = deskText('sur/ci.hoon')
 const lib = deskText('lib/ci-concurrency.hoon')
-const migrate = deskText('lib/ci-migrate.hoon')
 
 const one = (text, name) => {
   const found = armsNamed(text, name)
@@ -57,7 +56,6 @@ test('the places, kinds, causes and states the panel words are the ones the type
 test('the reasons the fixtures quote are the ship\'s own words', () => {
   assert.ok(one(lib, 'unread').includes(cord(UNREAD)), 'unread')
   assert.ok(one(lib, 'exempt').includes(cord(TRIAL)), 'a trial twin')
-  assert.ok(one(migrate, 'in-flight').includes(cord(IN_FLIGHT)), 'in flight at the upgrade')
   assert.ok(one(agent, 'no-cancel-authority').includes(cord(AUTHORITY)), 'the authority')
   const join = one(lib, 'join')
   assert.ok(join.includes("~['cancelled: the newer run (' label ') joined group ' named ' with cancel-in-progress']"), 'a newcomer with cancel-in-progress')

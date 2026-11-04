@@ -236,81 +236,16 @@ A command is its atom. The signature binds the `@uv`, not its text, so every spe
 
 **A transition record is a transition only when it is one this version writes** (`runner/launcher/INTEGRATION.md` §11.16; independent review 12). It is an object of exactly `epoch` (1 or more), `command` (a `@uv` in the ship's spelling), `evidence` (the sha256 of this runner's history as it is now) and `at` (its time), each named once. Anything else in the state file's `transition` is no transition: the state file loads, the runner waits, and nothing it holds lifts the pause or answers a command. It keeps the record as the file holds it, and its report carries `history.invalidTransition {problem, record}`. The owner's transition supersedes such a record and keeps it, as the file held it, in `superseded_transitions {record, problem, by, at}`. A state file that names a field twice anywhere else, its `transition` among them, is refused at the load and left as it is: no runner writes one, and which of the two is meant is not known.
 
-## 8c. The controller's state: its versions and their migration (state-migration ruling 01)
+## 8c. The controller's state (CI-STATE-PUBLISH-COLLAPSE-1)
 
-This model was written before the code that implements it.
+`%urgit-ci` persists one shape, `state-0`, tagged `%0` (`desk/sur/ci.hoon`). The agent was not published before this release. Thus it has no earlier shape to convert, and no conversion code.
 
-`%urgit-ci`'s persisted state is versioned. An upgrade preserves it in place: no export, nuke, import or re-enrollment. This follows state-migration ruling 01 (`.scratch/source-stage-01/orchestrator/state-migration-01/RULING.md`, Q12 A; QUESTIONS-SOURCE-01 §12). For this agent it supersedes AGENTS.md's disposable state-0 rule. No agent on a ship has been migrated.
+- `on-save` saves the whole state. `on-load` reads it back as `state-0`. A saved state of another shape crashes `on-load`, so Gall keeps the agent that runs.
+- A change to `state-0` before the first release is made in place. A ship that ran a development build of `%urgit-ci` nukes and revives the agent once.
+- After the first release, each change to the persisted state needs a new tagged state, a frozen copy of the old shape, a conversion written field by field, a vector, and an upgrade of a populated ship.
+- The runner is not affected. Its state file, retentions and recorded refusals are its own.
 
-**Supported shapes.** Four earlier shapes are known from this worktree's own sources. They are distinct sources of evidence, and none is claimed to have been deployed. Each is frozen byte for byte, with every type it uses, as a sur file of its own:
-
-| Shape | Its source | Frozen as | Fields after its tag |
-|---|---|---|---|
-| the committed base (P3, closed out) | `desk/sur/ci.hoon` at commit `c82a24e` | `desk/sur/ci-state-base.hoon` | 9 |
-| review 06's schema (P4, before Q11) | the accepted snapshot, `orchestrator/legacy-recovery-ui-01/accepted-review06/` | `desk/sur/ci-state-review06.hoon` | 26 |
-| the Q11 schema | `submissions/08` | `desk/sur/ci-state-q11.hoon` | 28 |
-| state-1, tagged `%1` (the Q11 fields) | `desk/sur/ci.hoon` at commit `f33a177` | `desk/sur/ci-state-1.hoon` | 28 |
-
-The first three carry the tag `%0`, so the tag cannot tell them apart. State-1 is tagged `%1`. State-2, tagged `%2`, is state-1's 28 fields with each attempt's `pinned` addresses (CI-P4-NET-1); it is frozen byte for byte as `desk/sur/ci-state-2.hoon` (`sur/ci.hoon` at commit `fd75b88`). State-3, tagged `%3` (Delivery 1A), has state-2's 28 fields, each candidate gaining `trigger` (`[%push ~]`, or `[%dispatch workflow name inputs payload request]` for a manual run) and each lock gaining `inventory` (the manual workflows its resolver read; `~` for a lock resolved before them, which is not an empty inventory). Shapes that P4's development went through between the base and review 06 were never preserved; they are not supported and are refused. State-4 and state-5 follow the same rules and have frozen molds. The current state is **state-8**, tag `%8` (CI-CONCURRENCY-1). State-7 is frozen whole in `desk/sur/ci-state-7.hoon`. State-8 keeps its thirty-six fields and converts the records inside them field by field: a candidate gains its concurrency (`%exempt` with the reason "in flight when concurrency groups were added" for a run still pending, `%unknown` for a closed one) and no cancelled workflow. An attempt's recorded decision is copied as it was. Each lock catalog workflow gains its concurrency as `~`, unknown (never "no group". Resolve and promote the revision again to apply it). The lock digest is kept. Nothing gains authority and nothing is reset. State-6 is frozen whole in `desk/sur/ci-state-6.hoon`; state-7 preserves every old field and appends empty automatic-input policy, snapshot, lock-evidence and resolver-ceiling maps. State-6, tag `%6`, adds only the persisted tagged-run resolver bindings described in §11. `desk/sur/ci-state-5.hoon` preserves the exact previous mold, including every nested type.
-
-**Loading.** `on-load` reads the saved state as a noun, never by its vase's type:
-- `%8`: it must be exactly a `state-8`. It loads unchanged.
-- `%7`: it must fit the complete frozen `state-7`. It is converted to state-8 as above.
-- `%6`: it must fit the complete frozen `state-6`; every field is copied and the four new maps start empty. No prior bearer or obligation gains an external-input grant.
-- `%5`, `%4`, `%3`: each must match its own frozen mold. It is converted through the explicit chain.
-- `%2`: it must be exactly a `state-2`. It is converted.
-- `%1`: it must be exactly a `state-1`. It is converted.
-- `%0`: it is checked against each frozen shape (`;;`, which must hold as a fixpoint). If exactly one fits, it is converted. If none fits (an unknown, partial or corrupt state), or more than one fits (an ambiguous one), it is refused.
-- Any other tag, or an atom, is refused.
-
-A refusal crashes `on-load` with its reason. Nothing is cast, reset or read another way. That Gall then keeps the running version and its saved state is expected, but it is to be qualified live.
-
-**Conversions** (`desk/lib/ci-migrate.hoon`), each written out field by field:
-- **From state-5**: all 31 fields are preserved verbatim under `%6`. The new `tag-runs` map starts empty. Historical event runs retain their existing promoted authority. State-6 reload preserves both waiting tags and exact resolver attempts.
-- **From state-4 and state-3**: the existing conversions add selection/catalog and expression/output fields before the state-5 conversion. No historical shape is rewritten.
-- **From state-2**: its 28 fields as they are, under the tag `%3`. Each candidate keeps every field and is a push run (`[%push ~]`), as every candidate before state-3 was; each lock keeps every field and has no inventory. A state-2 tagged `%3`, and a state-3 tagged `%2`, are refused.
-- **From state-1** and every earlier shape: to state-2 as below, then from state-2.
-- **From state-1**: its 28 fields as they are, under the tag `%2`. Each attempt keeps every field, and a running one stays running. It has no pinned addresses, since none was reported before state-2.
-- **From a `%0` shape**: first to state-1, as below, then from state-1.
-- **From the Q11 schema**: its 28 fields as they are, under the tag `%1`.
-- **From review 06's**: its 26 fields as they are. The Q11 stage's two maps start empty: no retention report yet, since a runner posts one at its next reconcile, and no recovery command, since none could exist.
-- **From the committed base**: its 9 fields. Every record is completed with what P4 added, and every map, set and list that P4 and Q11 added starts empty. None of it existed.
-  - **A daemon** keeps everything it had, unchanged: its id, token and bearer hashes, minting, enrollment, last contact, capacity, sandbox, running attempts, revocation, refusal, labels and repositories. A revoked daemon stays revoked, and an enrolled one keeps its bearer. It gets no network profiles, which a daemon declares again on every poll, and resolver false, since it enrolled without declaring one.
-  - **A candidate** keeps everything it had. Its P4 bindings are none:
-    - mode required, which is what a pre-P4 candidate was to its ref;
-    - no baseline and no lock, generation 0 and incarnation 0v0;
-    - the VM, no trial, and its harness difference not computed.
-
-    `bindings-current` needs a candidate's baseline to be the promoted one, so a migrated candidate is never current evidence. Nothing migrated lands without being staged again under P4.
-  - **An attempt** keeps everything it had, and a running one stays running. What its signed manifest would have carried is none: generation 0, mode required, no manifest (none was signed), the VM, no network recorded, and no approval. Its outcome is known: its status and result are what they were.
-  - With no baseline promoted, a protected ref waits for the owner's promotion before anything lands, as P4 requires of every repository.
-- **Every conversion** carries everything else over as it is:
-  - the enrolled daemons, the signing key and ship keys;
-  - the protected refs, policies and credentials;
-  - the candidates, assignments and attempts;
-  - whatever P4 and Q11 recorded: approvals with their expiry, consumption and invalidation; overrides; roles; environments; baselines and locks; the audit; recovery commands with their status and reports.
-
-  An expired approval stays expired, a consumed one consumed, and a revoked runner revoked. Nothing is renewed or revived.
-- **The audit** records each migration (`state-migration`, with the shape it came from). The runner is untouched: its state file, retentions and recorded refusals stay authoritative. Its enrollment carries over with its daemon record, so it goes on polling with its bearer.
-
-**What checks it here**, and what does not:
-- `desk/gen/ci-migration-vector.hoon` is the fail-able vector. It covers:
-  - a populated state of each shape: enrollment and a revoked daemon, trust, policy and credentials, history, running attempts, expired and consumed approvals, and open and final recovery commands;
-  - the current state reloaded unchanged;
-  - an unknown version, an atom, a malformed `%0`, a corrupt field and an ambiguous classification, each refused.
-
-  It needs a ship, and is NOT RUN here.
-- `tools/q12_static_check.py` is a static check of this source, not a Gall migration. It checks that:
-  - each frozen shape is byte-identical to its source;
-  - each conversion reads every field of its source shape and constructs every field of `state-1`, in order.
-
-  Its negative control drops a protected field, and it must fail.
-- **Delivery 1A (2026-10-15, the opus chair's owned fake ship, not a fresh final verification):** the vector's run, 58 of 58, adds state-2 converted to state-3, a state-3 with a manual run and a lock inventory reloaded unchanged, and the mis-tagged and corrupt `%2`/`%3` shapes refused. A persisted upgrade ran: the baseline (state-2) agents, populated through their own routes with an enrolled, a revoked and a minted runner, two credentials, two environments, a role, a resolved lock, a promoted baseline and a running job attempt, then the new desk committed over them. Gall bumped `%urgit-ci` with no error; the tag became `%3`; 25 of 28 fields hashed the same, the candidates (each a push run), the locks (no inventory) and the audit (one `state-migration` entry) changed as specified; the running job attempt stayed running and the enrolled runner kept polling with its bearer (18 of 18 record checks).
-- **Run on a fresh fake ship (2026-10-08):** the Hoon compilation of the frozen shapes, the library, the agent and the vector, and the vector's run (46 of 46). It now covers state-1 converted to state-2, a state-2 with pinned addresses reloaded unchanged, and a state-1 tagged `%2` and a state-2 tagged `%1`, each refused.
-- **One persisted upgrade, run (2026-10-08):** the state-1 agent at commit `f33a177`, installed on a fresh fake ship and given a policy and two credentials through its own actions, then this desk committed over it. Gall bumped `%urgit-ci` with no error. The state's tag became `%2`; 26 of its 27 fields hashed the same, and the audit gained one `state-migration` entry. That state held no attempt, so the attempt conversion is proved by the vector only.
-- **Held:**
-  - a persisted upgrade from each `%0` shape, with its own code installed first;
-  - a refused `on-load` observed keeping the running version.
+An earlier draft of this release kept a versioned state with one conversion for each development step (state-migration ruling 01). Those conversions served only development ships, and they were removed before publication.
 
 ## 9. Privileged launcher and host recipe (rider 01; execution HELD pending review)
 

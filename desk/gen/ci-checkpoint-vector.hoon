@@ -133,8 +133,8 @@
       [['demo' 'GITHUB_TOKEN'] [secret-github %job ~ ~2026.10.5]]
       [['demo' 'PEM'] [secret-pem %job ~ ~2026.10.5]]
   ==
-=/  blank-state=state-10:ci  *state-10:ci
-=/  s=state-10:ci
+=/  blank-state=state-0:ci  *state-0:ci
+=/  s=state-0:ci
   %=  blank-state
     candidates  (malt ~[[id.run run]])
     daemons  (malt ~[[id.daemon daemon]])
@@ -399,13 +399,13 @@
   ==
 ::  pause, import and apply: the refusals
 ::
-=/  paused-s=state-10:ci  s(paused.recovery `[now ship 'drill'])
+=/  paused-s=state-0:ci  s(paused.recovery `[now ship 'drill'])
 =/  staged=staged-checkpoint:ci
   ?>  ?=(%& -.read)
   [0xc0ff.ee00 now ship manifest.p.read content.p.read]
-=/  staged-unpaused=state-10:ci  s(staged.recovery `staged)
-=/  staged-paused=state-10:ci  paused-s(staged.recovery `staged)
-=/  busy=state-10:ci
+=/  staged-unpaused=state-0:ci  s(staged.recovery `staged)
+=/  staged-paused=state-0:ci  paused-s(staged.recovery `staged)
+=/  busy=state-0:ci
   staged-paused(attempts (~(put by attempts.staged-paused) id.att att(status %running)))
 =/  refusals=(list [name=@t expect=? got=?])
   :~  ['an import into an unpaused CI is refused' %.y ?=(^ (import-refusal:ci-checkpoint s))]
@@ -423,13 +423,13 @@
 ::  an apply on a fresh ship: its own new signing key, no runs, paused
 ::
 =/  fresh-signing=signing:ci  [0x4242 0x4343 0x4444 now]
-=/  fresh=state-10:ci
-  =/  b=state-10:ci  *state-10:ci
+=/  fresh=state-0:ci
+  =/  b=state-0:ci  *state-0:ci
   b(signing `fresh-signing, paused.recovery `[now ~zod 'drill'], staged.recovery `staged)
 =/  here=presence:ci-checkpoint
   [(silt ~[['demo' 'refs/heads/main']]) (silt ~[['demo' revision]])]
-=/  done=[s=state-10:ci =restore:ci]  (apply:ci-checkpoint fresh here ship now 0v0)
-=/  after=state-10:ci  s.done
+=/  done=[s=state-0:ci =restore:ci]  (apply:ci-checkpoint fresh here ship now 0v0)
+=/  after=state-0:ci  s.done
 =/  changes=(list change:ci-checkpoint)  (diff:ci-checkpoint fresh content)
 =/  applies=(list [name=@t expect=? got=?])
   :~  ['credentials come back with no value: none is stored' %.y =(~ credentials.after)]
@@ -464,10 +464,10 @@
 ::  unused approval of this ship, every credential value stored here
 ::
 =/  open-run=candidate:ci  run(id 0v8.openr, status %pending, attempts ~)
-=/  in-place-s=state-10:ci
+=/  in-place-s=state-0:ci
   staged-paused(candidates (~(put by candidates.staged-paused) id.open-run open-run))
-=/  in-place=[s=state-10:ci =restore:ci]  (apply:ci-checkpoint in-place-s here ship now 0v0)
-=/  kept=state-10:ci  s.in-place
+=/  in-place=[s=state-0:ci =restore:ci]  (apply:ci-checkpoint in-place-s here ship now 0v0)
+=/  kept=state-0:ci  s.in-place
 =/  in-place-cases=(list [name=@t expect=? got=?])
   :~  ['an open run of a restored repository is cancelled' %.y =(%cancelled status:(~(got by candidates.kept) 0v8.openr))]
       ['the cancellation is said' %.y =(~[0v8.openr] cancelled.restore.in-place)]

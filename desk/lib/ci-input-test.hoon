@@ -1,12 +1,12 @@
-/-  ci, ci-state-6
-/+  ci-input, ci-dispatch, ci-migrate, ci-provenance, ci-resolve, ci-resolve-test
+/-  ci
+/+  ci-input, ci-dispatch, ci-provenance, ci-resolve, ci-resolve-test
 |%
 ++  vectors
   ^-  (list [name=@t ok=?])
   =/  url=@t  'https://inputs.example/tool'
   =/  desired=(list @t)  ~[url]
   =/  scope=@t  (scope:ci-input desired)
-  =/  s=state-10:ci  *state-10:ci
+  =/  s=state-0:ci  *state-0:ci
   =/  denied  (edit:ci-input s 'demo' ~ 0 %.n)
   =/  stale  (edit:ci-input s 'demo' desired 1 %.y)
   =/  good  (edit:ci-input s 'demo' desired 0 %.y)
@@ -37,8 +37,6 @@
         ['ceilingId' s+(context-digest:ci-dispatch (scope:ci-input ~))]
         ['acquisitions' [%a ~]]
     ==
-  =/  old=state-6:ci-state-6  *state-6:ci-state-6
-  =/  migrated  (load:ci-migrate old)
   :~  ['absent policy is empty deny' =(~ (captured:ci-input s 0v1))]
       ['empty canonical scope is explicit' =('automatic-input-v1\0a' (scope:ci-input ~))]
       ['exact HTTPS source valid' (url-valid:ci-input url)]
@@ -56,6 +54,7 @@
       ['stale edit refuses' ?=(%| -.stale)]
       ['operator edit stores exact sources' =(`desired (~(get by automatic-inputs.p.good) 'demo'))]
       ['desired edit never invents admission snapshot' =(~ input-snapshots.p.good)]
+      ['a fresh state has no automatic input authority' =([~ ~ ~ ~] [automatic-inputs input-snapshots input-evidence resolver-inputs]:*state-0:ci)]
       ['serializer emits version and sources' =((pairs:enjs:format ~[['version' n+'1'] ['sources' [%a ~[s+url]]]]) (envelope:ci-input desired))]
       ['scope canonical order' =('automatic-input-v1\0ahttps://a.example/x\0ahttps://z.example/y' (scope:ci-input ~['https://z.example/y' 'https://a.example/x']))]
       ['measured permitted download accepted' (evidence-valid:ci-input text desired ~[n])]
@@ -64,9 +63,6 @@
       ['wrong immutable bytes refuse' !(evidence-valid:ci-input text desired ~[n(size 6)])]
       ['dependency-free default deny accepted' (evidence-valid:ci-input empty ~ ~)]
       ['default deny cannot reuse cache as a fetch receipt' !(evidence-valid:ci-input empty ~ ~[n])]
-      ['state6 recognized by complete frozen mold' =(%state-6 shape.migrated)]
-      ['state6 empty authority defaults' =([~ ~ ~ ~] [automatic-inputs input-snapshots input-evidence resolver-inputs]:new.migrated)]
-      ['state7 reload preserves policy edit' =(p.good new:(load:ci-migrate p.good))]
       ['production resolver ownership transitions' test-resolver-lifecycle:ci-resolve-test]
   ==
 ::

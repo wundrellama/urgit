@@ -2,14 +2,13 @@
 // `concurrency`, `cancellations`, `canCancel` and `cancelAuthority` fields
 // in the shape desk/app/urgit-ci.hoon +concurrency-json, +group-json,
 // +run-ref-json and +cancellation-json write, and with the ship's own
-// reason texts (lib/ci-concurrency, lib/ci-migrate). They are a MODEL of
+// reason texts (lib/ci-concurrency). They are a MODEL of
 // the agent's answers, labelled as such; ciConcurrencyWire.test.js checks
 // the keys and words against the agent's source, and the agent's own
 // answers are the parent's live recipe.
 
 export const AUTHORITY = 'only the repository\'s owner, or a ship holding its ci-policy role, cancels a run'
 export const UNREAD = 'concurrency not read for this lock: resolve or promote again to apply it'
-export const IN_FLIGHT = 'in flight when concurrency groups were added: this run takes part in no group'
 export const TRIAL = 'a trial twin takes part in no concurrency group: it would evaluate its required twin\'s group and cancel it'
 
 const older = { id: '0v1.older', label: 'push of 1a2b3c4d to main' }
@@ -139,11 +138,6 @@ export const unknownWorkflowRun = run({
   concurrency: joined([
     { workflow: 'ci.yml', name: 'ci.yml', group: { kind: 'unknown', reason: UNREAD }, cancelled: null, finished: false },
   ]),
-})
-
-// a run in flight when state-8 was loaded takes part in no group
-export const inFlightRun = run({
-  concurrency: { state: 'exempt', reason: IN_FLIGHT, joined: null, workflows: [{ workflow: 'ci.yml', name: 'ci.yml', group: null, cancelled: null, finished: false }] },
 })
 
 export const trialRun = run({

@@ -99,15 +99,12 @@
 ::    while paused no run is admitted, no assignment offered, no schedule
 ::    admitted and nothing landed.  an apply never rewinds authority.
 ::
-::    persisted state is state-10 (contract §8c; state-migration ruling
-::    01): every earlier shape — state-9, state-8, state-7, state-6,
-::    state-5, state-4, state-3, state-2, state-1, and the three tagged %0
-::    — is converted to it explicitly on load by lib/ci-migrate, or
-::    refused with its reason.  the open long-polls are transient and
-::    dropped on every load.
+::    persisted state is state-0, with no conversion code: the agent was
+::    never published before this release.  the open long-polls are
+::    transient and dropped on every load.
 ::
 /-  ci, git
-/+  dbug, default-agent, server, ci-checkpoint, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-forge, ci-migrate, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-clay, git-codec, git-protocol, git-storage
+/+  dbug, default-agent, server, ci-checkpoint, ci-input, ci-concurrency, ci-cron, ci-dispatch, ci-event, ci-expr, ci-forge, ci-plan, ci-provenance, ci-recovery, ci-resolve, ci-storage, ci-tag, ci-trigger, git-clay, git-codec, git-protocol, git-storage
 |%
 +$  card  card:agent:gall
 +$  poll  [eyre-id=@ta at=@da]
@@ -159,7 +156,7 @@
 ::  text clipped to 512 bytes — well inside the lock's own bound
 ++  max-report-bytes  1.048.576
 --
-=|  state-10:ci
+=|  state-0:ci
 =*  state  -
 =|  polls=(map daemon-id:ci poll)
 ::  the live feed's rate limit (D4): the last-seen each runner fact
@@ -191,23 +188,13 @@
   ++  on-load
     |=  old=vase
     ^-  (quip card _this)
-    ::  the saved state as a noun, of whatever version and shape: the
-    ::  current state-10, or converted to it explicitly, or refused with its
-    ::  reason (lib/ci-migrate; contract §8c).  a migration is audited.
-    ::  every active schedule's armed wake is set again (Delivery 1C): a
-    ::  timer that survived is then set twice, and the armed-due and
+    ::  the saved state is state-0, the one shape.  every active
+    ::  schedule's armed wake is set again (Delivery 1C): a timer that
+    ::  survived is then set twice, and the armed-due and
     ::  admitted-occurrence checks make the second wake nothing.  a pier
     ::  restart calls no on-load; Behn keeps its timers across it.
     ::
-    =/  loaded  (load:ci-migrate q.old)
-    =.  state  new.loaded
-    =?  audit  !=(%current shape.loaded)
-      %:  record-audit:hc
-        our.bowl
-        'state-migration'
-        ''
-        (crip "loaded a saved state of the {(trip shape.loaded)} shape, converted to state-10")
-      ==
+    =.  state  !<(state-0:ci old)
     =?  signing  ?=(~ signing)  `fresh-signing-key:hc
     [(weld ~[connect-card:hc keys-card:hc] rearm-cards:hc) this(polls ~)]
   ::
@@ -2239,7 +2226,7 @@
       ::  may use a runner profile toward these destinations
       ::
       %set-automatic-inputs
-    =/  changed=(each state-10:ci @t)
+    =/  changed=(each state-0:ci @t)
       %:  edit:ci-input  state  repo.act  sources.act  expected.act
         (authorized repo.act %ci-policy ~ actor.act)
       ==
@@ -2781,7 +2768,7 @@
       =/  found=(each oid:git @t)  (tag-commit repo revision)
       ?=(%& -.found)
     =/  here=presence:ci-checkpoint  [(silt tips) (silt revisions)]
-    =/  done=[s=state-10:ci =restore:ci]
+    =/  done=[s=state-0:ci =restore:ci]
       (apply:ci-checkpoint state here actor.act now.bowl eny.bowl)
     =.  state  s.done
     =.  audit

@@ -85,8 +85,8 @@
       revision  digest  0v9.incar  ship  ~2026.10.4  ~2026.10.4  %active  ~
       `due  ~  ~  ~  ~  0
   ==
-=/  blank=state-10:ci  *state-10:ci
-=/  live-state=state-10:ci
+=/  blank=state-0:ci  *state-0:ci
+=/  live-state=state-0:ci
   %=  blank
     candidates  (malt ~[[id.pending pending] [id.landable landable]])
     daemons  (malt ~[[id.daemon daemon]])
@@ -101,7 +101,7 @@
     schedules  (malt ~[[['demo' 'ci.yml' 0] entry]])
   ==
 =/  load
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  agent:gall
   +:(~(on-load ci-agent bowl) !>(s))
 =/  with-result

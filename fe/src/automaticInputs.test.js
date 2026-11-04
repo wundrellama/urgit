@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { inputEdit, inputProvenanceText, inputSupport, inputURLProblem } from './automaticInputs.js'
 import { makeAutomaticInputs } from './automaticInputsComponent.js'
 import { hooksRuntime, part, parts, settle, text } from './runnerRecoveryFixtures.js'
@@ -110,15 +109,6 @@ test('real controller edit, capture, serializer and acceptance remain on the pro
   assert.match(arm(c, 'handle-lock'), /shax \(jam \[%automatic-input-v1 digest/)
   assert.match(arm(c, 'policy-json'), /canEditAutomaticInputs.*authorized/)
   assert.match(arm(c, 'workflow-provenance-json'), /cached prior resolution; no new external fetch authorized/)
-})
-
-test('state6 freezes the whole authenticated mold and state7 defaults have no authority', () => {
-  const old = deskText('sur/ci-state-6.hoon')
-  assert.equal(createHash('sha256').update(old).digest('hex'), 'b1136bc1690c5130c88e16d8e420c3f6840a47f216042ff554c86d0617ca257b')
-  const conversion = arm(deskText('lib/ci-migrate.hoon'), 'from-state-6')
-  assert.match(conversion, /state-6:ci-state-6/)
-  assert.match(conversion, /state-7:ci/)
-  assert.match(conversion, /tag-runs\.o\s+~\s+~\s+~\s+~/)
 })
 
 test('narrow panels wrap URLs, identities and controls without fixed widths', () => {

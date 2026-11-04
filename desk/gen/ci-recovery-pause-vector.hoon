@@ -1,6 +1,6 @@
 ::  ci-recovery-pause-vector: CI-RECOVERY-1 (R5.2-A), %urgit-ci itself.
 ::  The agent is built from app/urgit-ci and loaded with a populated
-::  state-10, once paused and once not.  The checks are these.
+::  state-0, once paused and once not.  The checks are these.
 ::    - Paused, it reads as paused, and the landing predicates %urgit
 ::      consumes name no authority, though one run is landable.  Not
 ::      paused, the same run is eligible.
@@ -102,8 +102,8 @@
       revision  digest  0v9.incar  ship  ~2026.10.4  ~2026.10.4  %active  ~
       `due  ~  ~  ~  ~  0
   ==
-=/  blank=state-10:ci  *state-10:ci
-=/  live-state=state-10:ci
+=/  blank=state-0:ci  *state-0:ci
+=/  live-state=state-0:ci
   %=  blank
     candidates  (malt ~[[id.pending pending] [id.landable landable]])
     daemons  (malt ~[[id.daemon daemon]])
@@ -117,11 +117,11 @@
     locks  (malt ~[[digest lock]])
     schedules  (malt ~[[['demo' 'ci.yml' 0] entry]])
   ==
-=/  paused-state=state-10:ci  live-state(paused.recovery `[now ship 'drill'])
+=/  paused-state=state-0:ci  live-state(paused.recovery `[now ship 'drill'])
 ::  the agent, loaded with a state, and its reads
 ::
 =/  load
-  |=  s=state-10:ci
+  |=  s=state-0:ci
   ^-  agent:gall
   +:(~(on-load ci-agent bowl) !>(s))
 =/  paused-agent=agent:gall  (load paused-state)
@@ -246,7 +246,7 @@
 ::
 =/  resumed=(each (quip card:agent:gall agent:gall) tang)
   (poke paused-agent [%resume-ci ship])
-=/  quiet-state=state-10:ci
+=/  quiet-state=state-0:ci
   paused-state(attempts ~, assignments ~, candidates (malt ~[[id.landable landable]]))
 =/  made=written-files:ci-checkpoint
   %:  export:ci-checkpoint
@@ -262,7 +262,7 @@
   `[(rap 3 ~[i.t.path '.' i.t.t.path]) data]
 =/  read=(each [manifest=checkpoint-manifest:ci content=checkpoint-content:ci] @t)
   (import:ci-checkpoint by-name)
-=/  staged-state=state-10:ci
+=/  staged-state=state-0:ci
   ?.  ?=(%& -.read)  quiet-state
   quiet-state(staged.recovery `[0x1 now ship manifest.p.read content.p.read])
 =/  applied=(each (quip card:agent:gall agent:gall) tang)

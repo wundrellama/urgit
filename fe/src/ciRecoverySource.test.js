@@ -190,7 +190,7 @@ test('the model ship\'s refusals are the ship\'s own words', () => {
 })
 
 test('the vectors the parent runs exist and report passed=N of=M', () => {
-  for (const vector of ['gen/ci-checkpoint-vector.hoon', 'gen/ci-recovery-pause-vector.hoon', 'gen/ci-migration-vector.hoon']) {
+  for (const vector of ['gen/ci-checkpoint-vector.hoon', 'gen/ci-recovery-pause-vector.hoon']) {
     const text = deskText(vector)
     assert.match(text, /NOT RUN in the source stage that wrote it: it needs a ship\./)
     assert.match(text, /~&  \(crip "passed=\{<passed>\} of=\{<\(lent cases\)>\}"\)\n\?=\(~ failed\)\n$/)

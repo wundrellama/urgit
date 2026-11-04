@@ -17,41 +17,11 @@
 ::    the attempt's manifest digest, sandbox, network and outcome; the
 ::    daemon's profiles and resolver flag.
 ::
-::    that in-place rule ends here (state-migration ruling 01: Q12 A).
-::    the state is versioned from now on.  state-1, tagged %1, was the
-::    Q11 schema's fields exactly; it is frozen byte for byte as
-::    sur/ci-state-1.  state-2, tagged %2, is state-1 with each attempt's
-::    pinned addresses (CI-P4-NET-1, pinned addresses shown per run); it
-::    is frozen byte for byte as sur/ci-state-2.  state-3, tagged %3
-::    (Delivery 1A, manual runs), is state-2 with each candidate's
-::    trigger — the event it runs for, a push or a manual dispatch with
-::    its admitted inputs — and each lock's manual-run inventory; it is
-::    frozen byte for byte as sur/ci-state-3.  state-4, tagged %4
-::    (Delivery 1B), gives a planned job its compiled condition and its
-::    declared outputs, and an attempt its step outputs by step, the
-::    decision that ran or skipped it, the needs context it was given and
-::    the declared outputs resolved when it closed; it is frozen byte for
-::    byte as sur/ci-state-4.  state-5, tagged %5 (Delivery 1C), adds the
-::    automatic events: a run mode %event, a candidate's event trigger and
-::    its workflow selection, each lock's trigger catalog, the recorded
-::    forge events and their ids, and the armed schedules.
-::    every earlier shape shared the tag %0 and is frozen byte for byte in
-::    a sur file of its own — ci-state-base, ci-state-review06 and
-::    ci-state-q11 — and every shape is converted explicitly by
-::    lib/ci-migrate on load, never cast (contract §8c).  state-6 (the
-::    tagged-run resolver bindings) and state-7 (the automatic-input
-::    policy) are frozen whole as sur/ci-state-6 and sur/ci-state-7.
-::    state-8, tagged %8 (CI-CONCURRENCY-1), adds workflow concurrency
-::    groups: each catalog workflow's compiled concurrency, a candidate's
-::    concurrency membership and its cancelled workflows, the cancelled
-::    candidate status and the cancel decision.
-::    state-9, tagged %9, adds pull request labels to the pull facts of a
-::    run's event and of a recorded forge event.  state-8 is frozen whole
-::    as sur/ci-state-8.
-::    state-10, tagged %10 (CI-RECOVERY-1), adds one field after state-9's
-::    thirty-six: the recovery record.  it holds the pause, the checkpoint
-::    records, the staged import, the restores and the inert history they
-::    brought back.  state-9 is frozen whole as sur/ci-state-9.
+::    the agent was never published before this release, so it ships
+::    one persisted shape, state-0, with no conversion code.  a change
+::    to state-0 before the first release is made in place.  after the
+::    first release, a change needs a new tagged state and its
+::    conversion on load.
 ::
 /-  git
 |%
@@ -1222,7 +1192,7 @@
       audit=(list audit-entry)
   ==
 ::
-::  the recovery record of state-10.  its bunt is unpaused, with no
+::  the recovery record of state-0.  its bunt is unpaused, with no
 ::  checkpoint, no staged import and no history
 ::
 +$  recovery-state
@@ -1234,55 +1204,11 @@
       sequence=@ud
   ==
 ::
-+$  state-5
-  $:  %5
-      candidates=(map candidate-id candidate)
-      daemons=(map daemon-id daemon)
-      assignments=(map assignment-id assignment)
-      attempts=(map attempt-id attempt)
-      ci-protected=(set [repo=@t ref=@t])
-      policies=(map @t untrusted-policy)
-      credentials=(map [repo=@t name=@t] credential)
-      signing=(unit signing)
-      ship-keys=(unit ship-keys)
-      ::  P4
-      incarnations=(map @t @uv)
-      generations=(map @t @ud)
-      baselines=(map [repo=@t ref=@t] baseline)
-      locks=(map @ux lock)
-      roles=(map @t (list binding))
-      environments=(map [repo=@t name=@t] environment)
-      approvals=(map @uv approval)
-      overrides=(map @uv override)
-      network-policies=(map @t (list network-policy))
-      read-capabilities=(map @ read-capability)
-      shadows=(map @uv shadow)
-      comparisons=(map @uv comparison)
-      audit=(list audit-entry)
-      sandbox-requirements=(map @t sandbox-need)
-      ::  the write tokens a resolve attempt's mirrors hold until it closes
-      mirror-tokens=(map attempt-id (set @t))
-      ::  the operator's explicit import mappings of a resolve (rider 03),
-      ::  by the synthetic resolve candidate: [from to] prefixes
-      resolve-mappings=(map candidate-id (list [from=@t to=@t]))
-      ::  a repository's harness paths (D5): what a promotion records on
-      ::  the baseline it creates; ~ means the default, .github/
-      harness-paths=(map @t (list @t))
-      ::  the legacy recovery (legacy-recovery UI ruling 01): each
-      ::  runner's latest retention report, and the operator's recovery
-      ::  commands by id, never pruned
-      recovery-reports=(map daemon-id recovery-report)
-      recovery-commands=(map @uv recovery-command)
-      ::  state-5 (Delivery 1C): the forge events recorded per repository
-      ::  (newest kept), the ids of every event admitted (the replay
-      ::  guard, newest kept), and the armed schedules
-      forge-events=(map @uv forge-event)
-      event-ids=(map @uv @da)
-      schedules=(map schedule-key schedule-entry)
-  ==
+::  the persisted state, tagged %0: every record of the controller, then
+::  the recovery record (CI-RECOVERY-1)
 ::
-+$  state-6
-  $:  %6
++$  state-0
+  $:  %0
       candidates=(map candidate-id candidate)
       daemons=(map daemon-id daemon)
       assignments=(map assignment-id assignment)
@@ -1320,61 +1246,7 @@
       ::  commands by id, never pruned
       recovery-reports=(map daemon-id recovery-report)
       recovery-commands=(map @uv recovery-command)
-      ::  state-5 (Delivery 1C): the forge events recorded per repository
-      ::  (newest kept), the ids of every event admitted (the replay
-      ::  guard, newest kept), and the armed schedules
-      forge-events=(map @uv forge-event)
-      event-ids=(map @uv @da)
-      schedules=(map schedule-key schedule-entry)
-      ::  Tagged-revision runs and their exact resolver attempts. A null
-      ::  attempt waits for a resolver. Completed runs keep this provenance.
-      tag-runs=(map candidate-id (unit attempt-id))
-  ==
-
-::  state-10 (CI-RECOVERY-1): state-9's thirty-six fields under the tag
-::  %10, then the recovery record (sur/ci-state-9 holds the frozen
-::  state-9 shape, and sur/ci-state-8 the state-8 one)
-::
-+$  state-10
-  $:  %10
-      candidates=(map candidate-id candidate)
-      daemons=(map daemon-id daemon)
-      assignments=(map assignment-id assignment)
-      attempts=(map attempt-id attempt)
-      ci-protected=(set [repo=@t ref=@t])
-      policies=(map @t untrusted-policy)
-      credentials=(map [repo=@t name=@t] credential)
-      signing=(unit signing)
-      ship-keys=(unit ship-keys)
-      ::  P4
-      incarnations=(map @t @uv)
-      generations=(map @t @ud)
-      baselines=(map [repo=@t ref=@t] baseline)
-      locks=(map @ux lock)
-      roles=(map @t (list binding))
-      environments=(map [repo=@t name=@t] environment)
-      approvals=(map @uv approval)
-      overrides=(map @uv override)
-      network-policies=(map @t (list network-policy))
-      read-capabilities=(map @ read-capability)
-      shadows=(map @uv shadow)
-      comparisons=(map @uv comparison)
-      audit=(list audit-entry)
-      sandbox-requirements=(map @t sandbox-need)
-      ::  the write tokens a resolve attempt's mirrors hold until it closes
-      mirror-tokens=(map attempt-id (set @t))
-      ::  the operator's explicit import mappings of a resolve (rider 03),
-      ::  by the synthetic resolve candidate: [from to] prefixes
-      resolve-mappings=(map candidate-id (list [from=@t to=@t]))
-      ::  a repository's harness paths (D5): what a promotion records on
-      ::  the baseline it creates; ~ means the default, .github/
-      harness-paths=(map @t (list @t))
-      ::  the legacy recovery (legacy-recovery UI ruling 01): each
-      ::  runner's latest retention report, and the operator's recovery
-      ::  commands by id, never pruned
-      recovery-reports=(map daemon-id recovery-report)
-      recovery-commands=(map @uv recovery-command)
-      ::  state-5 (Delivery 1C): the forge events recorded per repository
+      ::  the forge events recorded per repository
       ::  (newest kept), the ids of every event admitted (the replay
       ::  guard, newest kept), and the armed schedules
       forge-events=(map @uv forge-event)

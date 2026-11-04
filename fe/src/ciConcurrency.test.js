@@ -9,7 +9,7 @@ import { makeRunConcurrency } from './ciConcurrencyComponent.js'
 import { jobDetailsModel, waitingRows } from './ciJobs.js'
 import { all, h, hooksRuntime, part, parts, settle, text } from './runnerRecoveryFixtures.js'
 import {
-  AUTHORITY, IN_FLIGHT, TRIAL, UNREAD, displacedRun, holdingRun, inFlightRun, joiningRun, manualWaitingRun,
+  AUTHORITY, TRIAL, UNREAD, displacedRun, holdingRun, joiningRun, manualWaitingRun,
   member, noAuthorityRun, oldLockRun, operatorRun, refusedRun, stoppingRun, supersededRun, trialRun,
   unknownWorkflowRun, waitingRun,
 } from './ciConcurrencyFixtures.js'
@@ -102,8 +102,7 @@ test('unknown is not none: an old lock\'s run and an unlisted workflow say their
   assert.equal(ci.text, `concurrency unknown: ${UNREAD}`)
 })
 
-test('a run in flight at the upgrade, a trial twin and a run not joined yet say why they are in no group', () => {
-  assert.equal(concurrencyModel(inFlightRun).summary, `Takes part in no concurrency group: ${IN_FLIGHT}`)
+test('a trial twin and a run not joined yet say why they are in no group', () => {
   assert.equal(concurrencyModel(trialRun).summary, `Takes part in no concurrency group: ${TRIAL}`)
   const joining = concurrencyModel(joiningRun)
   assert.match(joining.summary, /^Not joined yet: /)
