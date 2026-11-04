@@ -90,7 +90,7 @@ test('the brief takes no token argument at all', () => {
 })
 
 test('the setup guide covers repository preparation and the VM runner, not Docker as the only backend', () => {
-  const guide = readFileSync(new URL('../../runner/README.md', import.meta.url), 'utf8')
+  const guide = readFileSync(new URL('../../docs/ci-setup-guide.md', import.meta.url), 'utf8')
   for (const h of ['## Prepare your repository', '## 3. Install the runner', '## 4. Approve the workflows and require CI']) assert.ok(guide.includes(h), h)
   assert.match(guide, /urgit-vm-launcher/)
   assert.match(guide, /Not supported yet/)

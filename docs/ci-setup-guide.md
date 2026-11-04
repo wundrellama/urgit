@@ -89,34 +89,29 @@ The runner has two parts:
 
 There is no prebuilt download in this release: build both from the urgit source that matches the desk your ship runs.
 
-**Get the source.** The runner is in the `runner/` directory of the urgit repository. Use the commit that matches the `%urgit` desk your ship runs. A runner from another commit can refuse the ship's assignments. Get the repository in one of these two ways:
-
-- From GitHub: `git clone https://github.com/yapishu/urgit.git`
-- From Urbit: in your ship's urgit, open **Peers**, browse `~matwet`, and fork `urgit`. Then clone the fork from your own ship: `git clone https://<your-ship>/git/urgit`
-
-Until the native CI pull request is merged, the runner is only on the `ci/delivery-1` branch of `https://github.com/wundrellama/urgit.git`. Clone that branch for this release: `git clone -b ci/delivery-1 https://github.com/wundrellama/urgit.git`
+**Get the source.** The runner has its own repository: `git clone https://github.com/wundrellama/urgit-runner.git`. Use the runner commit that matches the urgit commit your ship runs. The runner's `URGIT_COMMIT` file names the urgit commit each runner commit was tested against. A runner from another version refuses the ship's assignments.
 
 **The host.** Linux x86_64 with KVM (`/dev/kvm`), cgroup v2 (`stat -fc %T /sys/fs/cgroup` prints `cgroup2fs`), systemd, Git, outbound HTTP(S) to the ship, Go 1.27 or later to build, and about 25 GiB of disk per concurrent job. It may be the ship's own host.
 
 **Build.**
 
 ```text
-cd runner
+cd urgit-runner
 CGO_ENABLED=0 go build -trimpath -o urgit-runner ./cmd/urgit-runner
 CGO_ENABLED=0 go build -trimpath -o urgit-vm-launcher ./cmd/urgit-vm-launcher
 ```
 
-The guest image (the kernel and root filesystem every job VM boots) is built by `guest/build.sh` from the recipes under [`guest`](guest). The launcher verifies the image's digests before every boot.
+The guest image (the kernel and root filesystem every job VM boots) is built by `guest/build.sh` from the recipes under [`guest`](https://github.com/wundrellama/urgit-runner/blob/master/guest). The launcher verifies the image's digests before every boot.
 
 **Install the launcher (as root).**
 
 1. Create the system user `urgit-vm`.
 2. Create the launcher's protected root, owned by root, with `bin/`, `images/`, `jail/` and `state/` inside it.
 3. Put `urgit-vm-launcher`, and Firecracker and jailer v1.17.0, in `bin/`. The launcher checks the two Firecracker binaries against the SHA-256 pins in its config at start. Put the guest image in `images/<manifest sha256>/`.
-4. Write the launcher's config, mode 0600, from [`launcher/urgit-vm-launcher.toml.example`](launcher/urgit-vm-launcher.toml.example). `socket`, `socket_group` and `runner_uids` name the user the runner runs as. `ceiling` lists every network destination any job may ever reach; empty means no job gets network.
-5. Install [`launcher/urgit-vm-launcher.service`](launcher/urgit-vm-launcher.service) with your paths and start it. It is not enabled at boot by default; start it after a reboot, or enable it.
+4. Write the launcher's config, mode 0600, from [`launcher/urgit-vm-launcher.toml.example`](https://github.com/wundrellama/urgit-runner/blob/master/launcher/urgit-vm-launcher.toml.example). `socket`, `socket_group` and `runner_uids` name the user the runner runs as. `ceiling` lists every network destination any job may ever reach; empty means no job gets network.
+5. Install [`launcher/urgit-vm-launcher.service`](https://github.com/wundrellama/urgit-runner/blob/master/launcher/urgit-vm-launcher.service) with your paths and start it. It is not enabled at boot by default; start it after a reboot, or enable it.
 
-**Configure and start the runner.** Copy [`urgit-runner.toml.example`](urgit-runner.toml.example) to `/etc/urgit-runner.toml`, mode 0600, and set:
+**Configure and start the runner.** Copy [`urgit-runner.toml.example`](https://github.com/wundrellama/urgit-runner/blob/master/urgit-runner.toml.example) to `/etc/urgit-runner.toml`, mode 0600, and set:
 
 | Key | Meaning |
 |---|---|
@@ -133,7 +128,7 @@ The guest image (the kernel and root filesystem every job VM boots) is built by 
 | `[[network_profiles]]` | For each profile name your network policies use, the destinations this runner allows. |
 | `work_dir`, `state_file` | Where checkouts and the runner's identity live. |
 
-[`urgit-runner.service`](urgit-runner.service) is a `Type=simple` unit running as an unprivileged user that can reach the launcher's socket. On its first start the runner enrolls with the token, writes its identity to `state_file`, and forgets the token; its row in **Settings → Runners** flips from `minted` to `healthy` with no page refresh, and its log prints `sandbox: microvm`. Then choose **Repositories…** on its row if it should take only some repositories.
+[`urgit-runner.service`](https://github.com/wundrellama/urgit-runner/blob/master/urgit-runner.service) is a `Type=simple` unit running as an unprivileged user that can reach the launcher's socket. On its first start the runner enrolls with the token, writes its identity to `state_file`, and forgets the token; its row in **Settings → Runners** flips from `minted` to `healthy` with no page refresh, and its log prints `sandbox: microvm`. Then choose **Repositories…** on its row if it should take only some repositories.
 
 ## 4. Approve the workflows and require CI
 
@@ -183,7 +178,7 @@ Until CI is set up the CI tab shows the setup checklist, each step ticked from t
 
 **An assignment runs at most once on a runner.** The runner records each attempt it takes in its execution ledger, `executions/` beside the state file, before anything of the job runs, and again when the job ends. A copy of a finished job's assignment is ignored. A copy of a job that a stop cut short is given back to the ship, which offers the job again as a new attempt, or closes it. If the ledger cannot be written (a full disk, a permissions change), new assignments are given back, not started, and nothing is deleted to make room. The ledger grows by two small files per attempt and is kept: nothing prunes it, and nothing in it may be deleted. The state file names it, and a start that finds the ledger gone, or missing `taken/` or `finished/`, is refused. Back it up, and restore it, together with the state file.
 
-**Upgrading from a runner without the ledger.** What the earlier version ran left no record, so the upgraded runner runs nothing until you confirm its transition. At its first start it logs `EXECUTION PAUSED`, polls advertising no capacity, and gives back every assignment it receives. It still reports its retentions and carries out their release. In **Settings → Runners** it is marked *execution paused*: open **Transition…**, inspect its history and the proof, and confirm. The runner checks the transition, records it, and from then on refuses every assignment the ship signed before it, and runs new work. Nothing is released, reset or re-enrolled, and there is no drain or wait. A runner whose `executions/HISTORY` cannot be read waits the same way. So does one whose state file's `transition` is damaged, not a record this version wrote: it keeps the record as it is, says why in the panel, and waits for its transition to be confirmed again. A state file that names a field twice, which no runner writes, refuses the start and is left as it is. The ship must run this version too (QUESTIONS-SOURCE-01 §15; [`launcher/INTEGRATION.md`](launcher/INTEGRATION.md) §11.15).
+**Upgrading from a runner without the ledger.** What the earlier version ran left no record, so the upgraded runner runs nothing until you confirm its transition. At its first start it logs `EXECUTION PAUSED`, polls advertising no capacity, and gives back every assignment it receives. It still reports its retentions and carries out their release. In **Settings → Runners** it is marked *execution paused*: open **Transition…**, inspect its history and the proof, and confirm. The runner checks the transition, records it, and from then on refuses every assignment the ship signed before it, and runs new work. Nothing is released, reset or re-enrolled, and there is no drain or wait. A runner whose `executions/HISTORY` cannot be read waits the same way. So does one whose state file's `transition` is damaged, not a record this version wrote: it keeps the record as it is, says why in the panel, and waits for its transition to be confirmed again. A state file that names a field twice, which no runner writes, refuses the start and is left as it is. The ship must run this version too (QUESTIONS-SOURCE-01 §15; [`launcher/INTEGRATION.md`](https://github.com/wundrellama/urgit-runner/blob/master/launcher/INTEGRATION.md) §11.15).
 
 **Quarantined slots.** When a sandbox's release cannot be proven — a VM the launcher could not stop or clean up in time, a container whose removal failed — the daemon withholds that slot (it offers the ship one fewer), records it in its state file under the sandbox's exact identity and its job's name, and logs `QUARANTINED slot ci-<attempt> …`. Cleanup may still run automatically and stop or remove what is provably that sandbox's, but nothing releases the slot by itself — not even a cleanup that finally succeeds after its deadline — and a restart never charges it twice. Cleanup and release are separate steps, each yours:
 
@@ -233,7 +228,7 @@ Nothing at the launcher is touched. A record of the attempt there refuses the re
 
 - `microvm` (Firecracker + jailer) is the default backend and the one every privileged, trial, shadow and untrusted job needs; it requires the administrator-owned `urgit-vm-launcher` and a digest-verified guest image, and refuses to start without them — it never falls back to a container. `docker-rootless` remains for trusted compatibility work on a repository that opted in explicitly (`set-sandbox-requirement container`): its sandboxes are containers, not a VM boundary, and a network profile there is NAT egress as a whole rather than the launcher's per-destination enforcement.
 - Execution is locked by default: no egress at all unless the repository's policy authorizes a profile for that job and the runner declares it.
-- The VM path's image, kernel, guest helper and protocol are built from the recipes under [`guest`](guest) and proven by unjailed preflight boots; the jailed path — the launcher, its cgroups and its network policy — waits on the administrator's review of the launcher recipe and is not claimed qualified here.
+- The VM path's image, kernel, guest helper and protocol are built from the recipes under [`guest`](https://github.com/wundrellama/urgit-runner/blob/master/guest) and proven by unjailed preflight boots; the jailed path — the launcher, its cgroups and its network policy — waits on the administrator's review of the launcher recipe and is not claimed qualified here.
 - The promoted baseline's workflow and harness bytes are the required evidence, not the candidate's own. A candidate whose harness differs runs a trial beside the required run — unprivileged and never landable — and a branch with no promoted baseline waits with that reason.
 - The web interface's **Approve** button is the owner's. A listed writer on another ship approves through the peer protocol from their own ship (`POST /peer/ci-approve` with the owner ship, the repository and the candidate id; the answer arrives as a forge request of kind `candidate`); the owner's ship admits exactly the ships that can write the repository. No button for it yet.
 - Retrying or releasing a quarantined slot needs the daemon stopped, and for a VM the launcher's `serve` stopped for its own retry and release first (§6), which tears down every VM that launcher runs: there is no live administration channel. The one exception is a legacy retention, released from Urgit through the daemon's own poll (§6). No host listener is added for it.

@@ -149,7 +149,7 @@ An attempt with events and no result for longer than the job's own `timeout-minu
 
 The web interface is unchanged in shape. `%urgit-fileserver` serves the same React application. The repository page gains a CI tab for runs, run detail, and candidate status. Settings gains runner enrollment and CI-policy sections. The application calls two API bases under one origin.
 
-The runner daemon lives at `runner/` in this repository as one Go module. `zig build` gains an optional Go step. The deliverable is one static binary, one systemd unit, one configuration file, and a pinned `act` release. The configuration names the ship URL, an enrollment token, the VM image path, and the object-store endpoint. The daemon installs on any Linux host with KVM. It may share a host with the ship or not. The object store defaults to a second unit on the same host and accepts any S3-compatible endpoint.
+The runner daemon is one Go module in its own repository, [urgit-runner](https://github.com/wundrellama/urgit-runner). The deliverable is one static binary, one systemd unit, one configuration file, and a pinned `act` release. The configuration names the ship URL, an enrollment token, the VM image path, and the object-store endpoint. The daemon installs on any Linux host with KVM. It may share a host with the ship or not. The object store defaults to a second unit on the same host and accepts any S3-compatible endpoint.
 
 CI has one install prerequisite beyond the daemon. The ship's `%storage` agent must name a reachable S3-compatible endpoint with a bucket and credentials. This is a Landscape settings step. Without it, `%urgit-ci` does not enable CI.
 
@@ -174,8 +174,7 @@ The supported envelope is published from what the shadow period sustained. That 
 - `desk/app/urgit.hoon` — protected-ref gate, candidate materialization handler, staged-write handoff.
 - `desk/sur/git.hoon` — a way to mark a protected ref as CI-protected. Either `repository` gains a field or `%urgit-ci` holds the set and `%urgit` scries it.
 - `fe/src/` — CI tab, Settings sections, second API base.
-- `runner/` — new Go module: the daemon, plus a pinned `act` release and its `--json` parser.
-- `build.zig` — optional Go step.
+- the [urgit-runner](https://github.com/wundrellama/urgit-runner) repository — new Go module: the daemon, plus a pinned `act` release and its `--json` parser.
 - `specs/architecture.md`, `README.md` — updated.
 
 ## What does not change

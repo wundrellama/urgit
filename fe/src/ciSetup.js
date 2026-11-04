@@ -141,39 +141,38 @@ Report what you found. Stop if KVM or cgroup v2 is missing.
 
 ## Step 2: get the source and build
 
-The runner is in the \`runner/\` directory of the urgit repository. Use the
-commit that matches the \`%urgit\` desk the ship runs. This release has no
-prebuilt runner download. Ask the owner which source to use:
+The runner has its own repository. This release has no prebuilt runner
+download. Clone it and check out the runner commit that matches the urgit
+commit the ship runs. Its \`URGIT_COMMIT\` file names the urgit commit each
+runner commit was tested against:
 
-- GitHub: \`git clone https://github.com/yapishu/urgit.git\`
-- Urbit: the owner forks \`~matwet\`'s \`urgit\` in the Peers view, then you
-  clone the fork with \`git clone ${origin}/git/urgit\`
-- Until the native CI pull request is merged, the runner is only on the
-  \`ci/delivery-1\` branch: \`git clone -b ci/delivery-1 https://github.com/wundrellama/urgit.git\`
+\`\`\`sh
+git clone https://github.com/wundrellama/urgit-runner.git
+\`\`\`
 
 In that checkout:
 
 \`\`\`sh
-cd runner
+cd urgit-runner
 CGO_ENABLED=0 go build -trimpath -o urgit-runner ./cmd/urgit-runner
 CGO_ENABLED=0 go build -trimpath -o urgit-vm-launcher ./cmd/urgit-vm-launcher
 \`\`\`
 
 The guest image (kernel and root filesystem the job VMs boot) is built from
-\`runner/guest/\` with \`runner/guest/build.sh\`. Read that script first and
+\`guest/\` with \`guest/build.sh\`. Read that script first and
 tell the owner what it downloads and from where before running it.
 
 Allowed downloads:
 
-- The urgit source, from where the owner says.
+- The runner source, from its repository.
 - Go modules for the build, from the module proxy Go is configured for.
 - Firecracker v1.17.0 from
   \`https://github.com/firecracker-microvm/firecracker/releases\`. The
   extracted binaries must match these SHA-256 pins (also in
-  \`runner/launcher/urgit-vm-launcher.toml.example\`):
+  \`launcher/urgit-vm-launcher.toml.example\`):
   firecracker \`99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5\`,
   jailer \`65ef226e96f0ceda55ba643f445801ef2cc0ea667ef67cad8ac4f406c9c8434f\`.
-- Whatever \`runner/guest/build.sh\` fetches, after the owner has seen the
+- Whatever \`guest/build.sh\` fetches, after the owner has seen the
   list.
 
 ## Step 3: install the VM launcher (root: the owner runs this)
@@ -188,11 +187,11 @@ the owner to run:
 3. Install \`urgit-vm-launcher\`, Firecracker and jailer v1.17.0 into
    \`bin/\`, and the built guest image into \`images/<manifest sha256>/\`.
 4. Write \`/etc/urgit-vm-launcher.toml\` (mode 0600) from
-   \`runner/launcher/urgit-vm-launcher.toml.example\`: \`socket\`,
+   \`launcher/urgit-vm-launcher.toml.example\`: \`socket\`,
    \`socket_group\` and \`runner_uids\` must name the user the runner will
    run as; \`ceiling\` lists the network destinations any job may ever
    reach (empty means no job gets network).
-5. Install \`runner/launcher/urgit-vm-launcher.service\` with its paths
+5. Install \`launcher/urgit-vm-launcher.service\` with its paths
    adjusted, then \`systemctl daemon-reload\` and
    \`systemctl start urgit-vm-launcher\`.
 
@@ -202,7 +201,7 @@ them. Afterwards check: \`systemctl is-active urgit-vm-launcher\` prints
 
 ## Step 4: configure the runner
 
-Write \`urgit-runner.toml\` from \`runner/urgit-runner.toml.example\` with:
+Write \`urgit-runner.toml\` from \`urgit-runner.toml.example\` with:
 
 \`\`\`toml
 ship_url = "${origin}"
@@ -225,7 +224,7 @@ The owner installs the file as \`/etc/urgit-runner.toml\`, mode 0600.
 
 ## Step 5: start the runner
 
-Install \`runner/urgit-runner.service\` (it runs as an unprivileged user) and
+Install \`urgit-runner.service\` (it runs as an unprivileged user) and
 start it; the owner runs any root part. Then check:
 
 - \`journalctl -u urgit-runner\` shows a \`sandbox: microvm\` line and no

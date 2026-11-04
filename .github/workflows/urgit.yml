@@ -49,26 +49,6 @@ env:
   SKELETON_URL: https://raw.githubusercontent.com/urbit/urbit/0f94550b941dfe046d9dff4a541330bd084e8cd1/pkg/base-dev/lib/skeleton.hoon
 
 jobs:
-  go-test:
-    name: go vet + go test -race (runner/)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      # the act image carries Node but no Go: the toolchain comes from
-      # go.mod's own version, so the job and a developer's shell agree
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: runner/go.mod
-          cache: false
-      - name: go vet and go test -race
-        run: |
-          set -euo pipefail
-          cd runner
-          go version
-          go vet ./...
-          go test -race ./...
-
   fe-test:
     name: npm test (fe/)
     runs-on: ubuntu-latest

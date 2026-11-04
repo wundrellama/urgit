@@ -106,7 +106,7 @@
       'A checkpoint holds no credential value, private key, token or '
       'repository object.\0a\0a'
       'To restore, follow "Backup and restore" in the urgit '
-      '`runner/README.md`.\0a'
+      '`docs/ci-setup-guide.md`.\0a'
   ==
 ::
 ::  ---- a checkpoint's id ----

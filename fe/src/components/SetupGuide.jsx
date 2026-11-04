@@ -1,7 +1,7 @@
 import Markdown from './Markdown'
-import readme from '../../../runner/README.md?raw'
+import readme from '../../../docs/ci-setup-guide.md?raw'
 
-// The operator's setup guide (BRIEF-CI-P3 D7/D8): runner/README.md as
+// The operator's setup guide (BRIEF-CI-P3 D7/D8): docs/ci-setup-guide.md as
 // built into the app, so "read the README" is one click from the CI tab
 // and the Runners section and never a file the operator has to find.
 

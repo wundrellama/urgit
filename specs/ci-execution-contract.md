@@ -1,5 +1,8 @@
 # CI execution contract (P4, opus chair)
 
+**Where the runner code is.** A path that starts with `runner/` is in the [urgit-runner](https://github.com/wundrellama/urgit-runner) repository, without the `runner/` prefix. The runner was split out of this repository. The paths below keep the names they had when this record was written.
+
+
 The contracts every P4 piece is built against: the signed execution manifest, the immutable input bundle, the guest image manifest and helper protocol, the sandbox selection and capacity/quarantine/ownership metadata, the policy generation and its state transitions, the HTTP/JSON routes, and the privileged launcher's operations and host recipe. Fixtures for each contract live where the tests are (`runner/internal/*/testdata`, `desk/gen/ci-*-vector.hoon`). Every number below is a ruling of rider 04 unless marked *proposed* (the helper frame bound and the export cap remain implementation bounds, disclosed).
 
 Rulings applied: BRIEF-CI-P4 D1–D7; rider 01 (administrator-owned boundary, unprivileged daemon, separate narrow launcher, held execution); rider 02 (owner-implicit authority, persistent baselines, 15-minute single-use approvals and overrides, atomic consumption, change-driven invalidation, unknown-outcome); rider 03 (locked default, extensible network profiles selected by labels and authorized by ship policy ∩ runner ceiling ∩ launcher ceiling, bound into the manifest); rider 04 (`microvm` default, capacity 1 / 2 vCPU / 4096 MiB + 1024 MiB overhead / 20480 MiB disk, job timeout else 1 h, 120 s cleanup bound, explicit budgets counting every reservation state).

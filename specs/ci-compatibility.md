@@ -1,5 +1,8 @@
 # CI compatibility and requirement ledger (P4, opus chair)
 
+**Where the runner code is.** A path that starts with `runner/` is in the [urgit-runner](https://github.com/wundrellama/urgit-runner) repository, without the `runner/` prefix. The runner was split out of this repository. The paths below keep the names they had when this record was written.
+
+
 Every original obligation the brief names, its status in this tree, and the code/test evidence or the explicit P5 owner. Status words: `planned` (the S0 design names the evidence that will exist; not yet built — none left at the end of the build), `done` (implemented and exercised in this tree, evidence named), `held` (blocked on a ruling or an authorized privileged step; the question is named), `P5` (owed by the next phase by the brief's own map), `retired` (an earlier exception intentionally ended, with the tests that changed). A `done` row cites a test or a harness row; a checkpoint line in PROGRESS is not evidence. This ledger is updated at every stage transition; the acceptance table (BRIEF §6) is the coverage oracle and its row set equals `.scratch/ci-p4/rows.txt`.
 
 **Status at the close (2026-09-23).** Every `done` row's evidence was re-measured by the passing cold gate (`.scratch/ci-p4/evidence/cold-20260923-042018/`: 22 rows PASS, 0 FAIL, 18/18 mutants RED then GREEN, the P0–P3 batteries with no unexpected failing step, I03 PASS-WITH-HELD, I04 PASS). Every `held` row is held on one thing — the §1 review of the privileged launcher recipe — and the thirteen the gate held are named in `RECORD-CI-P4.md` §12. No `planned` row is left.
